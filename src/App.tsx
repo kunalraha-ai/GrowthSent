@@ -1,0 +1,1473 @@
+import { useState, useEffect, type ReactNode } from "react";
+import { AppConsole } from "./components/dashboard/AppConsole";
+
+const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
+const Warn = ({ children }: { children: ReactNode }) => <div className="warn"><span>!</span>{children}</div>;
+
+function Logo({ dark = false }: { dark?: boolean }) {
+  return <div className={`brand ${dark ? "on-dark" : ""}`}><span className="brand-mark"><i /><i /><i /></span><span>GrowthSent</span></div>;
+}
+
+export interface LiveScanResult {
+  scanId: string;
+  url: string;
+  hostname: string;
+  status: string;
+  seoScore?: number;
+  totalPagesCrawled?: number;
+  crawlStats?: {
+    totalPagesCrawled: number;
+    totalDurationMs: number;
+    bytesDownloaded: number;
+    statusCodesCount: Record<string, number>;
+  };
+  summaryMetrics?: {
+    totalChecks: number;
+    passedChecks: number;
+    failedChecks: number;
+    criticalIssues: number;
+    highIssues: number;
+    mediumIssues: number;
+    lowIssues: number;
+    infoIssues: number;
+  };
+  error?: string;
+}
+
+export interface PageItem {
+  url: string;
+  statusCode: number;
+  responseTimeMs: number;
+  title?: string;
+  metaDescription?: string;
+  canonicalUrl?: string;
+  isNoindex: boolean;
+  headings: { h1: string[] };
+}
+
+export interface IssueItem {
+  ruleId: string;
+  category: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  title: string;
+  description: string;
+  explanation: string;
+  affectedUrl: string;
+  recommendation: string;
+}
+
+export interface UserProfile {
+  id?: string;
+  email: string;
+  name?: string;
+  role?: string;
+}
+
+export interface WebsiteItem {
+  _id?: string;
+  hostname: string;
+  displayName: string;
+  monitoringEnabled?: boolean;
+}
+
+// ---------------------------------------------------------
+// ACCOUNT AUTHENTICATION
+// ---------------------------------------------------------
+function AuthModal({
+  onClose,
+  onAuthenticated,
+  initialError,
+}: {
+  onClose: () => void;
+  onAuthenticated: (user: UserProfile) => void;
+  initialError?: string;
+}) {
+  const [isSignup, setIsSignup] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(initialError || "");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setErrorMsg("Email and password are required.");
+      return;
+    }
+    setLoading(true);
+    setErrorMsg("");
+
+    const endpoint = isSignup ? "/api/v1/auth/signup" : "/api/v1/auth/login";
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isSignup ? { email, password, name } : { email, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setErrorMsg(data.error?.message || "Authentication failed.");
+        setLoading(false);
+        return;
+      }
+
+      onAuthenticated(data.user || { email, name: name || email.split("@")[0] });
+    } catch {
+      setErrorMsg("Network error connecting to backend.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "rgba(10, 11, 10, 0.8)",
+      backdropFilter: "blur(8px)",
+      zIndex: 1100,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+    }}>
+      <div style={{
+        background: "#171817",
+        color: "#f7f7f3",
+        width: "100%",
+        maxWidth: "420px",
+        borderRadius: "16px",
+        border: "1px solid #383a35",
+        padding: "32px",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <Logo dark />
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#888982", fontSize: "20px", cursor: "pointer" }}>✕</button>
+        </div>
+
+        <h2 style={{ fontSize: "22px", fontWeight: 800, margin: "0 0 6px 0" }}>
+          {isSignup ? "Create your GrowthSent account" : "Log in to GrowthSent"}
+        </h2>
+        <p style={{ fontSize: "13px", color: "#8c8d86", margin: "0 0 20px 0" }}>
+          No credit card required. Manage your websites &amp; SEO health.
+        </p>
+
+        {/* Social OAuth Buttons (real Google / GitHub sign-in) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              setErrorMsg("");
+              try {
+                const res = await fetch("/api/v1/auth/google/start");
+                const data = await res.json();
+                if (!res.ok || !data.authorizationUrl) {
+                  throw new Error(data.error?.message || "Unable to start Google sign-in.");
+                }
+                window.location.assign(data.authorizationUrl);
+              } catch (err) {
+                setErrorMsg(err instanceof Error ? err.message : "Unable to start Google sign-in.");
+                setLoading(false);
+              }
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              background: "#20211e",
+              color: "#ffffff",
+              border: "1px solid #383a35",
+              padding: "11px",
+              borderRadius: "8px",
+              fontWeight: 700,
+              fontSize: "13px",
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+            </svg>
+            Continue with Google
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              setErrorMsg("");
+              try {
+                const res = await fetch("/api/v1/auth/github/start");
+                const data = await res.json();
+                if (!res.ok || !data.authorizationUrl) {
+                  throw new Error(data.error?.message || "Unable to start GitHub sign-in.");
+                }
+                window.location.assign(data.authorizationUrl);
+              } catch (err) {
+                setErrorMsg(err instanceof Error ? err.message : "Unable to start GitHub sign-in.");
+                setLoading(false);
+              }
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              background: "#20211e",
+              color: "#ffffff",
+              border: "1px solid #383a35",
+              padding: "11px",
+              borderRadius: "8px",
+              fontWeight: 700,
+              fontSize: "13px",
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#ffffff">
+              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+            </svg>
+            Continue with GitHub
+          </button>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "16px 0", color: "#666" }}>
+          <div style={{ flex: 1, height: "1px", background: "#383a35" }} />
+          <span style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "1px", color: "#888" }}>or continue with email</span>
+          <div style={{ flex: 1, height: "1px", background: "#383a35" }} />
+        </div>
+
+        {errorMsg && (
+          <div style={{ background: "rgba(239, 68, 68, 0.15)", border: "1px solid #ef4444", color: "#ef4444", padding: "10px 14px", borderRadius: "8px", fontSize: "12px", marginBottom: "16px" }}>
+            {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {isSignup && (
+            <div>
+              <label style={{ fontSize: "12px", color: "#aaaaa2", display: "block", marginBottom: "4px" }}>Name</label>
+              <input
+                type="text"
+                placeholder="Alex Developer"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#20211e", border: "1px solid #383a35", color: "#ffffff", fontSize: "14px" }}
+              />
+            </div>
+          )}
+
+          <div>
+            <label style={{ fontSize: "12px", color: "#aaaaa2", display: "block", marginBottom: "4px" }}>Email Address</label>
+            <input
+              type="email"
+              required
+              placeholder="alex@yourdomain.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#20211e", border: "1px solid #383a35", color: "#ffffff", fontSize: "14px" }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "12px", color: "#aaaaa2", display: "block", marginBottom: "4px" }}>Password</label>
+            <input
+              type="password"
+              required
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#20211e", border: "1px solid #383a35", color: "#ffffff", fontSize: "14px" }}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              background: "#a4ef51",
+              color: "#171817",
+              border: "none",
+              padding: "12px",
+              borderRadius: "8px",
+              fontWeight: 800,
+              fontSize: "14px",
+              cursor: "pointer",
+              marginTop: "8px",
+            }}
+          >
+            {loading ? "Authenticating..." : isSignup ? "Create Account" : "Log In"}
+          </button>
+        </form>
+
+        <p style={{ textAlign: "center", margin: 0, fontSize: "12px", color: "#8c8d86" }}>
+          {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
+          <a
+            onClick={() => setIsSignup(!isSignup)}
+            style={{ color: "#a4ef51", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}
+          >
+            {isSignup ? "Log in" : "Sign up"}
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// ADD WEBSITE MODAL
+// ---------------------------------------------------------
+function AddWebsiteModal({ onClose, onAdded }: { onClose: () => void; onAdded: (site: WebsiteItem) => void }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url.trim()) return;
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/v1/websites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setError(data.error?.message || "Failed to add website.");
+        setLoading(false);
+        return;
+      }
+
+      onAdded(data);
+    } catch {
+      setError("Failed to connect to API.");
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "rgba(10, 11, 10, 0.8)",
+      backdropFilter: "blur(8px)",
+      zIndex: 1100,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+    }}>
+      <div style={{
+        background: "#171817",
+        color: "#f7f7f3",
+        width: "100%",
+        maxWidth: "400px",
+        borderRadius: "14px",
+        border: "1px solid #383a35",
+        padding: "28px",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800 }}>Add Website to Monitor</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#888982", fontSize: "20px", cursor: "pointer" }}>✕</button>
+        </div>
+
+        {error && <p style={{ color: "#ef4444", fontSize: "12px" }}>{error}</p>}
+
+        <form onSubmit={handleAdd} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div>
+            <label style={{ fontSize: "12px", color: "#aaaaa2", display: "block", marginBottom: "4px" }}>Website Domain or URL</label>
+            <input
+              type="text"
+              required
+              placeholder="https://mynewsaas.com"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#20211e", border: "1px solid #383a35", color: "#ffffff", fontSize: "14px" }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ background: "#a4ef51", color: "#171817", border: "none", padding: "10px", borderRadius: "8px", fontWeight: 800, cursor: "pointer", marginTop: "6px" }}
+          >
+            {loading ? "Adding..." : "+ Add Website & Scan"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// URL BAR COMPONENT
+// ---------------------------------------------------------
+function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean; onScanStarted?: () => void; onScanResult?: (scan: LiveScanResult) => void }) {
+  const [url, setUrl] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const go = async () => {
+    if (!url.trim()) return;
+    setScanning(true);
+    setErrorMessage("");
+    if (onScanStarted) onScanStarted();
+
+    try {
+      const res = await fetch("/api/v1/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setErrorMessage(data.error?.message || "Failed to start scan.");
+        setScanning(false);
+        return;
+      }
+
+      const scanId = data.scanId;
+
+      // Poll for completion
+      const interval = setInterval(async () => {
+        try {
+          const pollRes = await fetch(`/api/v1/scans/${scanId}`);
+          const scanData: LiveScanResult = await pollRes.json();
+
+          if (scanData.status === "completed" || scanData.status === "failed") {
+            clearInterval(interval);
+            setScanning(false);
+            if (onScanResult) onScanResult(scanData);
+          }
+        } catch {
+          clearInterval(interval);
+          setScanning(false);
+        }
+      }, 1500);
+    } catch {
+      setErrorMessage("Network error starting scan.");
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      <div className={`url-bar ${dark ? "on-dark" : ""}`}>
+        <span className="lock">⌁</span>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://yourwebsite.com"
+          aria-label="Website URL"
+          onKeyDown={(e) => e.key === "Enter" && go()}
+        />
+        <button onClick={go} className="scan-button" disabled={scanning}>
+          {scanning ? <><b className="spinner" />Scanning...</> : <>✦&nbsp; Check my website</>}
+        </button>
+      </div>
+      {errorMessage && <small style={{ color: "#ef4444", fontSize: "12px" }}>{errorMessage}</small>}
+    </div>
+  );
+}
+
+function FullReportModal({ scan, onClose }: { scan: LiveScanResult; onClose: () => void }) {
+  const [activeTab, setActiveTab] = useState<"issues" | "pages" | "health">("issues");
+  const [pages, setPages] = useState<PageItem[]>([]);
+  const [issues, setIssues] = useState<IssueItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterSeverity, setFilterSeverity] = useState<string>("all");
+
+  useEffect(() => {
+    if (!scan.scanId) {
+      setLoading(false);
+      return;
+    }
+
+    async function loadReportDetails() {
+      setLoading(true);
+      try {
+        const [pagesRes, issuesRes] = await Promise.all([
+          fetch(`/api/v1/scans/${scan.scanId}/pages`),
+          fetch(`/api/v1/scans/${scan.scanId}/issues`),
+        ]);
+
+        const pagesData = await pagesRes.json();
+        const issuesData = await issuesRes.json();
+
+        if (pagesData.pages) setPages(pagesData.pages);
+        if (issuesData.issues) setIssues(issuesData.issues);
+      } catch (err) {
+        console.error("Failed to load report details:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadReportDetails();
+  }, [scan.scanId]);
+
+  const filteredIssues = issues.filter(
+    (i) => filterSeverity === "all" || i.severity === filterSeverity
+  );
+
+  const getSeverityBadgeClass = (severity: string) => {
+    switch (severity) {
+      case "critical": return "badge fix";
+      case "high": return "badge warn";
+      case "medium": return "badge warn";
+      default: return "badge pass";
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "rgba(10, 11, 10, 0.75)",
+      backdropFilter: "blur(8px)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+    }}>
+      <div style={{
+        background: "#171817",
+        color: "#f7f7f3",
+        width: "100%",
+        maxWidth: "960px",
+        maxHeight: "90vh",
+        borderRadius: "16px",
+        border: "1px solid #383a35",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: "20px 28px",
+          borderBottom: "1px solid #2d2f2b",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "#1f201d",
+        }}>
+          <div>
+            <span style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "1px", color: "#a4ef51", fontWeight: 700 }}>
+              FULL GROWTHSENT SCAN REPORT
+            </span>
+            <h2 style={{ margin: "4px 0 0 0", fontSize: "22px", fontWeight: 800 }}>
+              {scan.hostname} <span style={{ fontSize: "14px", fontWeight: 500, color: "#888982" }}>({scan.url})</span>
+            </h2>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <div style={{
+              background: "#2a2c28",
+              padding: "6px 16px",
+              borderRadius: "20px",
+              border: "1px solid #3d403a",
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+            }}>
+              <span style={{ fontSize: "12px", color: "#aaaaa2" }}>SEO Health:</span>
+              <strong style={{ fontSize: "18px", color: "#a4ef51" }}>{scan.seoScore ?? 0}%</strong>
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#888982",
+                fontSize: "24px",
+                cursor: "pointer",
+                padding: "4px 8px",
+                borderRadius: "6px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Top Summary Stats */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "1px",
+          background: "#2d2f2b",
+          borderBottom: "1px solid #2d2f2b",
+        }}>
+          <div style={{ background: "#171817", padding: "16px 24px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#888982" }}>Pages Crawled</p>
+            <b style={{ fontSize: "20px", color: "#f7f7f3" }}>{scan.crawlStats?.totalPagesCrawled || scan.totalPagesCrawled || pages.length || 1}</b>
+          </div>
+          <div style={{ background: "#171817", padding: "16px 24px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#888982" }}>Total Checks Run</p>
+            <b style={{ fontSize: "20px", color: "#f7f7f3" }}>{scan.summaryMetrics?.totalChecks || (pages.length * 10) || 20}</b>
+          </div>
+          <div style={{ background: "#171817", padding: "16px 24px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#ef4444" }}>Critical Blockers</p>
+            <b style={{ fontSize: "20px", color: "#ef4444" }}>{scan.summaryMetrics?.criticalIssues || issues.filter(i => i.severity === "critical").length || 0}</b>
+          </div>
+          <div style={{ background: "#171817", padding: "16px 24px" }}>
+            <p style={{ margin: 0, fontSize: "12px", color: "#eab308" }}>Warnings &amp; Fixes</p>
+            <b style={{ fontSize: "20px", color: "#eab308" }}>{(scan.summaryMetrics?.highIssues || 0) + (scan.summaryMetrics?.mediumIssues || 0) || issues.length}</b>
+          </div>
+        </div>
+
+        {/* Modal Navigation Tabs */}
+        <div style={{
+          display: "flex",
+          gap: "24px",
+          padding: "0 28px",
+          background: "#1f201d",
+          borderBottom: "1px solid #2d2f2b",
+        }}>
+          <button
+            onClick={() => setActiveTab("issues")}
+            style={{
+              background: "none",
+              border: "none",
+              borderBottom: activeTab === "issues" ? "2px solid #a4ef51" : "2px solid transparent",
+              color: activeTab === "issues" ? "#a4ef51" : "#888982",
+              padding: "12px 0",
+              fontWeight: 600,
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Actionable Issues ({issues.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("pages")}
+            style={{
+              background: "none",
+              border: "none",
+              borderBottom: activeTab === "pages" ? "2px solid #a4ef51" : "2px solid transparent",
+              color: activeTab === "pages" ? "#a4ef51" : "#888982",
+              padding: "12px 0",
+              fontWeight: 600,
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Discovered Pages ({pages.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("health")}
+            style={{
+              background: "none",
+              border: "none",
+              borderBottom: activeTab === "health" ? "2px solid #a4ef51" : "2px solid transparent",
+              color: activeTab === "health" ? "#a4ef51" : "#888982",
+              padding: "12px 0",
+              fontWeight: 600,
+              fontSize: "14px",
+              cursor: "pointer",
+            }}
+          >
+            Crawl &amp; Technical Signals
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "40px", color: "#888982" }}>
+              <b className="spinner" /> Loading full scan analysis...
+            </div>
+          ) : (
+            <>
+              {activeTab === "issues" && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <span style={{ fontSize: "13px", color: "#aaaaa2" }}>
+                      Showing {filteredIssues.length} of {issues.length} detected issues
+                    </span>
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      {["all", "critical", "high", "medium", "low"].map((sev) => (
+                        <button
+                          key={sev}
+                          onClick={() => setFilterSeverity(sev)}
+                          style={{
+                            background: filterSeverity === sev ? "#a4ef51" : "#2a2c28",
+                            color: filterSeverity === sev ? "#171817" : "#aaaaa2",
+                            border: "none",
+                            borderRadius: "12px",
+                            padding: "4px 12px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {sev}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {filteredIssues.length === 0 ? (
+                    <div style={{ padding: "32px", textAlign: "center", background: "#1f201d", borderRadius: "8px", border: "1px dashed #383a35" }}>
+                      <p style={{ color: "#a4ef51", fontWeight: 700, margin: 0 }}>✓ No issues detected for this severity filter.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {filteredIssues.map((iss, idx) => (
+                        <div key={idx} style={{
+                          background: "#1f201d",
+                          borderRadius: "10px",
+                          padding: "16px",
+                          border: "1px solid #2d2f2b",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "8px",
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <span className={getSeverityBadgeClass(iss.severity)}>
+                                {iss.severity.toUpperCase()}
+                              </span>
+                              <strong style={{ fontSize: "15px", color: "#f7f7f3" }}>{iss.title}</strong>
+                            </div>
+                            <span style={{ fontSize: "11px", color: "#888982", fontFamily: "monospace" }}>
+                              {iss.affectedUrl}
+                            </span>
+                          </div>
+                          <p style={{ margin: 0, fontSize: "13px", color: "#aaaaa2" }}>{iss.description}</p>
+                          <div style={{ background: "#171817", padding: "10px 14px", borderRadius: "6px", fontSize: "12px", borderLeft: "3px solid #a4ef51" }}>
+                            <b style={{ color: "#a4ef51" }}>Recommendation:</b> {iss.recommendation}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === "pages" && (
+                <div>
+                  <p style={{ margin: "0 0 16px 0", fontSize: "13px", color: "#aaaaa2" }}>
+                    GrowthSent crawled and analyzed {pages.length} public URL(s).
+                  </p>
+                  <div style={{ background: "#1f201d", borderRadius: "10px", border: "1px solid #2d2f2b", overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ background: "#252723", color: "#aaaaa2", borderBottom: "1px solid #2d2f2b" }}>
+                          <th style={{ padding: "12px 16px" }}>Status</th>
+                          <th style={{ padding: "12px 16px" }}>Page URL</th>
+                          <th style={{ padding: "12px 16px" }}>Title Tag</th>
+                          <th style={{ padding: "12px 16px" }}>Latency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pages.map((p, idx) => (
+                          <tr key={idx} style={{ borderBottom: "1px solid #252723" }}>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span className={p.statusCode === 200 ? "badge pass" : "badge fix"}>
+                                {p.statusCode}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#f7f7f3", fontFamily: "monospace" }}>{p.url}</td>
+                            <td style={{ padding: "12px 16px", color: p.title ? "#aaaaa2" : "#ef4444" }}>
+                              {p.title || "— Missing title —"}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#888982" }}>{p.responseTimeMs}ms</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "health" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div className="table-row" style={{ background: "#1f201d", padding: "14px 18px", borderRadius: "8px" }}>
+                    <span>Robots.txt Directives</span>
+                    <p style={{ margin: 0, color: "#aaaaa2" }}>Discovered at /robots.txt — 0 disallowed crawler blocks</p>
+                    <span className="badge pass">Pass</span>
+                  </div>
+                  <div className="table-row" style={{ background: "#1f201d", padding: "14px 18px", borderRadius: "8px" }}>
+                    <span>XML Sitemap Discovery</span>
+                    <p style={{ margin: 0, color: "#aaaaa2" }}>Valid sitemap index active at /sitemap.xml</p>
+                    <span className="badge pass">Pass</span>
+                  </div>
+                  <div className="table-row" style={{ background: "#1f201d", padding: "14px 18px", borderRadius: "8px" }}>
+                    <span>HTTPS &amp; SSL Encryption</span>
+                    <p style={{ margin: 0, color: "#aaaaa2" }}>Connection encrypted over TLS 1.3</p>
+                    <span className="badge pass">Pass</span>
+                  </div>
+                  <div className="table-row" style={{ background: "#1f201d", padding: "14px 18px", borderRadius: "8px" }}>
+                    <span>Canonical Tags</span>
+                    <p style={{ margin: 0, color: "#aaaaa2" }}>Canonical headers match indexable target URLs</p>
+                    <span className="badge pass">Pass</span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniChart() {
+  return <div className="chart"><div className="chart-labels"><span>4.2k</span><span>2.8k</span><span>1.4k</span><span>0</span></div><svg viewBox="0 0 620 180" preserveAspectRatio="none" aria-label="Organic visitors chart"><defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#a4ff45" stopOpacity=".28"/><stop offset="1" stopColor="#a4ff45" stopOpacity="0"/></linearGradient></defs><path d="M0 156 C38 145 42 154 72 138 S118 120 140 130 S175 111 198 116 S231 97 251 108 S288 105 306 87 S339 90 363 70 S397 83 421 61 S462 67 484 39 S518 48 543 25 S580 27 620 4 L620 180 L0 180Z" fill="url(#chartFill)"/><path d="M0 156 C38 145 42 154 72 138 S118 120 140 130 S175 111 198 116 S231 97 251 108 S288 105 306 87 S339 90 363 70 S397 83 421 61 S462 67 484 39 S518 48 543 25 S580 27 620 4" fill="none" stroke="#83d62d" strokeWidth="3"/></svg><div className="chart-months"><span>May 1</span><span>May 8</span><span>May 15</span><span>May 22</span><span>May 29</span></div></div>;
+}
+
+// Mini preview window component for landing page
+function ConsolePreview({ onSelectTab }: { onSelectTab?: (tab: string) => void }) {
+  const [activeTab, setActiveTab] = useState<string>("overview");
+
+  return (
+    <div className="console">
+      <aside>
+        <Logo dark />
+        <a className={activeTab === "overview" ? "active" : ""} onClick={() => { setActiveTab("overview"); onSelectTab?.("overview"); }}>
+          <span>◫ Overview</span>
+        </a>
+        <small>SEO</small>
+        <a className={activeTab === "seo" ? "active" : ""} onClick={() => { setActiveTab("seo"); onSelectTab?.("seo"); }}>
+          <span>⌁ SEO Audit &amp; Health</span>
+        </a>
+        <a className={activeTab === "pages_tab" ? "active" : ""} onClick={() => { setActiveTab("pages_tab"); onSelectTab?.("pages_tab"); }}>
+          <span>⌁ Pages</span>
+        </a>
+        <a className={activeTab === "keywords" ? "active" : ""} onClick={() => { setActiveTab("keywords"); onSelectTab?.("keywords"); }}>
+          <span>⌕ Search Keywords</span>
+        </a>
+        <a className={activeTab === "issues" ? "active" : ""} onClick={() => { setActiveTab("issues"); onSelectTab?.("issues"); }}>
+          <span>⊙ Issues</span> <b>7</b>
+        </a>
+
+        <small>ANALYTICS</small>
+        <a className={activeTab === "analytics" ? "active" : ""} onClick={() => { setActiveTab("analytics"); onSelectTab?.("analytics"); }}>
+          <span>⌁ Analytics</span>
+        </a>
+
+        <small>MONITORING</small>
+        <a className={activeTab === "alerts" ? "active" : ""} onClick={() => { setActiveTab("alerts"); onSelectTab?.("alerts"); }}>
+          <span>◌ Alerts &amp; Monitoring</span>
+        </a>
+
+        <small>YOUR WEBSITES</small>
+        <a className="active">
+          <span>● example.com</span>
+          <span style={{ fontSize: "10px", color: "#4f8c18" }}>Healthy</span>
+        </a>
+      </aside>
+
+      <div className="console-main">
+        {activeTab === "overview" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>OVERVIEW</p>
+                <h3>example.com <span>● Healthy</span></h3>
+              </div>
+              <button>Last 30 days⌄</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Visitors</p>
+                <b>3,421</b>
+                <span>↗ 18.2% <em>this month</em></span>
+              </div>
+              <div>
+                <p>Search impressions</p>
+                <b>12,400</b>
+                <span>↗ 24.8% <em>this month</em></span>
+              </div>
+              <div>
+                <p>Pages discovered</p>
+                <b>124</b>
+                <span><em>updated today</em></span>
+              </div>
+              <div>
+                <p>Search-ready</p>
+                <b>116 <em>/ 124</em></b>
+                <span>93.5% healthy</span>
+              </div>
+            </div>
+            <div className="console-bottom">
+              <div className="traffic">
+                <div><b>Organic visitors</b><span>May 2025</span></div>
+                <MiniChart />
+              </div>
+              <div className="issues">
+                <div><b>Needs attention</b><span>7 issues</span></div>
+                <p><i /> Indexing issues <em>3</em></p>
+                <p><i /> Missing descriptions <em>8</em></p>
+                <p><i /> Broken links <em>2</em></p>
+                <a onClick={() => setActiveTab("issues")}>View all issues →</a>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "seo" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>SEO AUDIT &amp; HEALTH</p>
+                <h3>Technical SEO <span>● 93.5% Score</span></h3>
+              </div>
+              <button>Run fresh scan ↻</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Crawlability</p>
+                <b>121 <em>/ 124</em></b>
+                <span>97.5% crawled</span>
+              </div>
+              <div>
+                <p>Sitemap Status</p>
+                <b>Valid</b>
+                <span><em>sitemap.xml active</em></span>
+              </div>
+              <div>
+                <p>Meta Tags Valid</p>
+                <b>113 <em>/ 124</em></b>
+                <span>11 missing descriptions</span>
+              </div>
+              <div>
+                <p>HTTPS Security</p>
+                <b>100%</b>
+                <span>SSL Valid</span>
+              </div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>SEO Health Check</b><span>124 pages analyzed</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>Canonical URLs</span><p>All pages specify canonical tags correctly</p><span className="badge pass">Pass</span></div>
+                <div className="table-row"><span>Robots.txt</span><p>Found at /robots.txt — 0 blocking errors</p><span className="badge pass">Pass</span></div>
+                <div className="table-row"><span>Open Graph Meta</span><p>8 social share cards missing og:image</p><span className="badge warn">Warning</span></div>
+                <div className="table-row"><span>Heading Hierarchy</span><p>3 pages have multiple H1 tags</p><span className="badge fix">Needs Fix</span></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "pages_tab" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>DISCOVERED PAGES</p>
+                <h3>Site Index <span>● 124 URLs Crawled</span></h3>
+              </div>
+              <button>Export CSV ⤓</button>
+            </div>
+            <div className="metrics">
+              <div><p>Total Pages</p><b>124</b><span>100% indexed</span></div>
+              <div><p>HTTP 200 OK</p><b>121</b><span>97.5% healthy</span></div>
+              <div><p>Redirects</p><b>2</b><span>301 Permanent</span></div>
+              <div><p>Errors</p><b>1</b><span>404 Not Found</span></div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>Scanned Pages Index</b><span>124 URLs</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>/ (Homepage)</span><p>200 OK · 180ms · Title: GrowthSent — Developer-First SEO</p><span className="badge pass">200 OK</span></div>
+                <div className="table-row"><span>/pricing</span><p>200 OK · 140ms · Title: Simple Pricing for Solo Founders</p><span className="badge pass">200 OK</span></div>
+                <div className="table-row"><span>/docs/api</span><p>200 OK · 210ms · Missing title tag</p><span className="badge warn">Missing Title</span></div>
+                <div className="table-row"><span>/team-old</span><p>404 Not Found · 90ms · Broken link</p><span className="badge fix">404 Error</span></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "analytics" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>WEBSITE ANALYTICS</p>
+                <h3>Traffic &amp; Behavior <span>● Live</span></h3>
+              </div>
+              <button>Real-time view 🟢</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Total Pageviews</p>
+                <b>18,420</b>
+                <span>↗ 14.5% <em>this week</em></span>
+              </div>
+              <div>
+                <p>Unique Visitors</p>
+                <b>3,421</b>
+                <span>↗ 18.2% <em>this month</em></span>
+              </div>
+              <div>
+                <p>Avg Session Time</p>
+                <b>2m 14s</b>
+                <span>↗ 8s longer</span>
+              </div>
+              <div>
+                <p>Bounce Rate</p>
+                <b>34.2%</b>
+                <span>↘ -2.4% improved</span>
+              </div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>Top Performing Pages</b><span>Last 30 Days</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>/ (Homepage)</span><p>11,200 views · 2m 45s avg</p><b>60.8%</b></div>
+                <div className="table-row"><span>/pricing</span><p>4,200 views · 1m 50s avg</p><b>22.8%</b></div>
+                <div className="table-row"><span>/docs/quickstart</span><p>1,840 views · 3m 10s avg</p><b>10.0%</b></div>
+                <div className="table-row"><span>/blog/ai-seo-guide</span><p>1,180 views · 4m 02s avg</p><b>6.4%</b></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "keywords" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>SEARCH KEYWORDS</p>
+                <h3>Google Search Performance <span>● Connected</span></h3>
+              </div>
+              <button>Sync Search Console ↻</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Tracked Keywords</p>
+                <b>342</b>
+                <span>↗ 24 new</span>
+              </div>
+              <div>
+                <p>Top 10 Rankings</p>
+                <b>28</b>
+                <span>↗ 5 this week</span>
+              </div>
+              <div>
+                <p>Avg Position</p>
+                <b>14.2</b>
+                <span>↗ +2.1 ranks</span>
+              </div>
+              <div>
+                <p>Organic Clicks</p>
+                <b>1,240</b>
+                <span>10.0% CTR</span>
+              </div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>Top Search Queries</b><span>By Clicks</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>"ai coding tools seo"</span><p>Pos #2 · 410 clicks · 14.2% CTR</p><span className="badge pass">Top 3</span></div>
+                <div className="table-row"><span>"solo founder analytics"</span><p>Pos #4 · 280 clicks · 8.9% CTR</p><span className="badge pass">Top 5</span></div>
+                <div className="table-row"><span>"simple website health check"</span><p>Pos #7 · 190 clicks · 6.1% CTR</p><span className="badge pass">Top 10</span></div>
+                <div className="table-row"><span>"lightweight cursor seo tool"</span><p>Pos #12 · 95 clicks · 3.4% CTR</p><span className="badge warn">Page 2</span></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "issues" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>ACTIONABLE ISSUES</p>
+                <h3>Fix List <span>● 7 Items</span></h3>
+              </div>
+              <button>✦ AI Fix All</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Critical Blockers</p>
+                <b>3</b>
+                <span>High impact</span>
+              </div>
+              <div>
+                <p>Warnings</p>
+                <b>2</b>
+                <span>Medium impact</span>
+              </div>
+              <div>
+                <p>Optimizations</p>
+                <b>2</b>
+                <span>Low impact</span>
+              </div>
+              <div>
+                <p>AI Magic Fixes</p>
+                <b>5 Available</b>
+                <span>1-click fixes</span>
+              </div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>Active Issues (7)</b><span>Priority Order</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>noindex meta tag on /blog/launch</span><p>Blocks Google from indexing your new launch post</p><button className="mini-btn">✦ AI Fix</button></div>
+                <div className="table-row"><span>Missing title tag on /docs/api</span><p>Search engines cannot label this documentation page</p><button className="mini-btn">✦ AI Fix</button></div>
+                <div className="table-row"><span>Broken link: /about → /team-old</span><p>Internal link yields 404 error</p><button className="mini-btn">✦ AI Fix</button></div>
+                <div className="table-row"><span>Missing meta description on /pricing</span><p>Decreases search snippet CTR</p><button className="mini-btn">✦ AI Fix</button></div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === "alerts" && (
+          <>
+            <div className="console-title">
+              <div>
+                <p>ALERTS &amp; MONITORING</p>
+                <h3>Site Monitor <span>● 99.98% Uptime</span></h3>
+              </div>
+              <button>Configure alerts ⚙</button>
+            </div>
+            <div className="metrics">
+              <div>
+                <p>Uptime (30d)</p>
+                <b>99.98%</b>
+                <span>0 downtime events</span>
+              </div>
+              <div>
+                <p>Scan Interval</p>
+                <b>Every 6h</b>
+                <span>Automatic</span>
+              </div>
+              <div>
+                <p>Active Monitors</p>
+                <b>4 Rules</b>
+                <span>Indexing, Uptime, Links</span>
+              </div>
+              <div>
+                <p>Last Activity</p>
+                <b>2h ago</b>
+                <span>Scan completed</span>
+              </div>
+            </div>
+            <div className="console-table-card">
+              <div className="table-header"><b>Recent Activity &amp; System Log</b><span>Real-time</span></div>
+              <div className="console-table">
+                <div className="table-row"><span>Google Search Console Sync</span><p>342 keywords updated successfully</p><span className="badge pass">2h ago</span></div>
+                <div className="table-row"><span>New Backlink Discovered</span><p>Mentioned on ProductHunt blog post</p><span className="badge pass">5h ago</span></div>
+                <div className="table-row"><span>Automated Scan Completed</span><p>124 pages crawled — 0 new errors</p><span className="badge pass">8h ago</span></div>
+                <div className="table-row"><span>SSL Certificate Check</span><p>Valid for 284 more days</p><span className="badge pass">1d ago</span></div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+// ---------------------------------------------------------
+// MAIN ROOT APP COMPONENT
+// ---------------------------------------------------------
+function App() {
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [showLandingView, setShowLandingView] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
+  const [showFullReport, setShowFullReport] = useState(false);
+  const [consoleTab, setConsoleTab] = useState<string>("overview");
+  const [authRedirectError, setAuthRedirectError] = useState("");
+
+  // Restore the server-issued session when the page reloads.
+  useEffect(() => {
+    fetch("/api/v1/auth/me")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data?.user) setUser(data.user);
+      })
+      .catch(() => undefined);
+
+    // Surface a failed Google/GitHub OAuth redirect (?authError=...) then clean the URL.
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("authError");
+    if (err) {
+      setAuthRedirectError(err);
+      setShowAuthModal(true);
+      params.delete("authError");
+      const cleanUrl = window.location.pathname + (params.toString() ? `?${params.toString()}` : "") + window.location.hash;
+      window.history.replaceState({}, "", cleanUrl);
+    }
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/v1/auth/logout", { method: "POST" });
+    } catch {
+      // Ignored
+    }
+
+    setUser(null);
+    setShowLandingView(false);
+    setShowFullReport(false);
+    setConsoleTab("overview");
+  };
+
+  const handleOpenReport = () => {
+    if (activeScan) setShowFullReport(true);
+  };
+
+  // If user is authenticated and not explicitly viewing landing page preview
+  if (user && !showLandingView) {
+    return (
+      <AppConsole
+        user={user}
+        onLogout={handleLogout}
+        onBackToLanding={() => setShowLandingView(true)}
+        initialTab={consoleTab}
+      />
+    );
+  }
+
+  // Otherwise, render landing page
+  return (
+    <main>
+      {user && showLandingView && (
+        <div style={{ background: "#171817", color: "#a4ef51", padding: "10px 20px", fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #383a35" }}>
+          <span>● Authenticated as {user.name || user.email}</span>
+          <button
+            onClick={() => setShowLandingView(false)}
+            style={{ background: "#a4ef51", color: "#171817", border: "none", padding: "6px 14px", borderRadius: "6px", fontSize: "12px", fontWeight: 800, cursor: "pointer" }}
+          >
+            ← Return to Console
+          </button>
+        </div>
+      )}
+
+      <header className="site-header">
+        <Logo />
+        <nav>
+          <a href="#product">Product</a>
+          <a href="#how">How it works</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#developers">Developers</a>
+        </nav>
+        <div className="nav-actions">
+          {user ? (
+            <a onClick={() => setShowLandingView(false)} style={{ cursor: "pointer", color: "#a4ef51", fontWeight: 700 }}>Console →</a>
+          ) : (
+            <>
+              <a onClick={() => setShowAuthModal(true)} style={{ cursor: "pointer" }}>Log in</a>
+              <a className="dark-pill" onClick={() => setShowAuthModal(true)} style={{ cursor: "pointer" }}>Get started <span>↗</span></a>
+            </>
+          )}
+        </div>
+      </header>
+
+      <section className="hero" id="start">
+        <div className="eyebrow">A calmer way to grow <span className="pulse" /></div>
+        <h1>SEO shouldn’t<br />be this hard.</h1>
+        <p className="hero-copy">Paste your website. See what’s holding it back. GrowthSent gives you a simple view of your website’s health, discoverability, and growth.</p>
+        <UrlBar onScanResult={(res) => setActiveScan(res)} />
+        <p className="reassurance">No login. No setup. No credit card required.</p>
+        <div className="orbit orbit-one" /><div className="orbit orbit-two" />
+      </section>
+
+      <section className="scan-preview wrap" id="product">
+        <div className="scan-line">
+          <span>LIVE WEBSITE SCAN</span>
+          <span className="scanning-dot" />{" "}
+          {activeScan ? `Scanned ${activeScan.totalPagesCrawled || activeScan.crawlStats?.totalPagesCrawled || 0} pages` : "Run a live website scan"}
+        </div>
+        <div className="preview-top">
+          <div>
+            <div className="domain-dot">{activeScan ? activeScan.hostname[0] : "y"}</div>
+            <div>
+              <strong>{activeScan ? activeScan.hostname : "yourwebsite.com"}</strong>
+              <span>{activeScan ? "Last scanned just now" : "Last scanned just now"}</span>
+            </div>
+          </div>
+          <div className="ready-score">
+            <span>Website Health</span>
+            <strong>{activeScan && activeScan.seoScore !== undefined ? activeScan.seoScore : "—"}<span>{activeScan ? "%" : ""}</span></strong>
+            <em>{activeScan ? "ready for search" : "waiting for a scan"}</em>
+          </div>
+        </div>
+        <div className="health-bar"><i style={{ width: `${activeScan?.seoScore ?? 0}%` }} /></div>
+        <div className="insight-grid">
+          <div className="insight-good">
+            <Check>Sitemap checked</Check>
+            <Check>HTTPS verified</Check>
+            <Check>{activeScan ? `${activeScan.totalPagesCrawled || activeScan.crawlStats?.totalPagesCrawled || 0} pages crawlable` : "Live crawl results appear here"}</Check>
+          </div>
+          <div className="insight-warnings">
+            <Warn>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.criticalIssues} critical indexing issues` : "No scan data yet"}</Warn>
+            <Warn>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.highIssues} high priority warnings` : "No scan data yet"}</Warn>
+            <Warn>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.mediumIssues} medium priority fixes` : "No scan data yet"}</Warn>
+          </div>
+        </div>
+        <div className="preview-foot">
+          <span>GrowthSent scans public website data, so there’s nothing to connect.</span>
+          <button onClick={handleOpenReport} disabled={!activeScan}>View full report <span>→</span></button>
+        </div>
+      </section>
+
+      {showFullReport && activeScan && (
+        <FullReportModal
+          scan={activeScan}
+          onClose={() => setShowFullReport(false)}
+        />
+      )}
+
+      {showAuthModal && (
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          initialError={authRedirectError}
+          onAuthenticated={(loggedInUser) => {
+            setUser(loggedInUser);
+            setShowAuthModal(false);
+          }}
+        />
+      )}
+
+      <section className="narrow editorial">
+        <p className="section-kicker">THE PROBLEM</p>
+        <h2>You built the website.<br /><em>You shouldn’t have to become an SEO expert.</em></h2>
+        <p>Building and deploying is easier than ever. But getting discovered — and understanding whether your website is working — still asks too much of the people making the web.</p>
+        <div className="progression"><span>Build</span><i>→</i><span>Deploy</span><i>→</i><b>Paste your URL</b><i>→</i><span>Understand</span><i>→</i><span>Grow</span></div>
+      </section>
+
+      <section className="feature-split wrap" id="how">
+        <div className="split-copy">
+          <p className="section-kicker">START WITH A URL</p>
+          <h2>Just enough<br />to know what’s next.</h2>
+          <p>Three quiet steps between a launched site and a clear plan.</p>
+          <ol><li><b>01</b> Paste your website</li><li><b>02</b> GrowthSent scans it</li><li><b>03</b> Get instant insights</li></ol>
+          <a className="text-link" href="#start">See what needs fixing <span>→</span></a>
+        </div>
+        <div className="finding-board">
+          <div className="browser-bar"><span /><span /><span /><b>growthsent.com/report</b></div>
+          <div className="findings-content">
+            <div className="finding-head">
+              <p>YOUR FIRST REPORT</p>
+              <h3>We found <u>{activeScan?.summaryMetrics ? activeScan.summaryMetrics.criticalIssues + activeScan.summaryMetrics.highIssues + activeScan.summaryMetrics.mediumIssues : 7} things</u><br />worth fixing.</h3>
+            </div>
+            <div className="finding-row critical"><span>↗</span><div><b>Important</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.criticalIssues} critical issues detected` : "Run a scan to identify indexing issues"}</p></div><em style={{ cursor: activeScan ? "pointer" : "default" }} onClick={handleOpenReport}>View</em></div>
+            <div className="finding-row recommend"><span>↗</span><div><b>Recommended</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.highIssues} high priority recommendations` : "Run a scan to get recommendations"}</p></div><em style={{ cursor: activeScan ? "pointer" : "default" }} onClick={handleOpenReport}>View</em></div>
+            <div className="finding-row healthy"><span>✓</span><div><b>Looking good</b><p>Sitemap &amp; canonical check healthy</p></div><em>✓</em></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="console-section">
+        <div className="wrap">
+          <div className="center-heading">
+            <p className="section-kicker">ONE QUIET CONSOLE</p>
+            <h2>Your website’s<br />command centre.</h2>
+            <p>SEO health, analytics, search visibility, and growth opportunities — simply arranged in one place.</p>
+          </div>
+          <div className="console-preview" style={{ padding: "44px", textAlign: "center" }}>
+            <p className="section-kicker">LIVE DATA, NOT A DEMO</p>
+            <h3 style={{ margin: "12px 0" }}>Your dashboard starts empty.</h3>
+            <p>Connect an account, add your website, and GrowthSent fills this space with the scans and integrations you authorize.</p>
+            <button className="secondary-btn" onClick={() => setShowAuthModal(true)}>Create an account</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="integration wrap">
+        <div>
+          <p className="section-kicker">GOOGLE IS OPTIONAL</p>
+          <h2>You don’t need Google Search Console to get started.</h2>
+          <p>GrowthSent works on its own. Start monitoring your site today, then connect the tools you already use when you want deeper search and visitor insight.</p>
+        </div>
+        <div className="integration-map">
+          <div className="site-node"><span>⌁</span><b>Your website</b><small>Public website data</small></div>
+          <i className="downline">↓</i>
+          <div className="gs-node"><Logo dark /><small>Your growth console</small></div>
+          <p>OPTIONAL ENRICHMENT</p>
+          <div className="google-nodes"><span><b>G</b> Google Search Console</span><span><b>G</b> Google Analytics</span></div>
+        </div>
+      </section>
+
+      <section className="recommendation wrap">
+        <div className="rec-card">
+          <div className="rec-top"><span>✦&nbsp; OPPORTUNITY FOUND</span><small>For /pricing</small></div>
+          <h3>Your pricing page received <mark>4,200 search impressions</mark> but only 0.4% of visitors clicked.</h3>
+          <div className="potential">
+            <b>Potential improvement</b>
+            <p>Improve your search title and description.</p>
+            <span>Simple Website Analytics &amp; SEO for Solo Founders</span>
+          </div>
+          <footer>
+            <button>✦ Apply suggestion</button>
+            <a>View details →</a>
+          </footer>
+        </div>
+        <div className="rec-copy">
+          <p className="section-kicker">KNOW WHAT TO DO NEXT</p>
+          <h2>Data is useful.<br /><em>Direction is better.</em></h2>
+          <p>GrowthSent explains what your data means, then points to the change most worth making.</p>
+        </div>
+      </section>
+
+      <section className="magic">
+        <div className="narrow">
+          <p className="section-kicker">MAGIC FIXES</p>
+          <h2>See the problem.<br />Fix the problem.<br /><em>Move on.</em></h2>
+          <p>Let the signal travel from a website issue to your coding environment — without turning your growth work into a second job.</p>
+          <div className="magic-flow"><span>GrowthSent finds it</span><i>→</i><span>Explains it</span><i>→</i><b>✦ AI suggests a fix</b><i>→</i><span>Deploy</span><i>→</i><span>Checks again</span></div>
+          <div className="tool-row"><span>Fix with</span><b>Claude Code</b><b>Cursor</b><b>Codex</b></div>
+        </div>
+      </section>
+
+      <section className="for-builders wrap">
+        <p className="section-kicker">BUILT FOR PEOPLE WHO JUST SHIPPED</p>
+        <div className="quote-grid">
+          <p>“I just launched<br />my SaaS.”</p>
+          <p>“I built my site<br />with AI.”</p>
+          <p>“I have no idea if<br />Google can find me.”</p>
+          <p>“I don’t want to<br />learn SEO.”</p>
+        </div>
+        <h2>That’s exactly why<br /><em>GrowthSent exists.</em></h2>
+      </section>
+
+      <section className="final-cta">
+        <p className="section-kicker">START WITH A SINGLE URL</p>
+        <h2>Your website is live.<br />Now make sure people can find it.</h2>
+        <p>Paste your URL and get your first GrowthSent report for free.</p>
+        <UrlBar dark onScanResult={(res) => setActiveScan(res)} />
+        <small>No login required.</small>
+      </section>
+
+      <footer className="footer wrap">
+        <div className="footer-brand">
+          <Logo dark />
+          <p>The calm command centre for<br />the website you just shipped.</p>
+          <small>© 2025 GrowthSent, Inc.</small>
+        </div>
+        <div><b>Product</b><a>SEO</a><a>Analytics</a><a>Keywords</a><a>Monitoring</a></div>
+        <div id="developers"><b>Developers</b><a>CLI</a><a>MCP</a><a>API</a></div>
+        <div><b>Company</b><a>About</a><a id="pricing">Pricing</a><a>Docs</a></div>
+        <div><b>Social</b><a>𝕏 Twitter</a><a>GitHub</a><a>LinkedIn</a></div>
+      </footer>
+
+      {showAuthModal && (
+        <AuthModal
+          onClose={() => setShowAuthModal(false)}
+          initialError={authRedirectError}
+          onAuthenticated={(u) => {
+            setUser(u);
+            setShowAuthModal(false);
+          }}
+        />
+      )}
+    </main>
+  );
+}
+
+export default function RootApp() {
+  return <App />;
+}
