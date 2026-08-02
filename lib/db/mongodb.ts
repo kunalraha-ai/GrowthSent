@@ -22,20 +22,16 @@ export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db
   }
 
   const uri = process.env.MONGODB_URI?.trim();
-  const dbName = process.env.MONGODB_DB_NAME?.trim();
+  const dbName = process.env.MONGODB_DB_NAME?.trim() || "GrowthSent";
 
   if (!uri) {
-    throw new Error("Database is not configured. Set MONGODB_URI before starting GrowthSent.");
-  }
-
-  if (!dbName) {
-    throw new Error("Database is not configured. Set MONGODB_DB_NAME before starting GrowthSent.");
+    throw new Error("Database is not configured. Set MONGODB_URI in Vercel project settings.");
   }
 
   connecting = (async () => {
     const client = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 10_000,
-      connectTimeoutMS: 10_000,
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
     });
 
     try {
