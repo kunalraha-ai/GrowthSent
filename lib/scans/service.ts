@@ -44,6 +44,7 @@ export async function createScan(options: CreateScanOptions): Promise<ScanDocume
       infoIssues: 0,
     },
     seoScore: 0,
+    ruleVersion: "1.0.0",
     scoreVersion: "1.0.0",
     createdAt: new Date(),
   };
