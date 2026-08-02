@@ -102,7 +102,14 @@ function AuthModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isSignup ? { email, password, name } : { email, password }),
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        setErrorMsg(`Server error (${res.status}). Ensure MONGODB_URI and SESSION_SECRET environment variables are set in Vercel.`);
+        setLoading(false);
+        return;
+      }
 
       if (!res.ok || data.error) {
         setErrorMsg(data.error?.message || "Authentication failed.");
@@ -1181,7 +1188,14 @@ function App() {
   // Restore the server-issued session when the page reloads.
   useEffect(() => {
     fetch("/api/v1/auth/me")
-      .then(async (response) => (response.ok ? response.json() : null))
+      .then(async (response) => {
+        if (!response.ok) return null;
+        try {
+          return await response.json();
+        } catch {
+          return null;
+        }
+      })
       .then((data) => {
         if (data?.user) setUser(data.user);
       })
