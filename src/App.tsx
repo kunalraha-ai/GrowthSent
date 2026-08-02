@@ -1,12 +1,9 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
+import { Logo } from "./components/Logo";
 
 const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
 const Warn = ({ children }: { children: ReactNode }) => <div className="warn"><span>!</span>{children}</div>;
-
-function Logo({ dark = false }: { dark?: boolean }) {
-  return <div className={`brand ${dark ? "on-dark" : ""}`}><span className="brand-mark"><i /><i /><i /></span><span>GrowthSent</span></div>;
-}
 
 export interface LiveScanResult {
   scanId: string;

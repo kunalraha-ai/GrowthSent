@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { Sidebar, Logo } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
+import { Logo } from "../Logo";
 import { OverviewView } from "./OverviewView";
 import { SeoAuditView } from "./SeoAuditView";
 import { PagesView } from "./PagesView";

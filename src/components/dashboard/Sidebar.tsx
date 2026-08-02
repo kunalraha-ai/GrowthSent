@@ -1,31 +1,5 @@
 import React from "react";
-
-export interface SidebarProps {
-  activeTab: string;
-  onSelectTab: (tab: string) => void;
-  websites: { hostname: string; displayName?: string }[];
-  activeSite: string;
-  onSelectSite: (site: string) => void;
-  onAddSite: () => void;
-  onLogout?: () => void;
-  user?: { name?: string; email: string };
-  onBackToLanding?: () => void;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
-}
-
-export function Logo({ dark = false, iconOnly = false }: { dark?: boolean; iconOnly?: boolean }) {
-  return (
-    <div className={`brand ${dark ? "on-dark" : ""} ${iconOnly ? "icon-only" : ""}`}>
-      <span className="brand-mark">
-        <i />
-        <i />
-        <i />
-      </span>
-      {!iconOnly && <span>GrowthSent</span>}
-    </div>
-  );
-}
+import { Logo } from "../Logo";
 
 // Crisp SVG Icons for Navigation Items
 const Icons = {
@@ -111,6 +85,20 @@ const Icons = {
     </svg>
   ),
 };
+
+export interface SidebarProps {
+  activeTab: string;
+  onSelectTab: (tab: string) => void;
+  websites: { hostname: string; displayName?: string }[];
+  activeSite: string;
+  onSelectSite: (site: string) => void;
+  onAddSite: () => void;
+  onLogout?: () => void;
+  user?: { name?: string; email: string };
+  onBackToLanding?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}
 
 export function Sidebar({
   activeTab,
