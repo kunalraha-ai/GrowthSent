@@ -1,4 +1,4 @@
-import { IssueCategory, Severity } from "../db/types";
+import { IssueCategory, Severity } from "../db/types.js";
 
 export interface SEORuleDefinition {
   ruleId: string;

@@ -1,4 +1,4 @@
-import { connectToDatabase } from "./mongodb";
+import { connectToDatabase } from "./mongodb.js";
 
 export async function initializeDatabaseIndexes() {
   const { db } = await connectToDatabase();

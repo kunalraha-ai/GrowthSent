@@ -1,4 +1,4 @@
-import { connectToDatabase } from "../db/mongodb";
+import { connectToDatabase } from "../db/mongodb.js";
 
 export interface AdminStatsSummary {
   totalUsers: number;

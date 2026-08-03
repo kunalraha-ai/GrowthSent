@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { ObjectId } from "mongodb";
-import { connectToDatabase, safeObjectId } from "../db/mongodb";
-import { IntegrationDocument, WebsiteDocument } from "../db/types";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { IntegrationDocument, WebsiteDocument } from "../db/types.js";
 
 export type GoogleProvider = "google_search_console" | "google_analytics";
 

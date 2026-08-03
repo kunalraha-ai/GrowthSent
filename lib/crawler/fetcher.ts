@@ -1,4 +1,4 @@
-import { validateUrlForScan } from "../security/ssrf";
+import { validateUrlForScan } from "../security/ssrf.js";
 
 export interface FetchOptions {
   timeoutMs?: number;

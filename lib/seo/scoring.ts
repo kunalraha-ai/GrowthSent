@@ -1,4 +1,4 @@
-import { IssueDocument, Severity } from "../db/types";
+import { IssueDocument, Severity } from "../db/types.js";
 
 export interface ScoreCalculationResult {
   score: number;

@@ -1,7 +1,7 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase, safeObjectId } from "../db/mongodb";
-import { WebsiteDocument, ScanDocument } from "../db/types";
-import { createScan } from "../scans/service";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { WebsiteDocument, ScanDocument } from "../db/types.js";
+import { createScan } from "../scans/service.js";
 
 export interface CreateWebsiteOptions {
   userId: string;

@@ -1,7 +1,7 @@
-import { fetchUrl, FetchResult } from "./fetcher";
-import { fetchAndParseRobotsTxt, isPathDisallowedByRobots, RobotsTxtResult } from "./robots";
-import { fetchAndParseSitemap, SitemapParseResult } from "./sitemap";
-import { parsePageHtml, ParsedPageData } from "./parser";
+import { fetchUrl, FetchResult } from "./fetcher.js";
+import { fetchAndParseRobotsTxt, isPathDisallowedByRobots, RobotsTxtResult } from "./robots.js";
+import { fetchAndParseSitemap, SitemapParseResult } from "./sitemap.js";
+import { parsePageHtml, ParsedPageData } from "./parser.js";
 
 export interface CrawledPageResult {
   url: string;

@@ -1,14 +1,14 @@
 import { z } from "zod";
-import { checkRateLimit } from "../ratelimit/limiter";
-import { validateUrlForScan } from "../security/ssrf";
-import { createScan, getScanById, getScanPages, getScanIssues } from "../scans/service";
-import { createUser, verifyUserCredentials, deleteUserAccount } from "../auth/user";
-import { createSession, validateSession, destroySession, buildSessionCookieHeader, extractSessionTokenFromCookie } from "../auth/session";
-import { createWebsite, getUserWebsites, getWebsiteById, deleteWebsite, getWebsiteScans } from "../websites/service";
-import { recordAnalyticsEvent } from "../analytics/collector";
-import { getAnalyticsSummary } from "../analytics/aggregator";
-import { getAdminStats } from "../admin/service";
-import { AuditService } from "../services/audit.service";
+import { checkRateLimit } from "../ratelimit/limiter.js";
+import { validateUrlForScan } from "../security/ssrf.js";
+import { createScan, getScanById, getScanPages, getScanIssues } from "../scans/service.js";
+import { createUser, verifyUserCredentials, deleteUserAccount } from "../auth/user.js";
+import { createSession, validateSession, destroySession, buildSessionCookieHeader, extractSessionTokenFromCookie } from "../auth/session.js";
+import { createWebsite, getUserWebsites, getWebsiteById, deleteWebsite, getWebsiteScans } from "../websites/service.js";
+import { recordAnalyticsEvent } from "../analytics/collector.js";
+import { getAnalyticsSummary } from "../analytics/aggregator.js";
+import { getAdminStats } from "../admin/service.js";
+import { AuditService } from "../services/audit.service.js";
 import {
   completeGoogleAuthorization,
   createGoogleAuthorizationUrl,
@@ -19,14 +19,14 @@ import {
   listGoogleAnalyticsProperties,
   setGoogleAnalyticsProperty,
   type GoogleProvider,
-} from "../integrations/google";
+} from "../integrations/google.js";
 import {
   createGoogleLoginUrl,
   createGithubLoginUrl,
   completeGoogleLogin,
   completeGithubLogin,
-} from "../auth/social";
-import { connectToDatabase } from "../db/mongodb";
+} from "../auth/social.js";
+import { connectToDatabase } from "../db/mongodb.js";
 
 // Input Validation Schemas
 export const ScanInputSchema = z.object({

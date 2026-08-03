@@ -1,4 +1,4 @@
-import { connectToDatabase } from "../db/mongodb";
+import { connectToDatabase } from "../db/mongodb.js";
 
 export async function applyAnalyticsRetentionPolicy(retentionDays: number = 90): Promise<number> {
   const { db } = await connectToDatabase();

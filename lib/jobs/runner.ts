@@ -1,5 +1,5 @@
-import { runScanJob } from "../scans/service";
-import { applyAnalyticsRetentionPolicy } from "../analytics/retention";
+import { runScanJob } from "../scans/service.js";
+import { applyAnalyticsRetentionPolicy } from "../analytics/retention.js";
 
 export type JobType = "ScanJob" | "MonitoringJob" | "AnalyticsAggregationJob" | "NotificationJob";
 

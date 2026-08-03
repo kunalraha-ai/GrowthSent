@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb";
-import { UserDocument } from "../db/types";
+import { connectToDatabase } from "../db/mongodb.js";
+import { UserDocument } from "../db/types.js";
 
 export async function createUser(email: string, passwordPlain: string, name?: string): Promise<UserDocument> {
   const { db } = await connectToDatabase();

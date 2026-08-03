@@ -1,7 +1,7 @@
-import { CrawlExecutionResult } from "../crawler/crawler";
-import { IssueDocument, Severity } from "../db/types";
-import { SEO_RULES } from "./rules";
-import { calculateSeoScore, ScoreCalculationResult } from "./scoring";
+import { CrawlExecutionResult } from "../crawler/crawler.js";
+import { IssueDocument, Severity } from "../db/types.js";
+import { SEO_RULES } from "./rules.js";
+import { calculateSeoScore, ScoreCalculationResult } from "./scoring.js";
 
 export interface AnalysisExecutionResult {
   issues: Omit<IssueDocument, "_id" | "scanId" | "createdAt">[];

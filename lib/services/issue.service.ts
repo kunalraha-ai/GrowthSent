@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase, safeObjectId } from "../db/mongodb";
-import { IssueDocument, SeoIssueHistoryDocument } from "../db/types";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { IssueDocument, SeoIssueHistoryDocument } from "../db/types.js";
 
 export class IssueService {
   static async getIssuesForScan(scanId: string): Promise<IssueDocument[]> {

@@ -1,8 +1,8 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase, safeObjectId } from "../db/mongodb";
-import { validateUrlForScan } from "../security/ssrf";
-import { runCrawl } from "../crawler/crawler";
-import { analyzeCrawlResults } from "../seo/engine";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { validateUrlForScan } from "../security/ssrf.js";
+import { runCrawl } from "../crawler/crawler.js";
+import { analyzeCrawlResults } from "../seo/engine.js";
 import {
   CrawlJobDocument,
   ScanDocument,
@@ -10,7 +10,7 @@ import {
   IssueDocument,
   CrawlSnapshotDocument,
   SeoIssueHistoryDocument,
-} from "../db/types";
+} from "../db/types.js";
 
 export class AuditService {
   /**

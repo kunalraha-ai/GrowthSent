@@ -1,9 +1,9 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb";
-import { PageDocument, IssueDocument, ScanDocument, ScanStatus } from "../db/types";
-import { validateUrlForScan } from "../security/ssrf";
-import { runCrawl } from "../crawler/crawler";
-import { analyzeCrawlResults } from "../seo/engine";
+import { connectToDatabase } from "../db/mongodb.js";
+import { PageDocument, IssueDocument, ScanDocument, ScanStatus } from "../db/types.js";
+import { validateUrlForScan } from "../security/ssrf.js";
+import { runCrawl } from "../crawler/crawler.js";
+import { analyzeCrawlResults } from "../seo/engine.js";
 
 export interface CreateScanOptions {
   url: string;

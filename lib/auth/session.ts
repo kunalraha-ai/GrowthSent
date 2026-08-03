@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb";
-import { SessionDocument, UserDocument } from "../db/types";
+import { connectToDatabase } from "../db/mongodb.js";
+import { SessionDocument, UserDocument } from "../db/types.js";
 
 export const SESSION_COOKIE_NAME = "gs_session";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days

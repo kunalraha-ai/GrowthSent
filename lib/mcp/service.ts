@@ -1,4 +1,4 @@
-import { createScan, getScanById, getScanIssues } from "../scans/service";
+import { createScan, getScanById, getScanIssues } from "../scans/service.js";
 
 export interface McpScanRequest {
   url: string;

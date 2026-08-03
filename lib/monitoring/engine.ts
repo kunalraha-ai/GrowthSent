@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb";
-import { IssueDocument, PageDocument, MonitoringSnapshotDocument } from "../db/types";
+import { connectToDatabase } from "../db/mongodb.js";
+import { IssueDocument, PageDocument, MonitoringSnapshotDocument } from "../db/types.js";
 
 export interface ScanComparisonResult {
   newIssuesCount: number;

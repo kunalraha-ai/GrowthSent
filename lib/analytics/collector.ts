@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb";
-import { AnalyticsEventDocument } from "../db/types";
+import { connectToDatabase } from "../db/mongodb.js";
+import { AnalyticsEventDocument } from "../db/types.js";
 
 export interface RecordAnalyticsEventOptions {
   websiteId: string;

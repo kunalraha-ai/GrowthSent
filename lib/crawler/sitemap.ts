@@ -1,4 +1,4 @@
-import { fetchUrl } from "./fetcher";
+import { fetchUrl } from "./fetcher.js";
 
 export interface SitemapParseResult {
   exists: boolean;
