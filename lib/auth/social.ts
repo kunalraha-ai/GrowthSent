@@ -158,6 +158,15 @@ export async function completeGoogleLogin(code: string, state: string): Promise<
   });
   const tokenPayload = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string };
   if (!tokenRes.ok || !tokenPayload.access_token) {
+    console.error("[Google OAuth] Token exchange FAILED", {
+      status: tokenRes.status,
+      tokenPayload,
+      client_id_used: clientId,
+      redirect_uri_used: redirectUri,
+      secret_length: clientSecret.length,
+      secret_prefix: clientSecret.slice(0, 7),
+      secret_suffix: clientSecret.slice(-4),
+    });
     throw new Error(tokenPayload.error_description || tokenPayload.error || "Google did not return an access token.");
   }
 
