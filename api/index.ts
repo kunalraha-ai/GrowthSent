@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { handleApiRequest } from "../lib/api/router";
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
@@ -48,6 +47,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1",
     };
 
+    const { handleApiRequest } = await import("../lib/api/router");
     const apiRes = await handleApiRequest(apiReq);
 
     res.statusCode = apiRes.statusCode;
@@ -66,7 +66,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
-        error: { code: "SERVER_ERROR", message: err?.message || "A server error occurred on Vercel." },
+        error: {
+          code: "SERVER_ERROR",
+          message: err?.message || "A server error occurred on Vercel.",
+        },
       })
     );
   }
