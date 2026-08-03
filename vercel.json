@@ -2,14 +2,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/v1/[...path].ts": {
+    "api/**/*.ts": {
       "includeFiles": "lib/**"
     }
   },
   "rewrites": [
     {
       "source": "/api/v1/:path*",
-      "destination": "/api/v1/[...path]"
+      "destination": "/api/index"
     },
     {
       "source": "/(.*)",

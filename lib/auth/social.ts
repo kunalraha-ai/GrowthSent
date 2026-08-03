@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { connectToDatabase } from "../db/mongodb.js";
-import { UserDocument } from "../db/types.js";
+import { connectToDatabase } from "../db/mongodb";
+import { UserDocument } from "../db/types";
 
 export type SocialProvider = "google" | "github";
 

@@ -1,13 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { handleApiRequest } from "../../lib/api/router";
-import { initializeDatabaseIndexes } from "../../lib/db/indexes";
-
-let indexesReady: Promise<void> | null = null;
-
-function ensureIndexes() {
-  if (!indexesReady) indexesReady = initializeDatabaseIndexes();
-  return indexesReady;
-}
+import { handleApiRequest } from "../lib/api/router";
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
