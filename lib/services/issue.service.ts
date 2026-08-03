@@ -31,7 +31,7 @@ export class IssueService {
   static async resolveIssue(historyId: string, clerkUserId: string): Promise<boolean> {
     const { db } = await connectToDatabase();
     try {
-      const res = await db.collection("seoIssueHistory").updateOne(
+      const res = await db.collection<SeoIssueHistoryDocument>("seoIssueHistory").updateOne(
         { _id: safeObjectId(historyId) },
         {
           $set: { status: "resolved", resolvedAt: new Date() },
@@ -40,7 +40,7 @@ export class IssueService {
               event: "resolved",
               timestamp: new Date(),
             },
-          },
+          } as any,
         }
       );
       return res.modifiedCount > 0;
