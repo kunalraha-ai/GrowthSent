@@ -979,7 +979,7 @@ function App() {
         </div>
         <div className="preview-foot">
           <span>GrowthSent scans public website data, so there’s nothing to connect.</span>
-          <button onClick={handleOpenReport} disabled={!activeScan}>View full report <span>→</span></button>
+          <button onClick={handleOpenReport} style={{ cursor: "pointer" }}>View full report <span>→</span></button>
         </div>
       </section>
 
@@ -1018,9 +1018,9 @@ function App() {
               <p>YOUR FIRST REPORT</p>
               <h3>We found <u>{activeScan?.summaryMetrics ? activeScan.summaryMetrics.criticalIssues + activeScan.summaryMetrics.highIssues + activeScan.summaryMetrics.mediumIssues : 7} things</u><br />worth fixing.</h3>
             </div>
-            <div className="finding-row critical"><span>↗</span><div><b>Important</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.criticalIssues} critical issues detected` : "Run a scan to identify indexing issues"}</p></div><em style={{ cursor: activeScan ? "pointer" : "default" }} onClick={handleOpenReport}>View</em></div>
-            <div className="finding-row recommend"><span>↗</span><div><b>Recommended</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.highIssues} high priority recommendations` : "Run a scan to get recommendations"}</p></div><em style={{ cursor: activeScan ? "pointer" : "default" }} onClick={handleOpenReport}>View</em></div>
-            <div className="finding-row healthy"><span>✓</span><div><b>Looking good</b><p>Sitemap &amp; canonical check healthy</p></div><em>✓</em></div>
+            <div className="finding-row critical"><span>↗</span><div><b>Important</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.criticalIssues} critical issues detected` : "Run a scan to identify indexing issues"}</p></div><em style={{ cursor: "pointer" }} onClick={handleOpenReport}>View</em></div>
+            <div className="finding-row recommend"><span>↗</span><div><b>Recommended</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.highIssues} high priority recommendations` : "Run a scan to get recommendations"}</p></div><em style={{ cursor: "pointer" }} onClick={handleOpenReport}>View</em></div>
+            <div className="finding-row healthy"><span>✓</span><div><b>Looking good</b><p>Sitemap &amp; canonical check healthy</p></div><em style={{ cursor: "pointer" }}>✓</em></div>
           </div>
         </div>
       </section>
