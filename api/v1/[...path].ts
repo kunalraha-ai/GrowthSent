@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { handleApiRequest } from "../../lib/api/router";
-import { initializeDatabaseIndexes } from "../../lib/db/indexes";
+import { handleApiRequest } from "../../lib/api/router.js";
+import { initializeDatabaseIndexes } from "../../lib/db/indexes.js";
 
 let indexesReady: Promise<void> | null = null;
 
