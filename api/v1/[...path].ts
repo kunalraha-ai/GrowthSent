@@ -11,10 +11,6 @@ function ensureIndexes() {
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
-    ensureIndexes().catch((err) => {
-      console.warn("[Vercel Handler] Background index initialization skipped:", err?.message);
-    });
-
     const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const path = urlObj.pathname;
 
