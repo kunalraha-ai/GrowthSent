@@ -287,6 +287,10 @@ export function AppConsole({
     }
   };
 
+  const handleFreshScan = async () => {
+    if (activeSite) await handleScanForUrl(`https://${activeSite}`);
+  };
+
   const handleWebsiteDeleted = (deletedId: string) => {
     setWebsites((prev) => {
       const updated = prev.filter((w) => w._id !== deletedId);
