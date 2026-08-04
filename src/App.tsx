@@ -844,17 +844,6 @@ function App() {
   const [consoleTab, setConsoleTab] = useState<string>("overview");
   const [authRedirectError, setAuthRedirectError] = useState("");
 
-  if (showPrivacyPolicy) {
-    return (
-      <PrivacyPolicy
-        onBack={() => {
-          setShowPrivacyPolicy(false);
-          window.history.pushState({}, "", "/");
-        }}
-      />
-    );
-  }
-
   // Restore the server-issued session when the page reloads.
   useEffect(() => {
     fetch("/api/v1/auth/me")
@@ -902,6 +891,17 @@ function App() {
       setShowAuthModal(true);
     }
   };
+
+  if (showPrivacyPolicy) {
+    return (
+      <PrivacyPolicy
+        onBack={() => {
+          setShowPrivacyPolicy(false);
+          window.history.pushState({}, "", "/");
+        }}
+      />
+    );
+  }
 
   // If user is authenticated and not explicitly viewing landing page preview
   if (user && !showLandingView) {
