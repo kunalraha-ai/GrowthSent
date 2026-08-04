@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { Logo } from "../Logo";
+import { ConfirmModal } from "../ConfirmModal";
 
 // Crisp SVG Icons for Navigation Items
 const Icons = {
@@ -113,6 +114,8 @@ export function Sidebar({
   collapsed = false,
   onToggleCollapse,
 }: SidebarProps) {
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
   return (
     <aside className={`dashboard-sidebar ${collapsed ? "is-collapsed" : ""}`}>
       {/* Brand Header with Collapse Toggle */}
@@ -285,7 +288,7 @@ export function Sidebar({
           {onLogout && (
             <a
               className="nav-item"
-              onClick={onLogout}
+              onClick={() => setShowLogoutModal(true)}
               style={{ color: "#ef4444" }}
               title={collapsed ? "Log out" : undefined}
             >
@@ -295,6 +298,21 @@ export function Sidebar({
           )}
         </div>
       </nav>
+
+      <ConfirmModal
+        isOpen={showLogoutModal}
+        title="Log Out"
+        message="Are you sure you want to log out?"
+        description="You will need to sign in again to access your dashboard and website reports."
+        confirmText="Log Out"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          setShowLogoutModal(false);
+          if (onLogout) onLogout();
+        }}
+        onCancel={() => setShowLogoutModal(false)}
+      />
     </aside>
   );
 }

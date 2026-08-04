@@ -287,8 +287,19 @@ export function AppConsole({
     }
   };
 
-  const handleFreshScan = async () => {
-    if (activeSite) await handleScanForUrl(`https://${activeSite}`);
+  const handleWebsiteDeleted = (deletedId: string) => {
+    setWebsites((prev) => {
+      const updated = prev.filter((w) => w._id !== deletedId);
+      if (updated.length > 0) {
+        setActiveSite(updated[0].hostname);
+        setActiveWebsiteId(updated[0]._id || null);
+      } else {
+        setActiveSite("");
+        setActiveWebsiteId(null);
+      }
+      return updated;
+    });
+    setActiveTab("overview");
   };
 
   return (
@@ -402,6 +413,8 @@ export function AppConsole({
               websiteId={activeWebsiteId}
               isGscConnected={isGscConnected}
               isGaConnected={isGaConnected}
+              onWebsiteDeleted={handleWebsiteDeleted}
+              onAccountDeleted={onLogout}
             />
           )}
         </div>

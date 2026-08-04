@@ -1,10 +1,13 @@
 import React, { useState } from "react";
+import { ConfirmModal } from "../ConfirmModal";
 
 interface SettingsViewProps {
   activeSite: string;
   websiteId: string | null;
   isGscConnected: boolean;
   isGaConnected: boolean;
+  onWebsiteDeleted?: (deletedWebsiteId: string) => void;
+  onAccountDeleted?: () => void;
 }
 
 export function SettingsView({
@@ -12,10 +15,66 @@ export function SettingsView({
   websiteId,
   isGscConnected,
   isGaConnected,
+  onWebsiteDeleted,
+  onAccountDeleted,
 }: SettingsViewProps) {
   const [siteName, setSiteName] = useState(activeSite);
   const [timezone, setTimezone] = useState("UTC (GMT+0)");
   const [frequency, setFrequency] = useState("6h");
+
+  // Modal states for Danger Zone actions
+  const [showDeleteWebsiteModal, setShowDeleteWebsiteModal] = useState(false);
+  const [isDeletingWebsite, setIsDeletingWebsite] = useState(false);
+  const [deleteWebsiteError, setDeleteWebsiteError] = useState("");
+
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState("");
+
+  const handleConfirmDeleteWebsite = async () => {
+    if (!websiteId) return;
+    setIsDeletingWebsite(true);
+    setDeleteWebsiteError("");
+    try {
+      const response = await fetch(`/api/v1/websites/${websiteId}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error?.message || "Failed to delete website.");
+      }
+      setShowDeleteWebsiteModal(false);
+      if (onWebsiteDeleted) {
+        onWebsiteDeleted(websiteId);
+      }
+    } catch (cause) {
+      setDeleteWebsiteError(cause instanceof Error ? cause.message : "Failed to delete website.");
+    } finally {
+      setIsDeletingWebsite(false);
+    }
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    setIsDeletingAccount(true);
+    setDeleteAccountError("");
+    try {
+      const response = await fetch("/api/v1/auth/account", {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error?.message || "Failed to delete account data.");
+      }
+      setShowDeleteAccountModal(false);
+      if (onAccountDeleted) {
+        onAccountDeleted();
+      }
+    } catch (cause) {
+      setDeleteAccountError(cause instanceof Error ? cause.message : "Failed to delete account data.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   return (
     <div className="settings-view">
@@ -188,17 +247,67 @@ export function SettingsView({
             <p style={{ color: "#aaaaa2", fontSize: "13px", margin: 0 }}>
               Deleting your website removes all crawled page records, audit logs, and monitoring history.
             </p>
+            {deleteWebsiteError && (
+              <p role="alert" style={{ color: "#ef4444", fontSize: "13px", margin: 0, fontWeight: 600 }}>
+                {deleteWebsiteError}
+              </p>
+            )}
+            {deleteAccountError && (
+              <p role="alert" style={{ color: "#ef4444", fontSize: "13px", margin: 0, fontWeight: 600 }}>
+                {deleteAccountError}
+              </p>
+            )}
             <div style={{ display: "flex", gap: "12px" }}>
-              <button className="danger-btn" onClick={() => alert("Website deletion requested.")}>
+              <button
+                className="danger-btn"
+                onClick={() => {
+                  setDeleteWebsiteError("");
+                  setShowDeleteWebsiteModal(true);
+                }}
+                disabled={!websiteId}
+              >
                 Delete Website
               </button>
-              <button className="danger-btn" onClick={() => alert("All account data deletion requested.")}>
+              <button
+                className="danger-btn"
+                onClick={() => {
+                  setDeleteAccountError("");
+                  setShowDeleteAccountModal(true);
+                }}
+              >
                 Delete All Data
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modals */}
+      <ConfirmModal
+        isOpen={showDeleteWebsiteModal}
+        title="Delete Website"
+        message={`Are you sure you want to delete ${activeSite || "this website"} and all its data?`}
+        description="This will permanently remove all crawled pages, audit logs, and monitoring history for this website. This action cannot be undone."
+        confirmText="Confirm Delete"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeletingWebsite}
+        onConfirm={handleConfirmDeleteWebsite}
+        onCancel={() => setShowDeleteWebsiteModal(false)}
+      />
+
+      <ConfirmModal
+        isOpen={showDeleteAccountModal}
+        title="Delete All Data & Account"
+        message="Are you sure you want to delete your account and all data?"
+        description="This will permanently delete your user account, all connected websites, audit logs, and integrations. You will be logged out immediately. This action cannot be undone."
+        confirmText="Confirm Delete All Data"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isDeletingAccount}
+        onConfirm={handleConfirmDeleteAccount}
+        onCancel={() => setShowDeleteAccountModal(false)}
+      />
     </div>
   );
 }
