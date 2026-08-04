@@ -56,7 +56,7 @@ export function TermsOfService({ onBack }: TermsOfServiceProps) {
 
         <div style={{ fontSize: "15px", lineHeight: "1.7", color: "#d1d2cc", display: "flex", flexDirection: "column", gap: "28px" }}>
           <p style={{ fontSize: "16px", color: "#e4e5e0" }}>
-            These Terms of Service (&quot;Terms&quot;) govern your access to and use of the GrowthSent website, application, APIs, integrations, and related services (collectively, the &quot;Service&quot;) provided by GrowthSent (&quot;GrowthSent,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;).
+            These Terms of Service govern your access to and use of the GrowthSent website, application, APIs, integrations, and related services provided by GrowthSent.
             By accessing or using the Service, you agree to be bound by these Terms. If you do not agree to these Terms, you may not use the Service.
             If you are using GrowthSent on behalf of a company or organization, you represent that you have authority to bind that organization to these Terms.
           </p>

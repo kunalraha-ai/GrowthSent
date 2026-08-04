@@ -56,7 +56,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
 
         <div style={{ fontSize: "15px", lineHeight: "1.7", color: "#d1d2cc", display: "flex", flexDirection: "column", gap: "28px" }}>
           <p style={{ fontSize: "16px", color: "#e4e5e0" }}>
-            GrowthSent (&quot;GrowthSent,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates the GrowthSent website, application, and related services (collectively, the &quot;Service&quot;).
+            GrowthSent operates the GrowthSent website, application, and related services.
             This Privacy Policy explains how we collect, use, store, and protect information when you use GrowthSent.
             By using GrowthSent, you agree to the practices described in this Privacy Policy.
           </p>
