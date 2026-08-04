@@ -352,15 +352,22 @@ async function getSearchConsoleSite(accessToken: string, hostname: string): Prom
   });
   if (!response.ok) throw new Error("Google Search Console authorization has expired. Reconnect the integration.");
   const payload = (await response.json()) as { siteEntry?: Array<{ siteUrl: string }> };
-  const preferredDomainProperty = `sc-domain:${hostname}`;
-  const site = payload.siteEntry?.find((entry) => entry.siteUrl === preferredDomainProperty)
+  
+  const rawHostname = hostname.toLowerCase().trim();
+  const cleanHostname = rawHostname.replace(/^www\./, "");
+
+  const site =
+    payload.siteEntry?.find((entry) => entry.siteUrl.toLowerCase() === `sc-domain:${rawHostname}`)
+    ?? payload.siteEntry?.find((entry) => entry.siteUrl.toLowerCase() === `sc-domain:${cleanHostname}`)
     ?? payload.siteEntry?.find((entry) => {
       try {
-        return new URL(entry.siteUrl).hostname === hostname;
+        const entryHost = new URL(entry.siteUrl).hostname.toLowerCase();
+        return entryHost === rawHostname || entryHost.replace(/^www\./, "") === cleanHostname;
       } catch {
         return false;
       }
     });
+
   if (!site) throw new Error(`No Google Search Console property is available for ${hostname}.`);
   return site.siteUrl;
 }
