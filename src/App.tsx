@@ -1,5 +1,6 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
+import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { Logo } from "./components/Logo";
 
 const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
@@ -836,9 +837,23 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showLandingView, setShowLandingView] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(() => {
+    return window.location.pathname === "/privacy" || window.location.pathname === "/privacy-policy";
+  });
   const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
   const [consoleTab, setConsoleTab] = useState<string>("overview");
   const [authRedirectError, setAuthRedirectError] = useState("");
+
+  if (showPrivacyPolicy) {
+    return (
+      <PrivacyPolicy
+        onBack={() => {
+          setShowPrivacyPolicy(false);
+          window.history.pushState({}, "", "/");
+        }}
+      />
+    );
+  }
 
   // Restore the server-issued session when the page reloads.
   useEffect(() => {
@@ -1110,11 +1125,35 @@ function App() {
         <div className="footer-brand">
           <Logo dark />
           <p>The calm command centre for<br />the website you just shipped.</p>
-          <small>© 2025 GrowthSent, Inc.</small>
+          <small>
+            © 2026 GrowthSent, Inc. ·{" "}
+            <a
+              style={{ cursor: "pointer", textDecoration: "underline" }}
+              onClick={() => {
+                setShowPrivacyPolicy(true);
+                window.history.pushState({}, "", "/privacy");
+              }}
+            >
+              Privacy Policy
+            </a>
+          </small>
         </div>
         <div><b>Product</b><a>SEO</a><a>Analytics</a><a>Keywords</a><a>Monitoring</a></div>
         <div id="developers"><b>Developers</b><a>CLI</a><a>MCP</a><a>API</a></div>
-        <div><b>Company</b><a>About</a><a id="pricing">Pricing</a><a>Docs</a></div>
+        <div>
+          <b>Company</b>
+          <a>About</a>
+          <a id="pricing">Pricing</a>
+          <a
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              setShowPrivacyPolicy(true);
+              window.history.pushState({}, "", "/privacy");
+            }}
+          >
+            Privacy Policy
+          </a>
+        </div>
         <div><b>Social</b><a>𝕏 Twitter</a><a>GitHub</a><a>LinkedIn</a></div>
       </footer>
 
