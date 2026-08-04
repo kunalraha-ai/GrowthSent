@@ -1,6 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
+import { TermsOfService } from "./components/TermsOfService";
 import { Logo } from "./components/Logo";
 
 const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
@@ -840,6 +841,10 @@ function App() {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(() => {
     return window.location.pathname === "/privacy" || window.location.pathname === "/privacy-policy";
   });
+  const [showTermsOfService, setShowTermsOfService] = useState(() => {
+    const p = window.location.pathname;
+    return p === "/terms" || p === "/terms-of-service" || p === "/terms-and-conditions";
+  });
   const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
   const [consoleTab, setConsoleTab] = useState<string>("overview");
   const [authRedirectError, setAuthRedirectError] = useState("");
@@ -897,6 +902,17 @@ function App() {
       <PrivacyPolicy
         onBack={() => {
           setShowPrivacyPolicy(false);
+          window.history.pushState({}, "", "/");
+        }}
+      />
+    );
+  }
+
+  if (showTermsOfService) {
+    return (
+      <TermsOfService
+        onBack={() => {
+          setShowTermsOfService(false);
           window.history.pushState({}, "", "/");
         }}
       />
@@ -1126,15 +1142,27 @@ function App() {
           <Logo dark />
           <p>The calm command centre for<br />the website you just shipped.</p>
           <small>
-            © 2026 GrowthSent, Inc. ·{" "}
+            © 2026 GrowthSent ·{" "}
             <a
               style={{ cursor: "pointer", textDecoration: "underline" }}
               onClick={() => {
+                setShowTermsOfService(false);
                 setShowPrivacyPolicy(true);
                 window.history.pushState({}, "", "/privacy");
               }}
             >
               Privacy Policy
+            </a>
+            {" · "}
+            <a
+              style={{ cursor: "pointer", textDecoration: "underline" }}
+              onClick={() => {
+                setShowPrivacyPolicy(false);
+                setShowTermsOfService(true);
+                window.history.pushState({}, "", "/terms");
+              }}
+            >
+              Terms of Service
             </a>
           </small>
         </div>
@@ -1147,11 +1175,22 @@ function App() {
           <a
             style={{ cursor: "pointer" }}
             onClick={() => {
+              setShowTermsOfService(false);
               setShowPrivacyPolicy(true);
               window.history.pushState({}, "", "/privacy");
             }}
           >
             Privacy Policy
+          </a>
+          <a
+            style={{ cursor: "pointer" }}
+            onClick={() => {
+              setShowPrivacyPolicy(false);
+              setShowTermsOfService(true);
+              window.history.pushState({}, "", "/terms");
+            }}
+          >
+            Terms of Service
           </a>
         </div>
         <div><b>Social</b><a>𝕏 Twitter</a><a>GitHub</a><a>LinkedIn</a></div>

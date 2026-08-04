@@ -56,7 +56,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
 
         <div style={{ fontSize: "15px", lineHeight: "1.7", color: "#d1d2cc", display: "flex", flexDirection: "column", gap: "28px" }}>
           <p style={{ fontSize: "16px", color: "#e4e5e0" }}>
-            GrowthSent, Inc. (&quot;GrowthSent,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates the GrowthSent website, application, and related services (collectively, the &quot;Service&quot;).
+            GrowthSent (&quot;GrowthSent,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;) operates the GrowthSent website, application, and related services (collectively, the &quot;Service&quot;).
             This Privacy Policy explains how we collect, use, store, and protect information when you use GrowthSent.
             By using GrowthSent, you agree to the practices described in this Privacy Policy.
           </p>
@@ -299,7 +299,7 @@ export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
             <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 16px 0", color: "#a4ef51" }}>14. Contact Us</h2>
             <p>If you have questions about this Privacy Policy, your personal information, or GrowthSent&apos;s privacy practices, please contact us:</p>
             <div style={{ marginTop: "12px" }}>
-              <strong style={{ color: "#f7f7f3" }}>GrowthSent, Inc.</strong><br />
+              <strong style={{ color: "#f7f7f3" }}>GrowthSent</strong><br />
               Email: <a href="mailto:info@growthsent.com" style={{ color: "#a4ef51", textDecoration: "none" }}>info@growthsent.com</a><br />
               Website: <a href="https://www.growthsent.com" style={{ color: "#a4ef51", textDecoration: "none" }}>https://www.growthsent.com</a>
             </div>
