@@ -840,28 +840,34 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showLandingView, setShowLandingView] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(() => {
-    return window.location.pathname === "/privacy" || window.location.pathname === "/privacy-policy";
-  });
-  const [showTermsOfService, setShowTermsOfService] = useState(() => {
-    const p = window.location.pathname;
-    return p === "/terms" || p === "/terms-of-service" || p === "/terms-and-conditions";
-  });
-  const [show404, setShow404] = useState(() => {
-    return window.location.pathname === "/404";
-  });
-  const [show500, setShow500] = useState(() => {
-    return window.location.pathname === "/500";
-  });
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
   const [consoleTab, setConsoleTab] = useState<string>("overview");
   const [authRedirectError, setAuthRedirectError] = useState("");
 
   useEffect(() => {
-    if (!showPrivacyPolicy && !showTermsOfService && !show404 && !show500) {
+    const handlePopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, "", path);
+    setCurrentPath(path);
+  };
+
+  const cleanPath = currentPath.toLowerCase().replace(/\/$/, "") || "/";
+  const isPrivacy = cleanPath === "/privacy" || cleanPath === "/privacy-policy";
+  const isTerms = cleanPath === "/terms" || cleanPath === "/terms-of-service" || cleanPath === "/terms-and-conditions";
+  const is500 = cleanPath === "/500";
+  const isHome = cleanPath === "/";
+  const is404 = !isHome && !isPrivacy && !isTerms && !is500;
+
+  useEffect(() => {
+    if (isHome) {
       document.title = "GrowthSent — Simple SEO & Website Analytics for Developers";
     }
-  }, [showPrivacyPolicy, showTermsOfService, show404, show500]);
+  }, [isHome]);
 
   // Restore the server-issued session when the page reloads.
   useEffect(() => {
@@ -911,56 +917,20 @@ function App() {
     }
   };
 
-  if (showPrivacyPolicy) {
-    return (
-      <PrivacyPolicy
-        onBack={() => {
-          setShowPrivacyPolicy(false);
-          window.history.pushState({}, "", "/");
-        }}
-      />
-    );
+  if (isPrivacy) {
+    return <PrivacyPolicy onBack={() => navigateTo("/")} />;
   }
 
-  if (showTermsOfService) {
-    return (
-      <TermsOfService
-        onBack={() => {
-          setShowTermsOfService(false);
-          window.history.pushState({}, "", "/");
-        }}
-      />
-    );
+  if (isTerms) {
+    return <TermsOfService onBack={() => navigateTo("/")} />;
   }
 
-  if (show404) {
-    return (
-      <NotFound404
-        onBack={() => {
-          setShow404(false);
-          window.history.pushState({}, "", "/");
-        }}
-        onScanUrl={() => {
-          setShow404(false);
-          window.history.pushState({}, "", "/");
-        }}
-      />
-    );
+  if (is500) {
+    return <ServerError500 onBack={() => navigateTo("/")} onRetry={() => window.location.reload()} />;
   }
 
-  if (show500) {
-    return (
-      <ServerError500
-        onBack={() => {
-          setShow500(false);
-          window.history.pushState({}, "", "/");
-        }}
-        onRetry={() => {
-          setShow500(false);
-          window.location.reload();
-        }}
-      />
-    );
+  if (is404) {
+    return <NotFound404 onBack={() => navigateTo("/")} onScanUrl={() => navigateTo("/")} />;
   }
 
   // If user is authenticated and not explicitly viewing landing page preview
@@ -1192,9 +1162,7 @@ function App() {
               style={{ cursor: "pointer", textDecoration: "underline" }}
               onClick={(e) => {
                 e.preventDefault();
-                setShowTermsOfService(false);
-                setShowPrivacyPolicy(true);
-                window.history.pushState({}, "", "/privacy");
+                navigateTo("/privacy");
               }}
             >
               Privacy Policy
@@ -1205,9 +1173,7 @@ function App() {
               style={{ cursor: "pointer", textDecoration: "underline" }}
               onClick={(e) => {
                 e.preventDefault();
-                setShowPrivacyPolicy(false);
-                setShowTermsOfService(true);
-                window.history.pushState({}, "", "/terms");
+                navigateTo("/terms");
               }}
             >
               Terms of Service
@@ -1225,9 +1191,7 @@ function App() {
             style={{ cursor: "pointer" }}
             onClick={(e) => {
               e.preventDefault();
-              setShowTermsOfService(false);
-              setShowPrivacyPolicy(true);
-              window.history.pushState({}, "", "/privacy");
+              navigateTo("/privacy");
             }}
           >
             Privacy Policy
@@ -1237,9 +1201,7 @@ function App() {
             style={{ cursor: "pointer" }}
             onClick={(e) => {
               e.preventDefault();
-              setShowPrivacyPolicy(false);
-              setShowTermsOfService(true);
-              window.history.pushState({}, "", "/terms");
+              navigateTo("/terms");
             }}
           >
             Terms of Service
