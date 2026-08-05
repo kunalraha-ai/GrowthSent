@@ -2195,6 +2195,33 @@ a {
   background: #f9f9f6;
 }
 
+.analytics-metric-row {
+  background: #ffffff;
+  padding: 14px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.analytics-metric-row:hover {
+  background: #f9f9f6;
+}
+
+.analytics-metric-row .row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.analytics-metric-row .row-summary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .status-icon {
   width: 20px;
   height: 20px;

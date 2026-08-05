@@ -113,7 +113,7 @@ export function AnalyticsView({ activeSite, websiteId }: AnalyticsViewProps) {
               {isLoading ? <p className="card-sub" style={{ padding: "20px" }}>Loading analytics…</p> : report.topPages.length ? (
                 <div className="compact-rows-list">
                   {report.topPages.map((page) => (
-                    <div className="compact-metric-row" key={page.pagePath}>
+                    <div className="analytics-metric-row" key={page.pagePath}>
                       <span className="row-label">{page.pagePath}</span>
                       <p className="row-summary">{page.screenPageViews.toLocaleString()} views</p>
                     </div>
@@ -126,7 +126,7 @@ export function AnalyticsView({ activeSite, websiteId }: AnalyticsViewProps) {
               {isLoading ? <p className="card-sub" style={{ padding: "20px" }}>Loading analytics…</p> : report.topChannels.length ? (
                 <div className="compact-rows-list">
                   {report.topChannels.map((channel) => (
-                    <div className="compact-metric-row" key={channel.channel}>
+                    <div className="analytics-metric-row" key={channel.channel}>
                       <span className="row-label">{channel.channel}</span>
                       <p className="row-summary">{channel.sessions.toLocaleString()} sessions</p>
                     </div>
