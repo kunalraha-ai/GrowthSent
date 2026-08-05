@@ -13,8 +13,10 @@ import {
 } from "../db/types.js";
 
 export class AuditService {
+  private static activeJobs = new Set<string>();
+
   /**
-   * Initiates an asynchronous crawl job and returns immediately with the jobId.
+   * Initiates a crawl job and executes processing inline/race to avoid serverless freeze.
    */
   static async createCrawlJob(inputUrl: string, clerkUserId?: string, websiteId?: string): Promise<{ jobId: string; status: string }> {
     const ssrf = await validateUrlForScan(inputUrl);
@@ -38,14 +40,18 @@ export class AuditService {
 
     await db.collection<CrawlJobDocument>("crawlJobs").insertOne(jobDoc);
 
-    // Asynchronously trigger the crawler background execution without blocking HTTP response
-    setTimeout(() => {
-      AuditService.processCrawlJob(jobId).catch((err) => {
-        console.error(`[AuditService] Async crawl job ${jobId} failed:`, err);
-      });
-    }, 10);
+    // Kick off processing immediately and await up to 3.5s for instant response
+    const processPromise = AuditService.processCrawlJob(jobId).catch((err) => {
+      console.error(`[AuditService] Crawl job ${jobId} failed:`, err);
+    });
 
-    return { jobId, status: "queued" };
+    await Promise.race([
+      processPromise,
+      new Promise((resolve) => setTimeout(resolve, 3500)),
+    ]);
+
+    const updated = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId });
+    return { jobId, status: updated?.status || "queued" };
   }
 
   /**
@@ -53,11 +59,19 @@ export class AuditService {
    */
   static async getCrawlJobStatus(jobId: string, userId?: string) {
     const { db } = await connectToDatabase();
-    const job = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId });
+    let job = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId });
     if (!job) return null;
 
     if (job.clerkUserId && userId && job.clerkUserId !== userId) {
       return null;
+    }
+
+    // Self-healing fallback: If job is still queued/crawling, execute or await processCrawlJob
+    if (job.status === "queued" || job.status === "crawling") {
+      await AuditService.processCrawlJob(jobId).catch((err) => {
+        console.error(`[AuditService] Polling execution for ${jobId} failed:`, err);
+      });
+      job = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId }) || job;
     }
 
     if (job.status === "completed" && job.scanId) {
@@ -93,20 +107,23 @@ export class AuditService {
   }
 
   /**
-   * Internal processor for running an asynchronous crawl job.
+   * Internal processor for running a crawl job.
    */
   private static async processCrawlJob(jobId: string) {
-    const { db } = await connectToDatabase();
-    await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
-      { jobId },
-      { $set: { status: "crawling", progressPercent: 20 } }
-    );
-
-    const job = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId });
-    if (!job) return;
+    if (AuditService.activeJobs.has(jobId)) return;
+    AuditService.activeJobs.add(jobId);
 
     try {
-      const crawlResult = await runCrawl(job.url, { maxPages: 100 });
+      const { db } = await connectToDatabase();
+      const job = await db.collection<CrawlJobDocument>("crawlJobs").findOne({ jobId });
+      if (!job || job.status === "completed" || job.status === "failed") return;
+
+      await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
+        { jobId },
+        { $set: { status: "crawling", progressPercent: 20 } }
+      );
+
+      const crawlResult = await runCrawl(job.url, { maxPages: 25, concurrency: 5, timeoutMs: 5000 });
       await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
         { jobId },
         { $set: { status: "analysing", progressPercent: 70, pagesCrawled: crawlResult.pages.length } }
@@ -264,6 +281,8 @@ export class AuditService {
           },
         }
       );
+    } finally {
+      AuditService.activeJobs.delete(jobId);
     }
   }
 }

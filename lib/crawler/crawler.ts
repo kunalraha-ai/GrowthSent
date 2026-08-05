@@ -39,8 +39,10 @@ export async function runCrawl(
   options: CrawlEngineOptions = {}
 ): Promise<CrawlExecutionResult> {
   const startTime = Date.now();
-  const maxPages = options.maxPages ?? 50;
+  const maxPages = options.maxPages ?? 25;
   const maxDepth = options.maxDepth ?? 5;
+  const concurrency = options.concurrency ?? 5;
+  const timeoutMs = options.timeoutMs ?? 5000;
 
   const parsedStart = new URL(startUrl);
   const hostname = parsedStart.hostname.toLowerCase();
@@ -71,59 +73,83 @@ export async function runCrawl(
   }
 
   while (queue.length > 0 && pages.length < maxPages) {
-    const current = queue.shift()!;
-    if (visited.has(current.url) || current.depth > maxDepth) continue;
-    visited.add(current.url);
-
-    const path = new URL(current.url).pathname;
-    const isDisallowed = isPathDisallowedByRobots(path, robots.disallowedPaths, robots.allowedPaths);
-
-    if (isDisallowed) {
-      pages.push({
-        url: current.url,
-        normalizedUrl: current.url,
-        statusCode: 403,
-        responseTimeMs: 0,
-        contentType: "",
-        pageSizeBytes: 0,
-        error: "Blocked by robots.txt Disallow directive.",
-        hasRobotsTxtDisallow: true,
-      });
-      statusCodesCount["403"] = (statusCodesCount["403"] || 0) + 1;
-      continue;
+    // Take up to `concurrency` unvisited items from queue
+    const batch: Array<{ url: string; depth: number }> = [];
+    while (queue.length > 0 && batch.length < concurrency && pages.length + batch.length < maxPages) {
+      const item = queue.shift()!;
+      if (!visited.has(item.url) && item.depth <= maxDepth) {
+        visited.add(item.url);
+        batch.push(item);
+      }
     }
 
-    const fetchRes: FetchResult = await fetchUrl(current.url, { timeoutMs: options.timeoutMs || 8000 });
-    totalBytesDownloaded += fetchRes.pageSizeBytes;
+    if (batch.length === 0) continue;
 
-    const codeKey = fetchRes.statusCode.toString();
-    statusCodesCount[codeKey] = (statusCodesCount[codeKey] || 0) + 1;
+    // Process batch in parallel
+    const batchResults = await Promise.all(
+      batch.map(async (current) => {
+        const path = new URL(current.url).pathname;
+        const isDisallowed = isPathDisallowedByRobots(path, robots.disallowedPaths, robots.allowedPaths);
 
-    let parsedData: ParsedPageData | undefined = undefined;
-    if (fetchRes.statusCode === 200 && fetchRes.body && fetchRes.contentType.includes("html")) {
-      parsedData = parsePageHtml(fetchRes.body, fetchRes.finalUrl);
+        if (isDisallowed) {
+          return {
+            page: {
+              url: current.url,
+              normalizedUrl: current.url,
+              statusCode: 403,
+              responseTimeMs: 0,
+              contentType: "",
+              pageSizeBytes: 0,
+              error: "Blocked by robots.txt Disallow directive.",
+              hasRobotsTxtDisallow: true,
+            },
+            discoveredLinks: [] as string[],
+            depth: current.depth,
+          };
+        }
+
+        const fetchRes: FetchResult = await fetchUrl(current.url, { timeoutMs });
+        let parsedData: ParsedPageData | undefined = undefined;
+        let discoveredLinks: string[] = [];
+
+        if (fetchRes.statusCode === 200 && fetchRes.body && fetchRes.contentType.includes("html")) {
+          parsedData = parsePageHtml(fetchRes.body, fetchRes.finalUrl);
+          discoveredLinks = parsedData.internalLinks || [];
+        }
+
+        return {
+          page: {
+            url: current.url,
+            normalizedUrl: fetchRes.finalUrl,
+            statusCode: fetchRes.statusCode,
+            responseTimeMs: fetchRes.responseTimeMs,
+            contentType: fetchRes.contentType,
+            pageSizeBytes: fetchRes.pageSizeBytes,
+            error: fetchRes.error,
+            parsedData,
+            hasRobotsTxtDisallow: false,
+          },
+          discoveredLinks,
+          depth: current.depth,
+        };
+      })
+    );
+
+    for (const result of batchResults) {
+      pages.push(result.page);
+      totalBytesDownloaded += result.page.pageSizeBytes;
+      const codeKey = result.page.statusCode.toString();
+      statusCodesCount[codeKey] = (statusCodesCount[codeKey] || 0) + 1;
 
       // Enqueue discovered internal links if under limits
-      if (current.depth + 1 <= maxDepth) {
-        for (const internalLink of parsedData.internalLinks) {
+      if (result.depth + 1 <= maxDepth) {
+        for (const internalLink of result.discoveredLinks) {
           if (!visited.has(internalLink) && pages.length + queue.length < maxPages * 2) {
-            queue.push({ url: internalLink, depth: current.depth + 1 });
+            queue.push({ url: internalLink, depth: result.depth + 1 });
           }
         }
       }
     }
-
-    pages.push({
-      url: current.url,
-      normalizedUrl: fetchRes.finalUrl,
-      statusCode: fetchRes.statusCode,
-      responseTimeMs: fetchRes.responseTimeMs,
-      contentType: fetchRes.contentType,
-      pageSizeBytes: fetchRes.pageSizeBytes,
-      error: fetchRes.error,
-      parsedData,
-      hasRobotsTxtDisallow: false,
-    });
   }
 
   const durationMs = Date.now() - startTime;
