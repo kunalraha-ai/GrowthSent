@@ -242,6 +242,10 @@ export function AppConsole({
   };
 
   const handleScanForUrl = async (targetUrl: string) => {
+    setIsScanning(true);
+    setScanError("");
+    setScanResult(null);
+
     let cleanHost = targetUrl.trim().toLowerCase();
     try {
       if (!cleanHost.includes("://")) cleanHost = "https://" + cleanHost;
@@ -249,9 +253,6 @@ export function AppConsole({
     } catch {
       cleanHost = targetUrl.trim().toLowerCase();
     }
-
-    setScanError("");
-    setScanResult(null);
 
     try {
       let website = websites.find((site) => site.hostname === cleanHost);

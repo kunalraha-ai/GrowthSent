@@ -63,7 +63,23 @@ export function OverviewView({
           </div>
           <div className="overview-two-col" style={{ marginTop: "24px" }}>
             <div className="console-section-card"><div className="card-header flex-between"><h4 className="card-title">Needs Your Attention</h4><button className="text-btn" onClick={() => onNavigateTab("issues")}>View all issues →</button></div>{issues.length ? <div className="attention-list">{issues.slice(0, 5).map((issue) => <div key={issue._id?.toString?.() || `${issue.ruleId}-${issue.affectedUrl}`} className={`attention-item ${issue.severity}`}><div className="item-badge-wrap"><SeverityBadge level={issue.severity || "medium"} /></div><div className="item-content"><strong>{issue.title}</strong><p>{issue.affectedUrl}</p></div></div>)}</div> : <p className="card-sub" style={{ padding: "20px" }}>No issues were returned by this audit.</p>}</div>
-            <div className="console-section-card"><div className="card-header"><h4 className="card-title">Search Performance</h4></div><div style={{ padding: "20px" }}><p className="card-sub">{isGscConnected ? "Your connected Search Console data is available in the Search Performance view." : "Connect Google Search Console to retrieve real clicks, impressions, queries, and ranking positions."}</p><button className="secondary-btn" onClick={() => onNavigateTab(isGscConnected ? "search_performance" : "gsc")}>{isGscConnected ? "View Search Performance →" : "Connect Google Search Console →"}</button></div></div>
+            <div className="console-section-card" style={{ display: "flex", flexDirection: "column" }}>
+              <div className="card-header"><h4 className="card-title">Search Performance</h4></div>
+              <div style={{ padding: "36px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", flex: 1, minHeight: "220px" }}>
+                <p className="card-sub" style={{ maxWidth: "440px", marginBottom: "24px", fontSize: "14px", lineHeight: "1.6" }}>
+                  {isGscConnected
+                    ? "Your connected Search Console data is available in the Search Performance view."
+                    : "Connect Google Search Console to retrieve real clicks, impressions, queries, and ranking positions."}
+                </p>
+                <button
+                  className="primary-btn"
+                  onClick={() => onNavigateTab(isGscConnected ? "search_performance" : "gsc")}
+                  style={{ padding: "12px 24px", fontSize: "14px", fontWeight: 700 }}
+                >
+                  {isGscConnected ? "View Search Performance →" : "Connect Google Search Console →"}
+                </button>
+              </div>
+            </div>
           </div>
         </>
       )}
