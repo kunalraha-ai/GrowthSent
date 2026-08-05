@@ -322,6 +322,7 @@ export function AppConsole({
           onLogout={onLogout}
           user={user}
           onBackToLanding={onBackToLanding}
+          onDeleteWebsite={(site) => handleWebsiteDeleted(site._id || site.hostname)}
         />
 
         {/* Console Main Content */}

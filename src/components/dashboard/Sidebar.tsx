@@ -85,18 +85,27 @@ const Icons = {
       <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   ),
+  Trash: () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  ),
 };
 
 export interface SidebarProps {
   activeTab: string;
   onSelectTab: (tab: string) => void;
-  websites: { hostname: string; displayName?: string }[];
+  websites: { _id?: string; hostname: string; displayName?: string }[];
   activeSite: string;
   onSelectSite: (site: string) => void;
   onAddSite: () => void;
   onLogout?: () => void;
   user?: { name?: string; email: string };
   onBackToLanding?: () => void;
+  onDeleteWebsite?: (site: { _id?: string; hostname: string }) => void;
 }
 
 export function Sidebar({
@@ -109,8 +118,11 @@ export function Sidebar({
   onLogout,
   user,
   onBackToLanding,
+  onDeleteWebsite,
 }: SidebarProps) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [siteToDelete, setSiteToDelete] = useState<{ _id?: string; hostname: string } | null>(null);
+  const [isDeletingWebsite, setIsDeletingWebsite] = useState(false);
 
   return (
     <aside className="dashboard-sidebar">
@@ -209,15 +221,26 @@ export function Sidebar({
         <div className="nav-group">
           <small className="nav-group-title">YOUR WEBSITES</small>
           {websites.map((site) => (
-            <a
+            <div
               key={site.hostname}
               className={`nav-item site-item ${activeSite === site.hostname ? "active" : ""}`}
               onClick={() => onSelectSite(site.hostname)}
               title={site.hostname}
+              style={{ position: "relative" }}
             >
               <span className="icon"><Icons.Globe /></span>
               <span className="nav-label site-name">{site.hostname}</span>
-            </a>
+              <button
+                className="delete-site-btn nav-label"
+                title={`Delete ${site.hostname}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSiteToDelete(site);
+                }}
+              >
+                <Icons.Trash />
+              </button>
+            </div>
           ))}
           <button className="add-site-btn" onClick={onAddSite} title="Add Website">
             <span className="add-site-icon">+</span>
@@ -295,6 +318,35 @@ export function Sidebar({
           if (onLogout) onLogout();
         }}
         onCancel={() => setShowLogoutModal(false)}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(siteToDelete)}
+        title="Delete Website"
+        message={`Are you sure you want to delete ${siteToDelete?.hostname || "this website"}?`}
+        description="All associated crawl history, audit reports, and tracking data for this website will be permanently removed. This action cannot be undone."
+        confirmText="Delete Website"
+        cancelText="Cancel"
+        variant="danger"
+        isLoading={isDeletingWebsite}
+        onConfirm={async () => {
+          if (!siteToDelete) return;
+          setIsDeletingWebsite(true);
+          try {
+            if (siteToDelete._id) {
+              await fetch(`/api/v1/websites/${siteToDelete._id}`, { method: "DELETE" });
+            }
+            if (onDeleteWebsite) {
+              onDeleteWebsite(siteToDelete);
+            }
+          } catch (err) {
+            console.error("Failed to delete website:", err);
+          } finally {
+            setIsDeletingWebsite(false);
+            setSiteToDelete(null);
+          }
+        }}
+        onCancel={() => setSiteToDelete(null)}
       />
     </aside>
   );
