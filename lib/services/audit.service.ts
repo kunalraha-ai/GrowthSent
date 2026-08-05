@@ -272,15 +272,20 @@ export class AuditService {
         }
       );
     } catch (err: any) {
-      await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
-        { jobId },
-        {
-          $set: {
-            status: "failed",
-            error: err.message || "Crawling failed.",
-          },
-        }
-      );
+      try {
+        const { db } = await connectToDatabase();
+        await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
+          { jobId },
+          {
+            $set: {
+              status: "failed",
+              error: err?.message || "Crawling failed.",
+            },
+          }
+        );
+      } catch (dbErr) {
+        console.error(`[AuditService] Failed to record job error for ${jobId}:`, dbErr);
+      }
     } finally {
       AuditService.activeJobs.delete(jobId);
     }
