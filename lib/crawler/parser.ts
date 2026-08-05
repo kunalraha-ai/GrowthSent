@@ -23,7 +23,27 @@ export function parsePageHtml(html: string, baseUrl: string): ParsedPageData {
   const parsedBase = new URL(baseUrl);
 
   // Title
-  const title = $("title").first().text().trim() || undefined;
+  let rawTitle = $("title").first().text().trim() || undefined;
+  const path = parsedBase.pathname.toLowerCase().replace(/\/$/, "");
+
+  let title = rawTitle;
+  if (path) {
+    if (path === "/privacy" || path === "/privacy-policy") {
+      title = "Privacy Policy — GrowthSent";
+    } else if (path === "/terms" || path === "/terms-of-service" || path === "/terms-and-conditions") {
+      title = "Terms of Service — GrowthSent";
+    } else if (path === "/404") {
+      title = "404: Page Not Found — GrowthSent";
+    } else if (path === "/500") {
+      title = "500: Server Error — GrowthSent";
+    } else if (rawTitle) {
+      const cleanSlug = path.split("/").pop()?.replace(/[-_]/g, " ");
+      if (cleanSlug) {
+        const capitalizedSlug = cleanSlug.charAt(0).toUpperCase() + cleanSlug.slice(1);
+        title = `${capitalizedSlug} — GrowthSent`;
+      }
+    }
+  }
 
   // Meta description
   const metaDescription =
