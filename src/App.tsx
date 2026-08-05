@@ -2,6 +2,8 @@ import { useState, useEffect, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsOfService } from "./components/TermsOfService";
+import { NotFound404 } from "./components/NotFound404";
+import { ServerError500 } from "./components/ServerError500";
 import { Logo } from "./components/Logo";
 
 const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
@@ -845,9 +847,21 @@ function App() {
     const p = window.location.pathname;
     return p === "/terms" || p === "/terms-of-service" || p === "/terms-and-conditions";
   });
+  const [show404, setShow404] = useState(() => {
+    return window.location.pathname === "/404";
+  });
+  const [show500, setShow500] = useState(() => {
+    return window.location.pathname === "/500";
+  });
   const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
   const [consoleTab, setConsoleTab] = useState<string>("overview");
   const [authRedirectError, setAuthRedirectError] = useState("");
+
+  useEffect(() => {
+    if (!showPrivacyPolicy && !showTermsOfService && !show404 && !show500) {
+      document.title = "GrowthSent — Simple SEO & Website Analytics for Developers";
+    }
+  }, [showPrivacyPolicy, showTermsOfService, show404, show500]);
 
   // Restore the server-issued session when the page reloads.
   useEffect(() => {
@@ -914,6 +928,36 @@ function App() {
         onBack={() => {
           setShowTermsOfService(false);
           window.history.pushState({}, "", "/");
+        }}
+      />
+    );
+  }
+
+  if (show404) {
+    return (
+      <NotFound404
+        onBack={() => {
+          setShow404(false);
+          window.history.pushState({}, "", "/");
+        }}
+        onScanUrl={() => {
+          setShow404(false);
+          window.history.pushState({}, "", "/");
+        }}
+      />
+    );
+  }
+
+  if (show500) {
+    return (
+      <ServerError500
+        onBack={() => {
+          setShow500(false);
+          window.history.pushState({}, "", "/");
+        }}
+        onRetry={() => {
+          setShow500(false);
+          window.location.reload();
         }}
       />
     );

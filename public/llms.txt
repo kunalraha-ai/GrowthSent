@@ -1,0 +1,13 @@
+# GrowthSent
+> Simple SEO & Website Analytics for Developers.
+
+GrowthSent provides tools and services designed to help developers and website owners understand, monitor, and improve website health, discoverability, search performance, and growth.
+
+## Core Pages
+- https://www.growthsent.com/ (Home & Web Scanner)
+- https://www.growthsent.com/privacy (Privacy Policy)
+- https://www.growthsent.com/terms (Terms of Service)
+
+## Resources & Integrations
+- Sitemap: https://www.growthsent.com/sitemap.xml
+- Robots: https://www.growthsent.com/robots.txt

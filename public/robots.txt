@@ -2,3 +2,6 @@ User-agent: *
 Allow: /
 
 Sitemap: https://www.growthsent.com/sitemap.xml
+
+# AI Agents Guidance
+# See https://www.growthsent.com/llms.txt

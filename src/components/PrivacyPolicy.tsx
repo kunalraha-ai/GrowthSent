@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Logo } from "./Logo";
 
 interface PrivacyPolicyProps {
@@ -6,6 +6,9 @@ interface PrivacyPolicyProps {
 }
 
 export function PrivacyPolicy({ onBack }: PrivacyPolicyProps) {
+  useEffect(() => {
+    document.title = "Privacy Policy — GrowthSent";
+  }, []);
   return (
     <div style={{ background: "#0e0f0e", color: "#f7f7f3", minHeight: "100vh", fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
