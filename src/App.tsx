@@ -1144,8 +1144,10 @@ function App() {
           <small>
             © 2026 GrowthSent ·{" "}
             <a
+              href="/privacy"
               style={{ cursor: "pointer", textDecoration: "underline" }}
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
                 setShowTermsOfService(false);
                 setShowPrivacyPolicy(true);
                 window.history.pushState({}, "", "/privacy");
@@ -1155,8 +1157,10 @@ function App() {
             </a>
             {" · "}
             <a
+              href="/terms"
               style={{ cursor: "pointer", textDecoration: "underline" }}
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
                 setShowPrivacyPolicy(false);
                 setShowTermsOfService(true);
                 window.history.pushState({}, "", "/terms");
@@ -1173,8 +1177,10 @@ function App() {
           <a>About</a>
           <a id="pricing">Pricing</a>
           <a
+            href="/privacy"
             style={{ cursor: "pointer" }}
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
               setShowTermsOfService(false);
               setShowPrivacyPolicy(true);
               window.history.pushState({}, "", "/privacy");
@@ -1183,8 +1189,10 @@ function App() {
             Privacy Policy
           </a>
           <a
+            href="/terms"
             style={{ cursor: "pointer" }}
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault();
               setShowPrivacyPolicy(false);
               setShowTermsOfService(true);
               window.history.pushState({}, "", "/terms");
