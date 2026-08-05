@@ -97,8 +97,6 @@ export interface SidebarProps {
   onLogout?: () => void;
   user?: { name?: string; email: string };
   onBackToLanding?: () => void;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
 }
 
 export function Sidebar({
@@ -111,33 +109,19 @@ export function Sidebar({
   onLogout,
   user,
   onBackToLanding,
-  collapsed = false,
-  onToggleCollapse,
 }: SidebarProps) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   return (
-    <aside className={`dashboard-sidebar ${collapsed ? "is-collapsed" : ""}`}>
-      {/* Brand Header with Collapse Toggle */}
-      <div className="sidebar-brand-wrapper flex-between">
-        <Logo dark iconOnly={collapsed} />
-        <button
-          className="collapse-toggle-btn"
-          onClick={onToggleCollapse}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {collapsed ? (
-              <polyline points="9 18 15 12 9 6" />
-            ) : (
-              <polyline points="15 18 9 12 15 6" />
-            )}
-          </svg>
-        </button>
+    <aside className="dashboard-sidebar">
+      {/* Brand Header */}
+      <div className="sidebar-brand-wrapper">
+        <div className="sidebar-logo-icon"><Logo dark iconOnly /></div>
+        <div className="sidebar-logo-full"><Logo dark /></div>
       </div>
 
-      {/* User Info Bar in Sidebar */}
-      {user && !collapsed && (
+      {/* User Info Bar */}
+      {user && (
         <div className="sidebar-user-pill">
           <span className="user-avatar-small">
             {user.name ? user.name[0].toUpperCase() : user.email[0].toUpperCase()}
@@ -152,114 +136,113 @@ export function Sidebar({
         <a
           className={`nav-item ${activeTab === "overview" ? "active" : ""}`}
           onClick={() => onSelectTab("overview")}
-          title={collapsed ? "Overview" : undefined}
+          title="Overview"
         >
           <span className="icon"><Icons.Overview /></span>
-          {!collapsed && <span>Overview</span>}
+          <span className="nav-label">Overview</span>
         </a>
 
         {/* SEO Group */}
         <div className="nav-group">
-          {!collapsed && <small className="nav-group-title">SEO</small>}
+          <small className="nav-group-title">SEO</small>
           <a
             className={`nav-item ${activeTab === "seo_audit" ? "active" : ""}`}
             onClick={() => onSelectTab("seo_audit")}
-            title={collapsed ? "Audit & Health" : undefined}
+            title="Audit &amp; Health"
           >
             <span className="icon"><Icons.Audit /></span>
-            {!collapsed && <span>Audit &amp; Health</span>}
+            <span className="nav-label">Audit &amp; Health</span>
           </a>
           <a
             className={`nav-item ${activeTab === "pages" ? "active" : ""}`}
             onClick={() => onSelectTab("pages")}
-            title={collapsed ? "Pages" : undefined}
+            title="Pages"
           >
             <span className="icon"><Icons.Pages /></span>
-            {!collapsed && <span>Pages</span>}
+            <span className="nav-label">Pages</span>
           </a>
           <a
             className={`nav-item ${activeTab === "search_performance" ? "active" : ""}`}
             onClick={() => onSelectTab("search_performance")}
-            title={collapsed ? "Search Performance" : undefined}
+            title="Search Performance"
           >
             <span className="icon"><Icons.Search /></span>
-            {!collapsed && <span>Search Performance</span>}
+            <span className="nav-label">Search Performance</span>
           </a>
           <a
             className={`nav-item ${activeTab === "issues" ? "active" : ""}`}
             onClick={() => onSelectTab("issues")}
-            title={collapsed ? "Issues" : undefined}
+            title="Issues"
           >
             <span className="icon"><Icons.Issues /></span>
-            {!collapsed && <span>Issues</span>}
+            <span className="nav-label">Issues</span>
           </a>
         </div>
 
         {/* Analytics Group */}
         <div className="nav-group">
-          {!collapsed && <small className="nav-group-title">ANALYTICS</small>}
+          <small className="nav-group-title">ANALYTICS</small>
           <a
             className={`nav-item ${activeTab === "analytics" ? "active" : ""}`}
             onClick={() => onSelectTab("analytics")}
-            title={collapsed ? "Analytics" : undefined}
+            title="Analytics"
           >
             <span className="icon"><Icons.Analytics /></span>
-            {!collapsed && <span>Analytics</span>}
+            <span className="nav-label">Analytics</span>
           </a>
         </div>
 
         {/* Monitoring Group */}
         <div className="nav-group">
-          {!collapsed && <small className="nav-group-title">MONITORING</small>}
+          <small className="nav-group-title">MONITORING</small>
           <a
             className={`nav-item ${activeTab === "alerts" ? "active" : ""}`}
             onClick={() => onSelectTab("alerts")}
-            title={collapsed ? "Alerts & Monitoring" : undefined}
+            title="Alerts &amp; Monitoring"
           >
             <span className="icon"><Icons.Alerts /></span>
-            {!collapsed && <span>Alerts &amp; Monitoring</span>}
+            <span className="nav-label">Alerts &amp; Monitoring</span>
           </a>
         </div>
 
         {/* Your Websites Group */}
         <div className="nav-group">
-          {!collapsed && <small className="nav-group-title">YOUR WEBSITES</small>}
+          <small className="nav-group-title">YOUR WEBSITES</small>
           {websites.map((site) => (
             <a
               key={site.hostname}
               className={`nav-item site-item ${activeSite === site.hostname ? "active" : ""}`}
               onClick={() => onSelectSite(site.hostname)}
-              title={collapsed ? site.hostname : undefined}
+              title={site.hostname}
             >
               <span className="icon"><Icons.Globe /></span>
-              {!collapsed && <span className="site-name">{site.hostname}</span>}
+              <span className="nav-label site-name">{site.hostname}</span>
             </a>
           ))}
-          {!collapsed && (
-            <button className="add-site-btn" onClick={onAddSite}>
-              + Add Website
-            </button>
-          )}
+          <button className="add-site-btn" onClick={onAddSite} title="Add Website">
+            <span className="add-site-icon">+</span>
+            <span className="nav-label">Add Website</span>
+          </button>
         </div>
 
         {/* Integrations Group */}
         <div className="nav-group">
-          {!collapsed && <small className="nav-group-title">INTEGRATIONS</small>}
+          <small className="nav-group-title">INTEGRATIONS</small>
           <a
             className={`nav-item ${activeTab === "gsc" ? "active" : ""}`}
             onClick={() => onSelectTab("gsc")}
-            title={collapsed ? "Google Search Console" : undefined}
+            title="Google Search Console"
           >
             <span className="icon"><Icons.Integration /></span>
-            {!collapsed && <span>Google Search Console</span>}
+            <span className="nav-label">Google Search Console</span>
           </a>
           <a
             className={`nav-item ${activeTab === "ga" ? "active" : ""}`}
             onClick={() => onSelectTab("ga")}
-            title={collapsed ? "Google Analytics" : undefined}
+            title="Google Analytics"
           >
             <span className="icon"><Icons.Integration /></span>
-            {!collapsed && <span>Google Analytics</span>}
+            <span className="nav-label">Google Analytics</span>
           </a>
         </div>
 
@@ -268,20 +251,20 @@ export function Sidebar({
           <a
             className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
             onClick={() => onSelectTab("settings")}
-            title={collapsed ? "Settings" : undefined}
+            title="Settings"
           >
             <span className="icon"><Icons.Settings /></span>
-            {!collapsed && <span>Settings</span>}
+            <span className="nav-label">Settings</span>
           </a>
 
           {onBackToLanding && (
             <a
               className="nav-item"
               onClick={onBackToLanding}
-              title={collapsed ? "View Landing Page" : undefined}
+              title="View Landing Page"
             >
               <span className="icon"><Icons.Landing /></span>
-              {!collapsed && <span>View Landing Page</span>}
+              <span className="nav-label">View Landing Page</span>
             </a>
           )}
 
@@ -290,10 +273,10 @@ export function Sidebar({
               className="nav-item"
               onClick={() => setShowLogoutModal(true)}
               style={{ color: "#ef4444" }}
-              title={collapsed ? "Log out" : undefined}
+              title="Log out"
             >
               <span className="icon"><Icons.Logout /></span>
-              {!collapsed && <span>Log out</span>}
+              <span className="nav-label">Log out</span>
             </a>
           )}
         </div>

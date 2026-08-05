@@ -169,7 +169,7 @@ export function AppConsole({
   const [scanResult, setScanResult] = useState<any>(null);
   const [isGscConnected, setIsGscConnected] = useState(false);
   const [isGaConnected, setIsGaConnected] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
   const [scanError, setScanError] = useState("");
 
   useEffect(() => {
@@ -307,7 +307,7 @@ export function AppConsole({
   };
 
   return (
-    <div className={`full-app-console ${isSidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+    <div className="full-app-console">
       {/* Main Layout without topbar */}
       <div className="full-app-layout">
         {/* Sidebar */}
@@ -321,8 +321,6 @@ export function AppConsole({
           onLogout={onLogout}
           user={user}
           onBackToLanding={onBackToLanding}
-          collapsed={isSidebarCollapsed}
-          onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         />
 
         {/* Console Main Content */}
