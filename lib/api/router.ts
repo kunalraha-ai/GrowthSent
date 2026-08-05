@@ -206,8 +206,20 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       const websiteId = req.query.websiteId;
       if (!websiteId) return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: "websiteId is required." } } };
       const days = parseInt(req.query.days || "30", 10);
-      const report = await fetchGoogleAnalyticsReport(user._id!.toString(), websiteId, days);
-      return { statusCode: 200, body: report };
+      try {
+        const report = await fetchGoogleAnalyticsReport(user._id!.toString(), websiteId, days);
+        return { statusCode: 200, body: report };
+      } catch (err: any) {
+        const msg: string = err?.message || "Unable to fetch Google Analytics report.";
+        if (/no google analytics property/i.test(msg)) {
+          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: msg } } };
+        }
+        if (/not connected/i.test(msg) || /no active.*integration/i.test(msg)) {
+          return { statusCode: 400, body: { error: { code: "NOT_CONNECTED", message: "Google Analytics is not connected for this website." } } };
+        }
+        console.error("[ga4-report] Error:", msg);
+        return { statusCode: 502, body: { error: { code: "GA4_ERROR", message: msg } } };
+      }
     }
 
     // ----------------------------------------------------
