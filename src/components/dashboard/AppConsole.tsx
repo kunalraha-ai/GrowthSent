@@ -7,7 +7,6 @@ import { PagesView } from "./PagesView";
 import { SearchPerformanceView } from "./SearchPerformanceView";
 import { IssuesView } from "./IssuesView";
 import { AnalyticsView } from "./AnalyticsView";
-import { AlertsView } from "./AlertsView";
 import { GscIntegrationView } from "./GscIntegrationView";
 import { GaIntegrationView } from "./GaIntegrationView";
 import { SettingsView } from "./SettingsView";
@@ -407,13 +406,6 @@ export function AppConsole({
               activeSite={activeSite}
               websiteId={activeWebsiteId}
               onNavigateTab={setActiveTab}
-            />
-          )}
-
-          {activeTab === "alerts" && (
-            <AlertsView
-              activeSite={activeSite}
-              scanResult={scanResult}
             />
           )}
 

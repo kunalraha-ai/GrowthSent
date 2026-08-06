@@ -526,11 +526,6 @@ function ConsolePreview({ onSelectTab }: { onSelectTab?: (tab: string) => void }
           <span>⌁ Analytics</span>
         </a>
 
-        <small>MONITORING</small>
-        <a className={activeTab === "alerts" ? "active" : ""} onClick={() => { setActiveTab("alerts"); onSelectTab?.("alerts"); }}>
-          <span>◌ Alerts &amp; Monitoring</span>
-        </a>
-
         <small>YOUR WEBSITES</small>
         <a className="active">
           <span>● example.com</span>
@@ -780,49 +775,6 @@ function ConsolePreview({ onSelectTab }: { onSelectTab?: (tab: string) => void }
                 <div className="table-row"><span>Missing title tag on /docs/api</span><p>Search engines cannot label this documentation page</p><button className="mini-btn">✦ AI Fix</button></div>
                 <div className="table-row"><span>Broken link: /about → /team-old</span><p>Internal link yields 404 error</p><button className="mini-btn">✦ AI Fix</button></div>
                 <div className="table-row"><span>Missing meta description on /pricing</span><p>Decreases search snippet CTR</p><button className="mini-btn">✦ AI Fix</button></div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {activeTab === "alerts" && (
-          <>
-            <div className="console-title">
-              <div>
-                <p>ALERTS &amp; MONITORING</p>
-                <h3>Site Monitor <span>● 99.98% Uptime</span></h3>
-              </div>
-              <button>Configure alerts ⚙</button>
-            </div>
-            <div className="metrics">
-              <div>
-                <p>Uptime (30d)</p>
-                <b>99.98%</b>
-                <span>0 downtime events</span>
-              </div>
-              <div>
-                <p>Scan Interval</p>
-                <b>Every 6h</b>
-                <span>Automatic</span>
-              </div>
-              <div>
-                <p>Active Monitors</p>
-                <b>4 Rules</b>
-                <span>Indexing, Uptime, Links</span>
-              </div>
-              <div>
-                <p>Last Activity</p>
-                <b>2h ago</b>
-                <span>Scan completed</span>
-              </div>
-            </div>
-            <div className="console-table-card">
-              <div className="table-header"><b>Recent Activity &amp; System Log</b><span>Real-time</span></div>
-              <div className="console-table">
-                <div className="table-row"><span>Google Search Console Sync</span><p>342 keywords updated successfully</p><span className="badge pass">2h ago</span></div>
-                <div className="table-row"><span>New Backlink Discovered</span><p>Mentioned on ProductHunt blog post</p><span className="badge pass">5h ago</span></div>
-                <div className="table-row"><span>Automated Scan Completed</span><p>124 pages crawled — 0 new errors</p><span className="badge pass">8h ago</span></div>
-                <div className="table-row"><span>SSL Certificate Check</span><p>Valid for 284 more days</p><span className="badge pass">1d ago</span></div>
               </div>
             </div>
           </>
