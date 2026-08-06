@@ -296,6 +296,8 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
     );
   }
 
+  const kpis = report?.kpis;
+
   return (
     <div className="analytics-view">
       {/* Header Controls matching Overview style */}
