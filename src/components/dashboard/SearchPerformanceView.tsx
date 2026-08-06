@@ -235,17 +235,49 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
 
   const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
 
-  // Render Not Connected State matching Overview style
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  const connectGsc = async () => {
+    if (!websiteId) {
+      setError("Add a website before connecting Google Search Console.");
+      return;
+    }
+    setError("");
+    setIsConnecting(true);
+    try {
+      const response = await fetch(
+        `/api/v1/integrations/google/start?websiteId=${websiteId}&provider=google_search_console`
+      );
+      const data = await response.json();
+      if (!response.ok || !data.authorizationUrl) throw new Error(data.error?.message || "Unable to start Google OAuth.");
+      window.location.assign(data.authorizationUrl);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to start Google OAuth.");
+      setIsConnecting(false);
+    }
+  };
+
+  // Render Not Connected State matching Google Search Console integration card
   if (!isGscConnected) {
     return (
       <div className="search-performance-view">
-        <div className="console-title"><h3 className="title-text">Search Performance</h3></div>
-        <div className="console-section-card empty-state-card" style={{ marginTop: "24px", padding: "48px 24px", textAlign: "center" }}>
-          <h3 style={{ fontSize: "20px", fontWeight: 800, margin: "0 0 12px 0" }}>Connect Google Search Console</h3>
-          <p className="card-sub" style={{ maxWidth: "520px", margin: "0 auto 24px auto" }}>
-            Search clicks, impressions, queries, CTR, and positions are shown only after a real Google Search Console connection is authorized.
+        <div className="console-title flex-between">
+          <h3 className="title-text">Google Search Console</h3>
+          <span className="status-pill warn">Disconnected</span>
+        </div>
+
+        <div className="console-section-card" style={{ marginTop: "24px", padding: "24px" }}>
+          <h4 className="card-title">Search visibility data</h4>
+          <p className="card-sub" style={{ marginTop: "8px", maxWidth: "680px" }}>
+            Connect the Google account that has access to this website’s Search Console property. GrowthSent stores the returned tokens encrypted and uses them only to retrieve your search performance data.
           </p>
-          <button className="primary-btn" onClick={() => onNavigateTab("gsc")}>Connect Google Search Console →</button>
+          {error && <p role="alert" style={{ color: "#b42318", marginTop: "16px" }}>{error}</p>}
+
+          <div style={{ marginTop: "24px", display: "flex", gap: "12px", alignItems: "center" }}>
+            <button className="primary-btn" onClick={connectGsc} disabled={isConnecting || !websiteId}>
+              {isConnecting ? "Opening Google..." : "Connect Google Search Console →"}
+            </button>
+          </div>
         </div>
       </div>
     );

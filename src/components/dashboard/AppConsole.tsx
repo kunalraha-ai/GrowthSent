@@ -410,10 +410,10 @@ export function AppConsole({
           )}
 
           {activeTab === "gsc" && (
-            <GscIntegrationView
+            <SearchPerformanceView
               isGscConnected={isGscConnected}
+              onNavigateTab={setActiveTab}
               websiteId={activeWebsiteId}
-              onConnectionChanged={setIsGscConnected}
             />
           )}
 
