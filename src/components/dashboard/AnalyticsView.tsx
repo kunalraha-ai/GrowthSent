@@ -297,6 +297,7 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   }
 
   const kpis = report?.kpis;
+  const series = report?.dailySeries || [];
 
   return (
     <div className="analytics-view">
