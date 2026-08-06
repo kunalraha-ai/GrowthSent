@@ -192,16 +192,19 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
 
   const totalPagePages = Math.ceil(filteredPages.length / itemsPerPage) || 1;
 
+  // Layout constants for SVG chart (kept outside useMemo so they're always available)
+  const svgWidth = 840;
+  const svgHeight = 260;
+  const marginLeft = 50;
+  const marginRight = 20;
+  const marginBottom = 220;
+
   // Memoize all SVG Chart computations for 60 FPS performance
   const chartData = useMemo(() => {
     const series = report?.dailySeries || [];
-    if (series.length === 0) return { points: [], yTicks: [], xDateTicks: [], svgPathD: "", areaPathD: "" };
+    if (series.length === 0) return { points: [] as { x: number; y: number; date: string; rawVal: number }[], yTicks: [] as { y: number; val: number }[], xDateTicks: [] as { x: number; y: number; date: string; rawVal: number }[], svgPathD: "", areaPathD: "" };
 
-    const svgWidth = 840;
-    const marginLeft = 50;
-    const marginRight = 20;
     const marginTop = 30;
-    const marginBottom = 220;
     const plotWidth = svgWidth - marginLeft - marginRight;
     const plotHeight = marginBottom - marginTop;
 
@@ -240,28 +243,17 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
       : "";
 
     const count = Math.min(series.length, 5);
-    const xDateTicks = [];
+    const xDateTicks: { x: number; y: number; date: string; rawVal: number }[] = [];
     for (let i = 0; i < count; i++) {
       const idx = Math.round((i / (count - 1)) * (series.length - 1));
       const pt = points[idx];
       if (pt) xDateTicks.push(pt);
     }
 
-    return { points, yTicks, xDateTicks, svgPathD, areaPathD, svgWidth, svgHeight, marginLeft, marginRight, marginBottom };
+    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
   }, [report?.dailySeries, selectedChartMetric]);
 
-  const {
-    points = [],
-    yTicks = [],
-    xDateTicks = [],
-    svgPathD = "",
-    areaPathD = "",
-    svgWidth = 840,
-    svgHeight = 260,
-    marginLeft = 50,
-    marginRight = 20,
-    marginBottom = 220,
-  } = chartData;
+  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
 
   if (!websiteId) {
     return (
