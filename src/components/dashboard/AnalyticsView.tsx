@@ -255,6 +255,75 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
 
   const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
 
+  const [actionError, setActionError] = useState("");
+  const [isWorking, setIsWorking] = useState(false);
+  const [properties, setProperties] = useState<Array<{ propertyId: string; displayName: string; accountName: string }>>([]);
+  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+  const [pickerChoice, setPickerChoice] = useState("");
+
+  const connectGa = async () => {
+    if (!websiteId) {
+      setActionError("Add a website before connecting Google Analytics.");
+      return;
+    }
+    setActionError("");
+    setIsWorking(true);
+    try {
+      const response = await fetch(
+        `/api/v1/integrations/google/start?websiteId=${websiteId}&provider=google_analytics`
+      );
+      const data = await response.json();
+      if (!response.ok || !data.authorizationUrl) throw new Error(data.error?.message || "Unable to start Google OAuth.");
+      window.location.assign(data.authorizationUrl);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Unable to start Google OAuth.");
+      setIsWorking(false);
+    }
+  };
+
+  const loadProperties = async () => {
+    if (!websiteId) return;
+    setIsLoadingProperties(true);
+    setActionError("");
+    try {
+      const response = await fetch(`/api/v1/ga4-properties?websiteId=${websiteId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || "Unable to load Google Analytics properties.");
+      setProperties(data.properties || []);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Unable to load Google Analytics properties.");
+    } finally {
+      setIsLoadingProperties(false);
+    }
+  };
+
+  useEffect(() => {
+    if (noPropertySelected && websiteId) {
+      loadProperties();
+    }
+  }, [noPropertySelected, websiteId]);
+
+  const selectProperty = async () => {
+    if (!websiteId || !pickerChoice) return;
+    const chosen = properties.find((p) => p.propertyId === pickerChoice);
+    setActionError("");
+    setIsWorking(true);
+    try {
+      const response = await fetch("/api/v1/ga4-properties/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ websiteId, propertyId: pickerChoice, displayName: chosen?.displayName }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error?.message || "Unable to save selected property.");
+      fetchReport(false);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : "Unable to save selected property.");
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
   if (!websiteId) {
     return (
       <div className="analytics-view">
@@ -269,13 +338,23 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   if (notConnected) {
     return (
       <div className="analytics-view">
-        <div className="console-title"><h3 className="title-text">Google Analytics 4</h3></div>
-        <div className="console-section-card empty-state-card" style={{ marginTop: "24px", padding: "48px 24px", textAlign: "center" }}>
-          <h3 style={{ fontSize: "20px", fontWeight: 800, margin: "0 0 12px 0" }}>Connect Google Analytics</h3>
-          <p className="card-sub" style={{ maxWidth: "520px", margin: "0 auto 24px auto" }}>
-            Google Analytics 4 isn&apos;t connected for this website yet. Connect your Google account to unlock real user traffic, active sessions, landing pages, and engagement analytics.
+        <div className="console-title flex-between">
+          <h3 className="title-text">Google Analytics 4</h3>
+          <span className="status-pill warn">Disconnected</span>
+        </div>
+
+        <div className="console-section-card" style={{ marginTop: "24px", padding: "24px" }}>
+          <h4 className="card-title">Authorize Google Analytics access</h4>
+          <p className="card-sub" style={{ marginTop: "8px", maxWidth: "680px" }}>
+            Connect a GA4 property to pull real traffic, engagement, and channel data directly from Google Analytics into this dashboard.
           </p>
-          {onNavigateTab && <button className="primary-btn" onClick={() => onNavigateTab("ga")}>Connect Google Analytics →</button>}
+          {actionError && <p role="alert" style={{ color: "#b42318", marginTop: "16px" }}>{actionError}</p>}
+
+          <div style={{ marginTop: "24px", display: "flex", gap: "12px", alignItems: "center" }}>
+            <button className="primary-btn" onClick={connectGa} disabled={isWorking || !websiteId}>
+              {isWorking ? "Opening Google..." : "Connect Google Analytics →"}
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -284,13 +363,46 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   if (noPropertySelected) {
     return (
       <div className="analytics-view">
-        <div className="console-title"><h3 className="title-text">Google Analytics 4</h3></div>
-        <div className="console-section-card empty-state-card" style={{ marginTop: "24px", padding: "48px 24px", textAlign: "center" }}>
-          <h3 style={{ fontSize: "20px", fontWeight: 800, margin: "0 0 12px 0" }}>Select a GA4 Property</h3>
-          <p className="card-sub" style={{ maxWidth: "520px", margin: "0 auto 24px auto" }}>
-            Google Analytics is connected, but no GA4 property has been selected yet. Select a property to start displaying real analytics data.
+        <div className="console-title flex-between">
+          <h3 className="title-text">Google Analytics 4</h3>
+          <span className="status-pill healthy">● Connected</span>
+        </div>
+
+        <div className="console-section-card" style={{ marginTop: "24px", padding: "24px" }}>
+          <h4 className="card-title">Select a GA4 Property</h4>
+          <p className="card-sub" style={{ marginTop: "8px", maxWidth: "680px" }}>
+            Google Analytics is connected. Select the GA4 property for this website to start displaying real analytics data.
           </p>
-          {onNavigateTab && <button className="primary-btn" onClick={() => onNavigateTab("ga")}>Select GA4 Property →</button>}
+          {actionError && <p role="alert" style={{ color: "#b42318", marginTop: "16px" }}>{actionError}</p>}
+
+          <div style={{ marginTop: "20px", display: "flex", flexDirection: "column", gap: "12px", maxWidth: "480px" }}>
+            {isLoadingProperties ? (
+              <p className="card-sub">Loading your Google Analytics properties...</p>
+            ) : properties.length === 0 ? (
+              <p className="card-sub">
+                No GA4 properties were found on this Google account. Make sure you selected the correct account when authorizing.
+              </p>
+            ) : (
+              <>
+                <label className="form-label">Choose GA4 Property</label>
+                <select
+                  className="form-input"
+                  value={pickerChoice}
+                  onChange={(e) => setPickerChoice(e.target.value)}
+                >
+                  <option value="">Choose a property...</option>
+                  {properties.map((p) => (
+                    <option key={p.propertyId} value={p.propertyId}>
+                      {p.accountName} — {p.displayName} ({p.propertyId})
+                    </option>
+                  ))}
+                </select>
+                <button className="primary-btn" onClick={selectProperty} disabled={!pickerChoice || isWorking}>
+                  {isWorking ? "Saving..." : "Save Property"}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );

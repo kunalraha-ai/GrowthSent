@@ -7,8 +7,6 @@ import { PagesView } from "./PagesView";
 import { SearchPerformanceView } from "./SearchPerformanceView";
 import { IssuesView } from "./IssuesView";
 import { AnalyticsView } from "./AnalyticsView";
-import { GscIntegrationView } from "./GscIntegrationView";
-import { GaIntegrationView } from "./GaIntegrationView";
 import { SettingsView } from "./SettingsView";
 
 export interface UserProfile {
@@ -393,14 +391,6 @@ export function AppConsole({
             />
           )}
 
-          {activeTab === "analytics" && (
-            <AnalyticsView
-              activeSite={activeSite}
-              websiteId={activeWebsiteId}
-              onNavigateTab={setActiveTab}
-            />
-          )}
-
           {activeTab === "gsc" && (
             <SearchPerformanceView
               isGscConnected={isGscConnected}
@@ -410,10 +400,10 @@ export function AppConsole({
           )}
 
           {activeTab === "ga" && (
-            <GaIntegrationView
-              isGaConnected={isGaConnected}
+            <AnalyticsView
+              activeSite={activeSite}
               websiteId={activeWebsiteId}
-              onConnectionChanged={setIsGaConnected}
+              onNavigateTab={setActiveTab}
             />
           )}
 

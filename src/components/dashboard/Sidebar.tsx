@@ -199,19 +199,6 @@ export function Sidebar({
           </a>
         </div>
 
-        {/* Analytics Group */}
-        <div className="nav-group">
-          <small className="nav-group-title">ANALYTICS</small>
-          <a
-            className={`nav-item ${activeTab === "analytics" ? "active" : ""}`}
-            onClick={() => handleTabClick("analytics")}
-            title="Analytics"
-          >
-            <span className="icon"><Icons.Analytics /></span>
-            <span className="nav-label">Analytics</span>
-          </a>
-        </div>
-
         {/* Your Websites Group */}
         <div className="nav-group">
           <small className="nav-group-title">YOUR WEBSITES</small>
