@@ -520,11 +520,21 @@ function formatCountryName(code: string): string {
   }
 }
 
+const gscReportCache = new Map<string, { data: GscFullReportData; timestamp: number }>();
+const ga4ReportCache = new Map<string, { data: Ga4FullReportData; timestamp: number }>();
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+
 export async function fetchSearchConsoleFullReport(
   userId: string,
   websiteId: string,
   days: number = 28
 ): Promise<GscFullReportData> {
+  const cacheKey = `${userId}:${websiteId}:${days}`;
+  const cached = gscReportCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const { db } = await connectToDatabase();
   const website = await getWebsiteForUser(userId, websiteId);
   const integration = await getActiveIntegration(userId, websiteId, "google_search_console");
@@ -743,7 +753,7 @@ export async function fetchSearchConsoleFullReport(
     { $set: { updatedAt: new Date() } }
   );
 
-  return {
+  const reportResult: GscFullReportData = {
     connected: true,
     siteUrl,
     lastSynced: new Date().toISOString(),
@@ -768,6 +778,9 @@ export async function fetchSearchConsoleFullReport(
     opportunities,
     indexingOverview,
   };
+
+  gscReportCache.set(cacheKey, { data: reportResult, timestamp: Date.now() });
+  return reportResult;
 }
 
 // ----------------------------------------------------
@@ -1035,6 +1048,12 @@ export async function fetchGa4FullReport(
   websiteId: string,
   days: number = 28
 ): Promise<Ga4FullReportData> {
+  const cacheKey = `${userId}:${websiteId}:${days}`;
+  const cached = ga4ReportCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const integration = await getActiveIntegration(userId, websiteId, "google_analytics");
   if (!integration.ga4PropertyId) {
     throw new Error("No Google Analytics property has been selected for this website yet.");
@@ -1335,7 +1354,7 @@ export async function fetchGa4FullReport(
     { $set: { updatedAt: new Date() } }
   );
 
-  return {
+  const reportResult: Ga4FullReportData = {
     connected: true,
     propertyId,
     propertyDisplayName: integration.ga4PropertyDisplayName,
@@ -1378,4 +1397,7 @@ export async function fetchGa4FullReport(
     },
     seoInsights,
   };
+
+  ga4ReportCache.set(cacheKey, { data: reportResult, timestamp: Date.now() });
+  return reportResult;
 }

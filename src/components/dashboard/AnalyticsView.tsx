@@ -137,12 +137,12 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
 
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
 
-  const fetchReport = async () => {
+  const fetchReport = async (isBackground = false) => {
     if (!websiteId) {
       setReport(null);
       return;
     }
-    setIsLoading(true);
+    if (!isBackground) setIsLoading(true);
     setError("");
     setNotConnected(false);
     setNoPropertySelected(false);
@@ -167,13 +167,13 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   };
 
   useEffect(() => {
-    fetchReport();
+    fetchReport(false);
   }, [websiteId, days]);
 
   useEffect(() => {
     if (!websiteId || notConnected || noPropertySelected) return;
     const interval = setInterval(() => {
-      fetchReport();
+      fetchReport(true);
     }, 30000);
     return () => clearInterval(interval);
   }, [websiteId, days, notConnected, noPropertySelected]);
@@ -191,6 +191,66 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   }, [filteredPages, pageNumber]);
 
   const totalPagePages = Math.ceil(filteredPages.length / itemsPerPage) || 1;
+
+  // Memoize all SVG Chart computations for 60 FPS performance
+  const chartData = useMemo(() => {
+    const series = report?.dailySeries || [];
+    if (series.length === 0) return { points: [], yTicks: [], xDateTicks: [], svgPathD: "", areaPathD: "" };
+
+    const svgWidth = 840;
+    const marginLeft = 50;
+    const marginRight = 20;
+    const marginTop = 30;
+    const marginBottom = 220;
+    const plotWidth = svgWidth - marginLeft - marginRight;
+    const plotHeight = marginBottom - marginTop;
+
+    const metricValues = series.map((d) => {
+      if (selectedChartMetric === "users") return d.users;
+      if (selectedChartMetric === "sessions") return d.sessions;
+      if (selectedChartMetric === "pageViews") return d.pageViews;
+      if (selectedChartMetric === "engagedSessions") return d.engagedSessions;
+      return d.eventCount;
+    });
+
+    const maxVal = Math.max(...metricValues, 3);
+    const minVal = 0;
+    const valRange = maxVal - minVal || 1;
+
+    const yTicks = [0, 1, 2, 3].map((step) => {
+      const ratio = step / 3;
+      const y = marginBottom - ratio * plotHeight;
+      const val = minVal + ratio * valRange;
+      return { y, val };
+    });
+
+    const points = series.map((d, idx) => {
+      const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
+      const rawVal = selectedChartMetric === "users" ? d.users : selectedChartMetric === "sessions" ? d.sessions : selectedChartMetric === "pageViews" ? d.pageViews : selectedChartMetric === "engagedSessions" ? d.engagedSessions : d.eventCount;
+      const y = marginBottom - ((rawVal - minVal) / valRange) * plotHeight;
+      return { x, y, date: d.date, rawVal };
+    });
+
+    const svgPathD = points.length > 0
+      ? points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`), "")
+      : "";
+
+    const areaPathD = points.length > 0
+      ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
+      : "";
+
+    const count = Math.min(series.length, 5);
+    const xDateTicks = [];
+    for (let i = 0; i < count; i++) {
+      const idx = Math.round((i / (count - 1)) * (series.length - 1));
+      const pt = points[idx];
+      if (pt) xDateTicks.push(pt);
+    }
+
+    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
+  }, [report?.dailySeries, selectedChartMetric]);
+
+  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
 
   if (!websiteId) {
     return (
@@ -232,68 +292,6 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
       </div>
     );
   }
-
-  const series = report?.dailySeries || [];
-  const kpis = report?.kpis;
-
-  // Dimensions & bounds for GSC-style SVG Chart with Axis numbers & Grid lines
-  const svgWidth = 840;
-  const svgHeight = 260;
-  const marginLeft = 50;
-  const marginRight = 20;
-  const marginTop = 30;
-  const marginBottom = 220;
-  const plotWidth = svgWidth - marginLeft - marginRight;
-  const plotHeight = marginBottom - marginTop;
-
-  const metricValues = series.map((d) => {
-    if (selectedChartMetric === "users") return d.users;
-    if (selectedChartMetric === "sessions") return d.sessions;
-    if (selectedChartMetric === "pageViews") return d.pageViews;
-    if (selectedChartMetric === "engagedSessions") return d.engagedSessions;
-    return d.eventCount;
-  });
-
-  const maxVal = Math.max(...metricValues, 3);
-  const minVal = 0;
-  const valRange = maxVal - minVal || 1;
-
-  // 4 Y-Axis Grid ticks
-  const yTicks = [0, 1, 2, 3].map((step) => {
-    const ratio = step / 3;
-    const y = marginBottom - ratio * plotHeight;
-    const val = minVal + ratio * valRange;
-    return { y, val };
-  });
-
-  // Calculate SVG Chart path points
-  const points = series.map((d, idx) => {
-    const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
-    const rawVal = selectedChartMetric === "users" ? d.users : selectedChartMetric === "sessions" ? d.sessions : selectedChartMetric === "pageViews" ? d.pageViews : selectedChartMetric === "engagedSessions" ? d.engagedSessions : d.eventCount;
-    const y = marginBottom - ((rawVal - minVal) / valRange) * plotHeight;
-    return { x, y, date: d.date, rawVal };
-  });
-
-  const svgPathD = points.length > 0
-    ? points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`), "")
-    : "";
-
-  const areaPathD = points.length > 0
-    ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
-    : "";
-
-  // Select 4-6 X-Axis Date ticks
-  const xDateTicks = useMemo(() => {
-    if (series.length <= 1) return [];
-    const count = Math.min(series.length, 5);
-    const result = [];
-    for (let i = 0; i < count; i++) {
-      const idx = Math.round((i / (count - 1)) * (series.length - 1));
-      const pt = points[idx];
-      if (pt) result.push(pt);
-    }
-    return result;
-  }, [series, points]);
 
   return (
     <div className="analytics-view">
