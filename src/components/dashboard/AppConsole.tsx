@@ -384,14 +384,6 @@ export function AppConsole({
             />
           )}
 
-          {activeTab === "search_performance" && (
-            <SearchPerformanceView
-              isGscConnected={isGscConnected}
-              onNavigateTab={setActiveTab}
-              websiteId={activeWebsiteId}
-            />
-          )}
-
           {activeTab === "issues" && (
             <IssuesView
               activeSite={activeSite}

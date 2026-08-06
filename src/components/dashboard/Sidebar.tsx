@@ -190,14 +190,6 @@ export function Sidebar({
             <span className="nav-label">Pages</span>
           </a>
           <a
-            className={`nav-item ${activeTab === "search_performance" ? "active" : ""}`}
-            onClick={() => handleTabClick("search_performance")}
-            title="Search Performance"
-          >
-            <span className="icon"><Icons.Search /></span>
-            <span className="nav-label">Search Performance</span>
-          </a>
-          <a
             className={`nav-item ${activeTab === "issues" ? "active" : ""}`}
             onClick={() => handleTabClick("issues")}
             title="Issues"
