@@ -41,6 +41,33 @@ const CodexIcon = () => (
   </svg>
 );
 
+const GscIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 40 40" style={{ flexShrink: 0 }}>
+    <g clipPath="url(#gsc-clip-map)">
+      <path fill="#fbbc04" d="m11.081 30.527-4.72 4.721a.933.933 0 0 1-1.317 0l-.292-.292a.933.933 0 0 1 0-1.316l4.72-4.721a.933.933 0 0 1 1.318 0l.291.291a.93.93 0 0 1 0 1.317"/>
+      <path fill="#4285f4" d="M23.75 32.5h6.042a6.04 6.04 0 0 0 6.041-6.042v-16.25a6.04 6.04 0 0 0-6.041-6.041 6.04 6.04 0 0 0-6.042 6.041z"/>
+      <path fill="#fbbc04" d="M13.75 32.5a6.04 6.04 0 0 0 6.042-6.042 6.04 6.04 0 0 0-6.042-6.041 6.04 6.04 0 0 0-6.042 6.041A6.04 6.04 0 0 0 13.75 32.5"/>
+      <path fill="#34a853" d="M27.97 32.5h-5.887a6.04 6.04 0 0 1-6.041-6.042v-7.916a6.04 6.04 0 0 1 6.041-6.042 6.04 6.04 0 0 1 6.042 6.042v13.804a.154.154 0 0 1-.154.154z"/>
+      <path fill="#1967d2" d="M28.125 32.346V18.542a6.04 6.04 0 0 0-4.375-5.807V32.5h4.22a.154.154 0 0 0 .155-.154"/>
+      <path fill="#ea4335" d="M19.792 26.575a6.04 6.04 0 0 0-3.75-5.59v5.59c0 1.72.72 3.273 1.875 4.373a6.02 6.02 0 0 0 1.875-4.373"/>
+    </g>
+    <defs>
+      <clipPath id="gsc-clip-map">
+        <path fill="#fff" d="M0 0h40v40H0z"/>
+      </clipPath>
+    </defs>
+  </svg>
+);
+
+const GaIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 2195.9 2430.9" style={{ flexShrink: 0 }}>
+    <g>
+      <path fill="#F9AB00" d="M2195.9,2126.7c0.9,166.9-133.7,302.8-300.5,303.7c-12.4,0.1-24.9-0.6-37.2-2.1c-154.8-22.9-268.2-157.6-264.4-314V316.1c-3.7-156.6,110-291.3,264.9-314c165.7-19.4,315.8,99.2,335.2,264.9c1.4,12.2,2.1,24.4,2,36.7L2195.9,2126.7z"/>
+      <path fill="#E37400" d="M301.1,1828.7c166.3,0,301.1,134.8,301.1,301.1c0,166.3-134.8,301.1-301.1,301.1C134.8,2430.9,0,2296.1,0,2129.8C0,1963.5,134.8,1828.7,301.1,1828.7z M1093.3,916.2c-167.1,9.2-296.7,149.3-292.8,316.6v808.7c0,219.5,96.6,352.7,238.1,381.1c163.3,33.1,322.4-72.4,355.5-235.7c4.1-20,6.1-40.3,6-60.7v-907.4c0.3-166.9-134.7-302.4-301.6-302.7C1096.8,916.1,1095,916.1,1093.3,916.2z"/>
+    </g>
+  </svg>
+);
+
 export interface LiveScanResult {
   scanId: string;
   url: string;
@@ -1103,7 +1130,7 @@ function App() {
           <i className="downline">↓</i>
           <div className="gs-node"><Logo dark /><small>Your growth console</small></div>
           <p>OPTIONAL ENRICHMENT</p>
-          <div className="google-nodes"><span><b>G</b> Google Search Console</span><span><b>G</b> Google Analytics</span></div>
+          <div className="google-nodes"><span><GscIcon /> Google Search Console</span><span><GaIcon /> Google Analytics</span></div>
         </div>
       </section>
 

@@ -1256,10 +1256,14 @@ a {
   background: #ffffff;
   border: 1px solid #deded8;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 14px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .google-nodes b {
