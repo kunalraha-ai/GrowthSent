@@ -170,6 +170,68 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
 
   const totalPagePages = Math.ceil(filteredPages.length / itemsPerPage) || 1;
 
+  // Memoize all SVG Chart computations for 60 FPS performance and strict hook ordering
+  const chartData = useMemo(() => {
+    const series = report?.dailySeries || [];
+    if (series.length === 0) return { points: [], yTicks: [], xDateTicks: [], svgPathD: "", areaPathD: "" };
+
+    const svgWidth = 840;
+    const marginLeft = 50;
+    const marginRight = 20;
+    const marginTop = 30;
+    const marginBottom = 220;
+    const plotWidth = svgWidth - marginLeft - marginRight;
+    const plotHeight = marginBottom - marginTop;
+
+    const metricValues = series.map((d) => {
+      if (selectedChartMetric === "clicks") return d.clicks;
+      if (selectedChartMetric === "impressions") return d.impressions;
+      if (selectedChartMetric === "ctr") return d.ctr * 100;
+      return d.position;
+    });
+
+    const maxVal = Math.max(...metricValues, 3);
+    const minVal = selectedChartMetric === "position" ? Math.min(...metricValues, 1) : 0;
+    const valRange = maxVal - minVal || 1;
+
+    const yTicks = [0, 1, 2, 3].map((step) => {
+      const ratio = step / 3;
+      const y = marginBottom - ratio * plotHeight;
+      const val = selectedChartMetric === "position"
+        ? maxVal - ratio * valRange
+        : minVal + ratio * valRange;
+      return { y, val };
+    });
+
+    const points = series.map((d, idx) => {
+      const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
+      const rawVal = selectedChartMetric === "clicks" ? d.clicks : selectedChartMetric === "impressions" ? d.impressions : selectedChartMetric === "ctr" ? d.ctr * 100 : d.position;
+      const normalized = selectedChartMetric === "position" ? (maxVal - rawVal) / valRange : (rawVal - minVal) / valRange;
+      const y = marginBottom - normalized * plotHeight;
+      return { x, y, date: d.date, rawVal };
+    });
+
+    const svgPathD = points.length > 0
+      ? points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`), "")
+      : "";
+
+    const areaPathD = points.length > 0
+      ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
+      : "";
+
+    const count = Math.min(series.length, 5);
+    const xDateTicks = [];
+    for (let i = 0; i < count; i++) {
+      const idx = Math.round((i / (count - 1)) * (series.length - 1));
+      const pt = points[idx];
+      if (pt) xDateTicks.push(pt);
+    }
+
+    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
+  }, [report?.dailySeries, selectedChartMetric]);
+
+  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
+
   // Render Not Connected State matching Overview style
   if (!isGscConnected) {
     return (
@@ -188,67 +250,6 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
 
   const series = report?.dailySeries || [];
   const summary = report?.summary || { totalClicks: 0, totalImpressions: 0, avgCtr: 0, avgPosition: 0 };
-
-  // Dimensions & bounds for GSC-style SVG Chart with Axis numbers & Grid lines
-  const svgWidth = 840;
-  const svgHeight = 260;
-  const marginLeft = 50;
-  const marginRight = 20;
-  const marginTop = 30;
-  const marginBottom = 220;
-  const plotWidth = svgWidth - marginLeft - marginRight;
-  const plotHeight = marginBottom - marginTop;
-
-  const metricValues = series.map((d) => {
-    if (selectedChartMetric === "clicks") return d.clicks;
-    if (selectedChartMetric === "impressions") return d.impressions;
-    if (selectedChartMetric === "ctr") return d.ctr * 100;
-    return d.position;
-  });
-
-  const maxVal = Math.max(...metricValues, 3);
-  const minVal = selectedChartMetric === "position" ? Math.min(...metricValues, 1) : 0;
-  const valRange = maxVal - minVal || 1;
-
-  // 4 Y-Axis Grid ticks
-  const yTicks = [0, 1, 2, 3].map((step) => {
-    const ratio = step / 3;
-    const y = marginBottom - ratio * plotHeight;
-    const val = selectedChartMetric === "position"
-      ? maxVal - ratio * valRange
-      : minVal + ratio * valRange;
-    return { y, val };
-  });
-
-  // Calculate SVG Chart path points
-  const points = series.map((d, idx) => {
-    const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
-    const rawVal = selectedChartMetric === "clicks" ? d.clicks : selectedChartMetric === "impressions" ? d.impressions : selectedChartMetric === "ctr" ? d.ctr * 100 : d.position;
-    const normalized = selectedChartMetric === "position" ? (maxVal - rawVal) / valRange : (rawVal - minVal) / valRange;
-    const y = marginBottom - normalized * plotHeight;
-    return { x, y, date: d.date, rawVal };
-  });
-
-  const svgPathD = points.length > 0
-    ? points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`), "")
-    : "";
-
-  const areaPathD = points.length > 0
-    ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
-    : "";
-
-  // Select 4-6 X-Axis Date ticks (Start date, Middle dates, End date)
-  const xDateTicks = useMemo(() => {
-    if (series.length <= 1) return [];
-    const count = Math.min(series.length, 5);
-    const result = [];
-    for (let i = 0; i < count; i++) {
-      const idx = Math.round((i / (count - 1)) * (series.length - 1));
-      const pt = points[idx];
-      if (pt) result.push(pt);
-    }
-    return result;
-  }, [series, points]);
 
   const formatMetricVal = (val: number, type: ActiveChartMetric) => {
     if (type === "clicks" || type === "impressions") return Math.round(val).toLocaleString();
