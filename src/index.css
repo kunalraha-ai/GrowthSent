@@ -1443,6 +1443,9 @@ a {
   padding: 6px 12px;
   color: #d0d1c9;
   background: #272824;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* --- FOR BUILDERS / QUOTES --- */
