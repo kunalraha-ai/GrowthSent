@@ -227,10 +227,21 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
       if (pt) xDateTicks.push(pt);
     }
 
-    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
+    return { points, yTicks, xDateTicks, svgPathD, areaPathD, svgWidth, svgHeight, marginLeft, marginRight, marginBottom };
   }, [report?.dailySeries, selectedChartMetric]);
 
-  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
+  const {
+    points = [],
+    yTicks = [],
+    xDateTicks = [],
+    svgPathD = "",
+    areaPathD = "",
+    svgWidth = 840,
+    svgHeight = 260,
+    marginLeft = 50,
+    marginRight = 20,
+    marginBottom = 220,
+  } = chartData;
 
   // Render Not Connected State matching Overview style
   if (!isGscConnected) {

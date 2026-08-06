@@ -247,10 +247,21 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
       if (pt) xDateTicks.push(pt);
     }
 
-    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
+    return { points, yTicks, xDateTicks, svgPathD, areaPathD, svgWidth, svgHeight, marginLeft, marginRight, marginBottom };
   }, [report?.dailySeries, selectedChartMetric]);
 
-  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
+  const {
+    points = [],
+    yTicks = [],
+    xDateTicks = [],
+    svgPathD = "",
+    areaPathD = "",
+    svgWidth = 840,
+    svgHeight = 260,
+    marginLeft = 50,
+    marginRight = 20,
+    marginBottom = 220,
+  } = chartData;
 
   if (!websiteId) {
     return (
