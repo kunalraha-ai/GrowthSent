@@ -16,6 +16,7 @@ import {
   fetchSearchConsoleKeywords,
   fetchSearchConsoleFullReport,
   fetchGoogleAnalyticsReport,
+  fetchGa4FullReport,
   getGoogleIntegrationStatus,
   listGoogleAnalyticsProperties,
   setGoogleAnalyticsProperty,
@@ -237,7 +238,27 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
           return { statusCode: 400, body: { error: { code: "NOT_CONNECTED", message: "Google Analytics is not connected for this website." } } };
         }
         console.error("[ga4-report] Error:", msg);
-        return { statusCode: 502, body: { error: { code: "GA4_ERROR", message: msg } } };
+        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: msg } } };
+      }
+    }
+
+    if (method === "GET" && path === "/api/v1/ga4-full-report") {
+      if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      const websiteId = req.query.websiteId;
+      if (!websiteId) return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: "websiteId is required." } } };
+      const days = parseInt(req.query.days || "28", 10) || 28;
+      try {
+        const report = await fetchGa4FullReport(user._id!.toString(), websiteId, days);
+        return { statusCode: 200, body: report };
+      } catch (err: any) {
+        const msg: string = err?.message || "Unable to fetch Google Analytics 4 report.";
+        if (/no google analytics property/i.test(msg)) {
+          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: msg } } };
+        }
+        if (/not connected/i.test(msg) || /no active.*integration/i.test(msg)) {
+          return { statusCode: 400, body: { error: { code: "NOT_CONNECTED", message: "Google Analytics is not connected for this website." } } };
+        }
+        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: msg } } };
       }
     }
 

@@ -385,6 +385,7 @@ export function AppConsole({
             <AnalyticsView
               activeSite={activeSite}
               websiteId={activeWebsiteId}
+              onNavigateTab={setActiveTab}
             />
           )}
 

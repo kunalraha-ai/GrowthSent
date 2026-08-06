@@ -947,3 +947,435 @@ export async function fetchGoogleAnalyticsReport(
     topChannels,
   };
 }
+
+export interface Ga4FullReportData {
+  connected: boolean;
+  propertyId: string;
+  propertyDisplayName?: string;
+  lastSynced: string;
+  dateRange: {
+    days: number;
+    startDate: string;
+    endDate: string;
+  };
+  kpis: {
+    users: { current: number; previous: number; pctChange: number; series: number[] };
+    sessions: { current: number; previous: number; pctChange: number; series: number[] };
+    engagedSessions: { current: number; previous: number; pctChange: number; series: number[] };
+    engagementRate: { current: number; previous: number; pctChange: number; series: number[] };
+    avgEngagementTimeSec: { current: number; previous: number; pctChange: number; series: number[] };
+    eventCount: { current: number; previous: number; pctChange: number; series: number[] };
+  };
+  dailySeries: Array<{
+    date: string;
+    users: number;
+    sessions: number;
+    pageViews: number;
+    engagedSessions: number;
+    eventCount: number;
+  }>;
+  trafficSources: Array<{
+    channel: string;
+    users: number;
+    sessions: number;
+    engagementRate: number;
+  }>;
+  landingPages: Array<{
+    pagePath: string;
+    users: number;
+    sessions: number;
+    bounceRate: number;
+    engagementRate: number;
+    avgEngagementTimeSec: number;
+  }>;
+  countries: Array<{
+    country: string;
+    countryCode?: string;
+    users: number;
+    sessions: number;
+  }>;
+  devices: {
+    categories: Array<{ device: string; users: number; percentage: number }>;
+    browsers: Array<{ browser: string; users: number }>;
+    os: Array<{ os: string; users: number }>;
+  };
+  realtime?: {
+    activeUsers: number;
+    activePages: Array<{ pagePath: string; activeUsers: number }>;
+    activeCountries: Array<{ country: string; activeUsers: number }>;
+    activeDevices: Array<{ device: string; activeUsers: number }>;
+  };
+  events: Array<{
+    eventName: string;
+    count: number;
+    users: number;
+  }>;
+  conversions: Array<{
+    eventName: string;
+    count: number;
+    rate: number;
+  }>;
+  audience: {
+    newUsers: number;
+    returningUsers: number;
+    avgSessionDurationSec: number;
+    sessionsPerUser: number;
+  };
+  seoInsights: Array<{
+    id: string;
+    type: "poor_engagement" | "high_bounce" | "growing_source" | "declining_traffic" | "low_conversion";
+    title: string;
+    description: string;
+    metricLabel: string;
+  }>;
+}
+
+export async function fetchGa4FullReport(
+  userId: string,
+  websiteId: string,
+  days: number = 28
+): Promise<Ga4FullReportData> {
+  const integration = await getActiveIntegration(userId, websiteId, "google_analytics");
+  if (!integration.ga4PropertyId) {
+    throw new Error("No Google Analytics property has been selected for this website yet.");
+  }
+  const accessToken = await getValidAccessToken(integration);
+  const propertyId = integration.ga4PropertyId;
+
+  const currentStartDate = `${days}daysAgo`;
+  const currentEndDate = "today";
+  const prevStartDate = `${days * 2}daysAgo`;
+  const prevEndDate = `${days + 1}daysAgo`;
+
+  const dateRanges = [
+    { startDate: currentStartDate, endDate: currentEndDate },
+    { startDate: prevStartDate, endDate: prevEndDate },
+  ];
+
+  const runGa4Realtime = async (body: Record<string, unknown>) => {
+    try {
+      const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runRealtimeReport`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return await res.json();
+    } catch {
+      return { rows: [] };
+    }
+  };
+
+  const [
+    kpisPayload,
+    trendPayload,
+    sourcesPayload,
+    pagesPayload,
+    countriesPayload,
+    devicesPayload,
+    browsersPayload,
+    osPayload,
+    eventsPayload,
+    newVsReturningPayload,
+    realtimeUsersPayload,
+    realtimePagesPayload,
+  ] = await Promise.all([
+    runGa4Report(accessToken, propertyId, {
+      dateRanges,
+      metrics: [
+        { name: "activeUsers" },
+        { name: "sessions" },
+        { name: "engagedSessions" },
+        { name: "engagementRate" },
+        { name: "userEngagementDuration" },
+        { name: "eventCount" },
+      ],
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "date" }],
+      metrics: [
+        { name: "activeUsers" },
+        { name: "sessions" },
+        { name: "screenPageViews" },
+        { name: "engagedSessions" },
+        { name: "eventCount" },
+      ],
+      orderBys: [{ dimension: { dimensionName: "date" } }],
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "sessionDefaultChannelGroup" }],
+      metrics: [{ name: "activeUsers" }, { name: "sessions" }, { name: "engagementRate" }],
+      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+      limit: 10,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "landingPagePlusQueryString" }],
+      metrics: [
+        { name: "activeUsers" },
+        { name: "sessions" },
+        { name: "bounceRate" },
+        { name: "engagementRate" },
+        { name: "userEngagementDuration" },
+      ],
+      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+      limit: 100,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "country" }],
+      metrics: [{ name: "activeUsers" }, { name: "sessions" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: 15,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "deviceCategory" }],
+      metrics: [{ name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "browser" }],
+      metrics: [{ name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: 5,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "operatingSystem" }],
+      metrics: [{ name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: 5,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "eventName" }],
+      metrics: [{ name: "eventCount" }, { name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "eventCount" }, desc: true }],
+      limit: 20,
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Report(accessToken, propertyId, {
+      dateRanges: [{ startDate: currentStartDate, endDate: currentEndDate }],
+      dimensions: [{ name: "newVsReturning" }],
+      metrics: [{ name: "activeUsers" }, { name: "sessions" }, { name: "averageSessionDuration" }],
+    }).catch(() => ({ rows: [] })),
+
+    runGa4Realtime({
+      metrics: [{ name: "activeUsers" }],
+    }),
+
+    runGa4Realtime({
+      dimensions: [{ name: "unifiedScreenName" }],
+      metrics: [{ name: "activeUsers" }],
+      orderBys: [{ metric: { metricName: "activeUsers" }, desc: true }],
+      limit: 5,
+    }),
+  ]);
+
+  const currentKpiRow = kpisPayload.rows?.find((r: any) => r.dimensionValues?.[0]?.value === "date_range_0")?.metricValues || kpisPayload.rows?.[0]?.metricValues || [];
+  const prevKpiRow = kpisPayload.rows?.find((r: any) => r.dimensionValues?.[0]?.value === "date_range_1")?.metricValues || kpisPayload.rows?.[1]?.metricValues || [];
+
+  const parseKpiMetric = (currIdx: number) => {
+    const current = Number(currentKpiRow[currIdx]?.value || 0);
+    const previous = Number(prevKpiRow[currIdx]?.value || 0);
+    const pctChange = previous ? Math.round(((current - previous) / previous) * 100) : 0;
+    return { current, previous, pctChange, series: [] };
+  };
+
+  const usersKpi = parseKpiMetric(0);
+  const sessionsKpi = parseKpiMetric(1);
+  const engagedSessionsKpi = parseKpiMetric(2);
+  const engagementRateKpi = parseKpiMetric(3);
+  const avgEngagementTimeKpi = parseKpiMetric(4);
+  const eventCountKpi = parseKpiMetric(5);
+
+  const dailySeries = (trendPayload.rows || []).map((r: any) => ({
+    date: r.dimensionValues[0].value,
+    users: Number(r.metricValues[0].value || 0),
+    sessions: Number(r.metricValues[1].value || 0),
+    pageViews: Number(r.metricValues[2].value || 0),
+    engagedSessions: Number(r.metricValues[3].value || 0),
+    eventCount: Number(r.metricValues[4].value || 0),
+  }));
+
+  usersKpi.series = dailySeries.map((d: any) => d.users);
+  sessionsKpi.series = dailySeries.map((d: any) => d.sessions);
+  engagedSessionsKpi.series = dailySeries.map((d: any) => d.engagedSessions);
+  eventCountKpi.series = dailySeries.map((d: any) => d.eventCount);
+
+  const trafficSources = (sourcesPayload.rows || []).map((r: any) => ({
+    channel: r.dimensionValues[0].value || "Unassigned",
+    users: Number(r.metricValues[0].value || 0),
+    sessions: Number(r.metricValues[1].value || 0),
+    engagementRate: Number(r.metricValues[2].value || 0),
+  }));
+
+  const landingPages = (pagesPayload.rows || []).map((r: any) => ({
+    pagePath: r.dimensionValues[0].value || "/",
+    users: Number(r.metricValues[0].value || 0),
+    sessions: Number(r.metricValues[1].value || 0),
+    bounceRate: Number(r.metricValues[2].value || 0),
+    engagementRate: Number(r.metricValues[3].value || 0),
+    avgEngagementTimeSec: Number(r.metricValues[4].value || 0),
+  }));
+
+  const countries = (countriesPayload.rows || []).map((r: any) => ({
+    country: formatCountryName(r.dimensionValues[0].value),
+    countryCode: r.dimensionValues[0].value,
+    users: Number(r.metricValues[0].value || 0),
+    sessions: Number(r.metricValues[1].value || 0),
+  }));
+
+  const totalDevUsers = (devicesPayload.rows || []).reduce((acc: number, r: any) => acc + Number(r.metricValues[0].value || 0), 0) || 1;
+  const deviceCategories = (devicesPayload.rows || []).map((r: any) => {
+    const users = Number(r.metricValues[0].value || 0);
+    return {
+      device: r.dimensionValues[0].value,
+      users,
+      percentage: Math.round((users / totalDevUsers) * 100),
+    };
+  });
+
+  const browsers = (browsersPayload.rows || []).map((r: any) => ({
+    browser: r.dimensionValues[0].value,
+    users: Number(r.metricValues[0].value || 0),
+  }));
+
+  const os = (osPayload.rows || []).map((r: any) => ({
+    os: r.dimensionValues[0].value,
+    users: Number(r.metricValues[0].value || 0),
+  }));
+
+  const events = (eventsPayload.rows || []).map((r: any) => ({
+    eventName: r.dimensionValues[0].value,
+    count: Number(r.metricValues[0].value || 0),
+    users: Number(r.metricValues[1].value || 0),
+  }));
+
+  const conversions = events
+    .filter((e: any) => ["purchase", "generate_lead", "sign_up", "conversion", "submit_form"].includes(e.eventName.toLowerCase()))
+    .map((e: any) => ({
+      eventName: e.eventName,
+      count: e.count,
+      rate: sessionsKpi.current ? Number((e.count / sessionsKpi.current).toFixed(3)) : 0,
+    }));
+
+  let newUsers = 0;
+  let returningUsers = 0;
+  let avgSessionDurationSec = 0;
+  (newVsReturningPayload.rows || []).forEach((r: any) => {
+    const type = r.dimensionValues[0].value.toLowerCase();
+    const count = Number(r.metricValues[0].value || 0);
+    if (type.includes("new")) newUsers += count;
+    else returningUsers += count;
+    avgSessionDurationSec = Number(r.metricValues[2].value || 0);
+  });
+
+  const sessionsPerUser = usersKpi.current ? Number((sessionsKpi.current / usersKpi.current).toFixed(2)) : 1;
+
+  const realtimeActiveUsers = Number(realtimeUsersPayload.rows?.[0]?.metricValues?.[0]?.value || 0);
+  const realtimeActivePages = (realtimePagesPayload.rows || []).map((r: any) => ({
+    pagePath: r.dimensionValues[0].value,
+    activeUsers: Number(r.metricValues[0].value || 0),
+  }));
+
+  const seoInsights: Ga4FullReportData["seoInsights"] = [];
+
+  landingPages
+    .filter((p: { sessions: number; engagementRate: number }) => p.sessions >= 5 && p.engagementRate < 0.4)
+    .slice(0, 3)
+    .forEach((p: { pagePath: string; sessions: number; engagementRate: number }, idx: number) => {
+      seoInsights.push({
+        id: `poor_eng_${idx}`,
+        type: "poor_engagement",
+        title: `Low Engagement on "${p.pagePath}"`,
+        description: `This page received ${p.sessions} sessions but has an engagement rate of only ${(p.engagementRate * 100).toFixed(1)}%. Review page content and layout.`,
+        metricLabel: `${(p.engagementRate * 100).toFixed(1)}% Engagement Rate`,
+      });
+    });
+
+  landingPages
+    .filter((p: { sessions: number; bounceRate: number }) => p.sessions >= 5 && p.bounceRate > 0.6)
+    .slice(0, 3)
+    .forEach((p: { pagePath: string; bounceRate: number }, idx: number) => {
+      seoInsights.push({
+        id: `bounce_${idx}`,
+        type: "high_bounce",
+        title: `High Bounce Rate on "${p.pagePath}"`,
+        description: `Over ${(p.bounceRate * 100).toFixed(1)}% of visitors leave without navigating further. Optimize above-the-fold content and CTA.`,
+        metricLabel: `${(p.bounceRate * 100).toFixed(1)}% Bounce Rate`,
+      });
+    });
+
+  if (trafficSources.length > 0) {
+    const topSource = trafficSources[0];
+    seoInsights.push({
+      id: "top_source_0",
+      type: "growing_source",
+      title: `Primary Traffic Driver: "${topSource.channel}"`,
+      description: `Generates ${topSource.sessions} sessions (${topSource.users} users) with a ${(topSource.engagementRate * 100).toFixed(1)}% engagement rate.`,
+      metricLabel: `${topSource.sessions} Sessions`,
+    });
+  }
+
+  const { db } = await connectToDatabase();
+  await db.collection<IntegrationDocument>("integrations").updateOne(
+    { _id: integration._id },
+    { $set: { updatedAt: new Date() } }
+  );
+
+  return {
+    connected: true,
+    propertyId,
+    propertyDisplayName: integration.ga4PropertyDisplayName,
+    lastSynced: new Date().toISOString(),
+    dateRange: {
+      days,
+      startDate: currentStartDate,
+      endDate: currentEndDate,
+    },
+    kpis: {
+      users: usersKpi,
+      sessions: sessionsKpi,
+      engagedSessions: engagedSessionsKpi,
+      engagementRate: engagementRateKpi,
+      avgEngagementTimeSec: avgEngagementTimeKpi,
+      eventCount: eventCountKpi,
+    },
+    dailySeries,
+    trafficSources,
+    landingPages,
+    countries,
+    devices: {
+      categories: deviceCategories,
+      browsers,
+      os,
+    },
+    realtime: {
+      activeUsers: realtimeActiveUsers,
+      activePages: realtimeActivePages,
+      activeCountries: [],
+      activeDevices: [],
+    },
+    events,
+    conversions,
+    audience: {
+      newUsers,
+      returningUsers,
+      avgSessionDurationSec,
+      sessionsPerUser,
+    },
+    seoInsights,
+  };
+}
