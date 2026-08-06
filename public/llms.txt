@@ -5,6 +5,7 @@ GrowthSent provides tools and services designed to help developers and website o
 
 ## Core Pages
 - https://www.growthsent.com/ (Home & Web Scanner)
+- https://www.growthsent.com/pricing (Pricing & Plans)
 - https://www.growthsent.com/privacy (Privacy Policy)
 - https://www.growthsent.com/terms (Terms of Service)
 

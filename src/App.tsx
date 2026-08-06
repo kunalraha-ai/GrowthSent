@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsOfService } from "./components/TermsOfService";
+import { PricingPage } from "./components/PricingPage";
 import { NotFound404 } from "./components/NotFound404";
 import { ServerError500 } from "./components/ServerError500";
 import { Logo } from "./components/Logo";
@@ -859,9 +860,10 @@ function App() {
   const cleanPath = currentPath.toLowerCase().replace(/\/$/, "") || "/";
   const isPrivacy = cleanPath === "/privacy" || cleanPath === "/privacy-policy";
   const isTerms = cleanPath === "/terms" || cleanPath === "/terms-of-service" || cleanPath === "/terms-and-conditions";
+  const isPricing = cleanPath === "/pricing";
   const is500 = cleanPath === "/500";
   const isHome = cleanPath === "/";
-  const is404 = !isHome && !isPrivacy && !isTerms && !is500;
+  const is404 = !isHome && !isPrivacy && !isTerms && !isPricing && !is500;
 
   useEffect(() => {
     if (isHome) {
@@ -925,6 +927,25 @@ function App() {
     return <TermsOfService onBack={() => navigateTo("/")} />;
   }
 
+  if (isPricing) {
+    return (
+      <PricingPage
+        onBack={() => navigateTo("/")}
+        onGetStarted={() => {
+          if (user) {
+            setShowLandingView(false);
+            navigateTo("/");
+          } else {
+            setShowAuthModal(true);
+          }
+        }}
+        onContactSales={() => {
+          window.location.href = "mailto:sales@growthsent.com?subject=GrowthSent%20Enterprise%20Inquiry";
+        }}
+      />
+    );
+  }
+
   if (is500) {
     return <ServerError500 onBack={() => navigateTo("/")} onRetry={() => window.location.reload()} />;
   }
@@ -965,7 +986,7 @@ function App() {
         <nav>
           <a href="#product">Product</a>
           <a href="#how">How it works</a>
-          <a href="#pricing">Pricing</a>
+          <a href="/pricing" onClick={(e) => { e.preventDefault(); navigateTo("/pricing"); }}>Pricing</a>
           <a href="#developers">Developers</a>
         </nav>
         <div className="nav-actions">
@@ -1185,7 +1206,7 @@ function App() {
         <div>
           <b>Company</b>
           <a>About</a>
-          <a id="pricing">Pricing</a>
+          <a href="/pricing" style={{ cursor: "pointer" }} onClick={(e) => { e.preventDefault(); navigateTo("/pricing"); }}>Pricing</a>
           <a
             href="/privacy"
             style={{ cursor: "pointer" }}

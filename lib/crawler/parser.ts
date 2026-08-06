@@ -32,6 +32,8 @@ export function parsePageHtml(html: string, baseUrl: string): ParsedPageData {
       title = "Privacy Policy — GrowthSent";
     } else if (path === "/terms" || path === "/terms-of-service" || path === "/terms-and-conditions") {
       title = "Terms of Service — GrowthSent";
+    } else if (path === "/pricing") {
+      title = "Pricing — GrowthSent";
     } else if (path === "/404") {
       title = "404: Page Not Found — GrowthSent";
     } else if (path === "/500") {
