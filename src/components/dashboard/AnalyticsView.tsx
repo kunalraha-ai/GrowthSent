@@ -98,7 +98,6 @@ function formatDuration(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
-// Sparkline SVG Component
 function Sparkline({ data, color = "#a4ef51" }: { data: number[]; color?: string }) {
   if (!data || data.length < 2) return null;
   const width = 80;
@@ -132,12 +131,10 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
 
   const [selectedChartMetric, setSelectedChartMetric] = useState<ActiveChartMetric>("users");
 
-  // Landing page search & pagination
   const [pageSearch, setPageSearch] = useState("");
   const [pageNumber, setPageNumber] = useState(1);
   const itemsPerPage = 10;
 
-  // Chart hover state
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
 
   const fetchReport = async () => {
@@ -173,7 +170,6 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
     fetchReport();
   }, [websiteId, days]);
 
-  // Realtime poll every 30 seconds
   useEffect(() => {
     if (!websiteId || notConnected || noPropertySelected) return;
     const interval = setInterval(() => {
@@ -182,7 +178,6 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
     return () => clearInterval(interval);
   }, [websiteId, days, notConnected, noPropertySelected]);
 
-  // Filtered Landing Pages
   const filteredPages = useMemo(() => {
     if (!report?.landingPages) return [];
     if (!pageSearch.trim()) return report.landingPages;
@@ -241,10 +236,15 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
   const series = report?.dailySeries || [];
   const kpis = report?.kpis;
 
-  // Chart layout calculations
-  const chartHeight = 220;
-  const chartWidth = 720;
-  const padding = 20;
+  // Dimensions & bounds for GSC-style SVG Chart with Axis numbers & Grid lines
+  const svgWidth = 840;
+  const svgHeight = 260;
+  const marginLeft = 50;
+  const marginRight = 20;
+  const marginTop = 30;
+  const marginBottom = 220;
+  const plotWidth = svgWidth - marginLeft - marginRight;
+  const plotHeight = marginBottom - marginTop;
 
   const metricValues = series.map((d) => {
     if (selectedChartMetric === "users") return d.users;
@@ -254,14 +254,23 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
     return d.eventCount;
   });
 
-  const maxVal = Math.max(...metricValues, 1);
+  const maxVal = Math.max(...metricValues, 3);
   const minVal = 0;
   const valRange = maxVal - minVal || 1;
 
+  // 4 Y-Axis Grid ticks
+  const yTicks = [0, 1, 2, 3].map((step) => {
+    const ratio = step / 3;
+    const y = marginBottom - ratio * plotHeight;
+    const val = minVal + ratio * valRange;
+    return { y, val };
+  });
+
+  // Calculate SVG Chart path points
   const points = series.map((d, idx) => {
-    const x = padding + (idx / Math.max(series.length - 1, 1)) * (chartWidth - padding * 2);
+    const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
     const rawVal = selectedChartMetric === "users" ? d.users : selectedChartMetric === "sessions" ? d.sessions : selectedChartMetric === "pageViews" ? d.pageViews : selectedChartMetric === "engagedSessions" ? d.engagedSessions : d.eventCount;
-    const y = chartHeight - padding - ((rawVal - minVal) / valRange) * (chartHeight - padding * 2);
+    const y = marginBottom - ((rawVal - minVal) / valRange) * plotHeight;
     return { x, y, date: d.date, rawVal };
   });
 
@@ -270,8 +279,21 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
     : "";
 
   const areaPathD = points.length > 0
-    ? `${svgPathD} L ${points[points.length - 1].x} ${chartHeight - padding} L ${points[0].x} ${chartHeight - padding} Z`
+    ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
     : "";
+
+  // Select 4-6 X-Axis Date ticks
+  const xDateTicks = useMemo(() => {
+    if (series.length <= 1) return [];
+    const count = Math.min(series.length, 5);
+    const result = [];
+    for (let i = 0; i < count; i++) {
+      const idx = Math.round((i / (count - 1)) * (series.length - 1));
+      const pt = points[idx];
+      if (pt) result.push(pt);
+    }
+    return result;
+  }, [series, points]);
 
   return (
     <div className="analytics-view">
@@ -435,7 +457,7 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
         </div>
       </div>
 
-      {/* Traffic Overview Chart Card */}
+      {/* Traffic Overview Chart Card with Grid Lines & Axis Numbers (GSC style) */}
       <div className="console-section-card" style={{ marginTop: "24px" }}>
         <div className="card-header flex-between">
           <h4 className="card-title">Traffic Overview</h4>
@@ -470,7 +492,7 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
           </div>
         </div>
 
-        {/* SVG Line Chart */}
+        {/* GSC-Style SVG Chart Container */}
         <div style={{ padding: "20px" }}>
           {isLoading ? (
             <p className="card-sub" style={{ textAlign: "center", padding: "40px" }}>Loading Google Analytics timeline...</p>
@@ -478,35 +500,64 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
             <p className="card-sub" style={{ textAlign: "center", padding: "40px" }}>No timeline data returned for the selected range.</p>
           ) : (
             <div style={{ position: "relative", width: "100%", overflowX: "auto" }}>
-              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} style={{ width: "100%", height: "220px", overflow: "visible" }}>
+              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: "100%", height: "260px", overflow: "visible" }}>
                 <defs>
                   <linearGradient id="ga4Gradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#a4ef51" stopOpacity="0.3" />
+                    <stop offset="0%" stopColor="#a4ef51" stopOpacity="0.25" />
                     <stop offset="100%" stopColor="#a4ef51" stopOpacity="0.0" />
                   </linearGradient>
                 </defs>
 
+                {/* Metric Title Label at Top-Left of Chart Grid */}
+                <text x={marginLeft} y="18" fill="#6b7280" fontSize="12" fontWeight="700" textAnchor="start">
+                  {selectedChartMetric === "users" ? "Active Users" : selectedChartMetric === "sessions" ? "Sessions" : selectedChartMetric === "pageViews" ? "Page Views" : selectedChartMetric === "engagedSessions" ? "Engaged Sessions" : "Event Count"}
+                </text>
+
+                {/* Horizontal Grid Lines & Y-Axis Number Labels */}
+                {yTicks.map((t, idx) => (
+                  <g key={idx}>
+                    <line
+                      x1={marginLeft}
+                      y1={t.y}
+                      x2={svgWidth - marginRight}
+                      y2={t.y}
+                      stroke="#e5e7eb"
+                      strokeWidth="1"
+                      strokeDasharray={idx === 0 ? "none" : "3 3"}
+                    />
+                    <text x={marginLeft - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9ca3af" fontWeight="600">
+                      {Math.round(t.val).toLocaleString()}
+                    </text>
+                  </g>
+                ))}
+
                 {/* Area Fill */}
                 <path d={areaPathD} fill="url(#ga4Gradient)" />
 
-                {/* Line */}
+                {/* Main Line */}
                 <path d={svgPathD} fill="none" stroke="#171817" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
                 {/* Interactive Data Points */}
                 {points.map((pt, idx) => (
-                  <g key={pt.date}>
-                    <circle
-                      cx={pt.x}
-                      cy={pt.y}
-                      r={hoveredPointIndex === idx ? "6" : "3.5"}
-                      fill="#a4ef51"
-                      stroke="#171817"
-                      strokeWidth="2"
-                      style={{ cursor: "pointer", transition: "r 0.15s ease" }}
-                      onMouseEnter={() => setHoveredPointIndex(idx)}
-                      onMouseLeave={() => setHoveredPointIndex(null)}
-                    />
-                  </g>
+                  <circle
+                    key={pt.date}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={hoveredPointIndex === idx ? "6" : "3.5"}
+                    fill="#a4ef51"
+                    stroke="#171817"
+                    strokeWidth="2"
+                    style={{ cursor: "pointer", transition: "r 0.15s ease" }}
+                    onMouseEnter={() => setHoveredPointIndex(idx)}
+                    onMouseLeave={() => setHoveredPointIndex(null)}
+                  />
+                ))}
+
+                {/* X-Axis Date Ticks at Bottom */}
+                {xDateTicks.map((tick) => (
+                  <text key={tick.date} x={tick.x} y={marginBottom + 20} textAnchor="middle" fontSize="11" fill="#6b7280" fontWeight="500">
+                    {tick.date}
+                  </text>
                 ))}
               </svg>
 

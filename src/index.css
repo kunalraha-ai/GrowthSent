@@ -1557,11 +1557,12 @@ a {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   transition: padding 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .overview-view,
+.search-performance-view,
 .seo-audit-view,
 .pages-view,
 .issues-view,
@@ -1571,8 +1572,7 @@ a {
 .ga-view,
 .settings-view {
   width: 100%;
-  max-width: 1560px;
-  margin: 0 auto;
+  max-width: 100%;
   box-sizing: border-box;
 }
 
