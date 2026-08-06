@@ -791,7 +791,10 @@ function ConsolePreview({ onSelectTab }: { onSelectTab?: (tab: string) => void }
 // ---------------------------------------------------------
 function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [showLandingView, setShowLandingView] = useState(false);
+  const [showLandingView, setShowLandingView] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return !(params.has("integration") || params.has("websiteId") || params.has("code"));
+  });
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const [activeScan, setActiveScan] = useState<LiveScanResult | null>(null);
@@ -859,7 +862,7 @@ function App() {
     }
 
     setUser(null);
-    setShowLandingView(false);
+    setShowLandingView(true);
     setConsoleTab("overview");
   };
 
