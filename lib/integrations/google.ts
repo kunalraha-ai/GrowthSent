@@ -658,20 +658,20 @@ export async function fetchSearchConsoleFullReport(
     indexed: s.contents?.[0]?.indexed || 0,
   }));
 
-  const totalClicks = topQueries.reduce((acc, q) => acc + q.clicks, 0) || dailySeries.reduce((acc, d) => acc + d.clicks, 0);
-  const totalImpressions = topQueries.reduce((acc, q) => acc + q.impressions, 0) || dailySeries.reduce((acc, d) => acc + d.impressions, 0);
+  const totalClicks = topQueries.reduce((acc: number, q: { clicks: number }) => acc + q.clicks, 0) || dailySeries.reduce((acc: number, d: { clicks: number }) => acc + d.clicks, 0);
+  const totalImpressions = topQueries.reduce((acc: number, q: { impressions: number }) => acc + q.impressions, 0) || dailySeries.reduce((acc: number, d: { impressions: number }) => acc + d.impressions, 0);
   const avgCtr = totalImpressions ? totalClicks / totalImpressions : 0;
   const avgPosition = topQueries.length
-    ? topQueries.reduce((acc, q) => acc + q.position, 0) / topQueries.length
-    : (dailySeries.length ? dailySeries.reduce((acc, d) => acc + d.position, 0) / dailySeries.length : 0);
+    ? topQueries.reduce((acc: number, q: { position: number }) => acc + q.position, 0) / topQueries.length
+    : (dailySeries.length ? dailySeries.reduce((acc: number, d: { position: number }) => acc + d.position, 0) / dailySeries.length : 0);
 
   const opportunities: GscFullReportData["opportunities"] = [];
 
   // Deterministic opportunity logic (NO AI)
   topQueries
-    .filter((q) => q.impressions >= 40 && q.ctr < 0.025)
+    .filter((q: { impressions: number; ctr: number }) => q.impressions >= 40 && q.ctr < 0.025)
     .slice(0, 5)
-    .forEach((q, idx) => {
+    .forEach((q: { query: string; impressions: number; ctr: number; clicks: number; position: number }, idx: number) => {
       opportunities.push({
         id: `low_ctr_${idx}`,
         type: "low_ctr",
@@ -683,9 +683,9 @@ export async function fetchSearchConsoleFullReport(
     });
 
   topQueries
-    .filter((q) => q.position >= 8 && q.position <= 20 && q.impressions >= 15)
+    .filter((q: { position: number; impressions: number }) => q.position >= 8 && q.position <= 20 && q.impressions >= 15)
     .slice(0, 5)
-    .forEach((q, idx) => {
+    .forEach((q: { query: string; impressions: number; ctr: number; clicks: number; position: number }, idx: number) => {
       opportunities.push({
         id: `striking_${idx}`,
         type: "striking_distance",
@@ -697,9 +697,9 @@ export async function fetchSearchConsoleFullReport(
     });
 
   topQueries
-    .filter((q) => q.impressions >= 25 && q.clicks === 0)
+    .filter((q: { impressions: number; clicks: number }) => q.impressions >= 25 && q.clicks === 0)
     .slice(0, 5)
-    .forEach((q, idx) => {
+    .forEach((q: { query: string; impressions: number; ctr: number; clicks: number; position: number }, idx: number) => {
       opportunities.push({
         id: `zero_click_${idx}`,
         type: "zero_clicks",
@@ -711,9 +711,9 @@ export async function fetchSearchConsoleFullReport(
     });
 
   topQueries
-    .filter((q) => q.clicks >= 5 && q.ctr >= 0.05)
+    .filter((q: { clicks: number; ctr: number }) => q.clicks >= 5 && q.ctr >= 0.05)
     .slice(0, 3)
-    .forEach((q, idx) => {
+    .forEach((q: { query: string; impressions: number; ctr: number; clicks: number; position: number }, idx: number) => {
       opportunities.push({
         id: `top_perf_${idx}`,
         type: "top_performing",
