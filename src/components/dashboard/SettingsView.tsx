@@ -20,7 +20,6 @@ export function SettingsView({
 }: SettingsViewProps) {
   const [siteName, setSiteName] = useState(activeSite);
   const [timezone, setTimezone] = useState("UTC (GMT+0)");
-  const [frequency, setFrequency] = useState("6h");
 
   // Modal states for Danger Zone actions
   const [showDeleteWebsiteModal, setShowDeleteWebsiteModal] = useState(false);
@@ -123,44 +122,6 @@ export function SettingsView({
                 <option value="IST (GMT+5:30)">Indian Standard Time (IST)</option>
               </select>
             </div>
-          </div>
-        </div>
-
-        {/* Section 2: Monitoring */}
-        <div className="console-section-card">
-          <div className="card-header">
-            <h4 className="card-title">Monitoring</h4>
-          </div>
-          <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label className="form-label">Automated Scan Frequency</label>
-              <select
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                className="form-input"
-              >
-                <option value="6h">Every 6 hours</option>
-                <option value="daily">Every 24 hours (Daily)</option>
-                <option value="weekly">Weekly</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Section 3: Notifications */}
-        <div className="console-section-card">
-          <div className="card-header">
-            <h4 className="card-title">Notifications</h4>
-          </div>
-          <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", color: "#171817", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>
-              <input type="checkbox" defaultChecked />
-              <span>Email notifications for Critical SEO issues</span>
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "10px", color: "#171817", fontSize: "14px", fontWeight: 500, cursor: "pointer" }}>
-              <input type="checkbox" defaultChecked />
-              <span>Weekly website health summary digest</span>
-            </label>
           </div>
         </div>
 
