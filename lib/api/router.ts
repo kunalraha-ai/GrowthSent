@@ -14,6 +14,7 @@ import {
   createGoogleAuthorizationUrl,
   disconnectGoogleIntegration,
   fetchSearchConsoleKeywords,
+  fetchSearchConsoleFullReport,
   fetchGoogleAnalyticsReport,
   getGoogleIntegrationStatus,
   listGoogleAnalyticsProperties,
@@ -171,6 +172,24 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const queries = await fetchSearchConsoleKeywords(user._id!.toString(), websiteId);
         return { statusCode: 200, body: { queries } };
+      } catch (err: any) {
+        const message = err?.message || "Unable to load Search Console data.";
+        const isNotFound = message.includes("No Google Search Console property");
+        return {
+          statusCode: isNotFound ? 404 : 400,
+          body: { error: { code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR", message } },
+        };
+      }
+    }
+
+    if (method === "GET" && path === "/api/v1/gsc-full-report") {
+      if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      const websiteId = req.query.websiteId;
+      if (!websiteId) return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: "websiteId is required." } } };
+      const days = parseInt(req.query.days || "28", 10) || 28;
+      try {
+        const report = await fetchSearchConsoleFullReport(user._id!.toString(), websiteId, days);
+        return { statusCode: 200, body: report };
       } catch (err: any) {
         const message = err?.message || "Unable to load Search Console data.";
         const isNotFound = message.includes("No Google Search Console property");

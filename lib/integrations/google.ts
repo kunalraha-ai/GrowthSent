@@ -419,6 +419,357 @@ export async function fetchSearchConsoleKeywords(
   }));
 }
 
+export interface GscFullReportData {
+  connected: boolean;
+  siteUrl: string;
+  lastSynced: string;
+  dateRange: {
+    startDate: string;
+    endDate: string;
+    days: number;
+  };
+  summary: {
+    totalClicks: number;
+    totalImpressions: number;
+    avgCtr: number;
+    avgPosition: number;
+  };
+  dailySeries: Array<{
+    date: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  topQueries: Array<{
+    query: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  topPages: Array<{
+    page: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  countries: Array<{
+    country: string;
+    countryCode: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  devices: Array<{
+    device: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  searchAppearance: Array<{
+    appearance: string;
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    position: number;
+  }>;
+  sitemaps: Array<{
+    path: string;
+    lastDownloaded: string;
+    isPending: boolean;
+    isWarnings: boolean;
+    hasErrors: boolean;
+    type: string;
+    submitted: number;
+    indexed: number;
+  }>;
+  opportunities: Array<{
+    id: string;
+    type: "low_ctr" | "striking_distance" | "zero_clicks" | "top_performing";
+    title: string;
+    description: string;
+    queryOrPage: string;
+    metrics: { clicks: number; impressions: number; ctr: number; position: number };
+  }>;
+  indexingOverview?: {
+    indexedPages: number;
+    notIndexed: number;
+    errors: number;
+    excluded: number;
+  };
+  coverageIssues?: Array<{
+    title: string;
+    severity: string;
+    affectedUrl: string;
+    description: string;
+  }>;
+}
+
+function formatCountryName(code: string): string {
+  if (!code) return "Unknown";
+  const upper = code.toUpperCase();
+  try {
+    const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
+    return regionNames.of(upper) || upper;
+  } catch {
+    return upper;
+  }
+}
+
+export async function fetchSearchConsoleFullReport(
+  userId: string,
+  websiteId: string,
+  days: number = 28
+): Promise<GscFullReportData> {
+  const { db } = await connectToDatabase();
+  const website = await getWebsiteForUser(userId, websiteId);
+  const integration = await getActiveIntegration(userId, websiteId, "google_search_console");
+
+  const accessToken = await getValidAccessToken(integration);
+  const siteUrl = await getSearchConsoleSite(accessToken, website.hostname);
+
+  const endDateObj = new Date();
+  endDateObj.setDate(endDateObj.getDate() - 2);
+  const startDateObj = new Date(endDateObj.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+
+  const startDate = startDateObj.toISOString().slice(0, 10);
+  const endDate = endDateObj.toISOString().slice(0, 10);
+
+  const apiEndpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+  };
+
+  const [
+    dailyRes,
+    queryRes,
+    pageRes,
+    countryRes,
+    deviceRes,
+    appearanceRes,
+    sitemapRes,
+    latestScanRes,
+  ] = await Promise.all([
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["date"], rowLimit: 1000 }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["query"], rowLimit: 500 }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["page"], rowLimit: 500 }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["country"], rowLimit: 100 }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["device"] }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(apiEndpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ startDate, endDate, dimensions: ["searchAppearance"] }),
+    }).then((r) => r.json()).catch(() => ({ rows: [] })),
+
+    fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).then((r) => r.json()).catch(() => ({ sitemap: [] })),
+
+    db.collection("scans").findOne({ websiteId: website._id }, { sort: { createdAt: -1 } }).catch(() => null),
+  ]);
+
+  const dailySeries = (dailyRes.rows || []).map((r: any) => ({
+    date: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  })).sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+  const topQueries = (queryRes.rows || []).map((r: any) => ({
+    query: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  }));
+
+  const topPages = (pageRes.rows || []).map((r: any) => ({
+    page: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  }));
+
+  const countries = (countryRes.rows || []).map((r: any) => ({
+    country: formatCountryName(r.keys[0]),
+    countryCode: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  }));
+
+  const devices = (deviceRes.rows || []).map((r: any) => ({
+    device: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  }));
+
+  const searchAppearance = (appearanceRes.rows || []).map((r: any) => ({
+    appearance: r.keys[0] || "",
+    clicks: r.clicks || 0,
+    impressions: r.impressions || 0,
+    ctr: r.ctr || 0,
+    position: r.position || 0,
+  }));
+
+  const sitemaps = (sitemapRes.sitemap || []).map((s: any) => ({
+    path: s.path || "",
+    lastDownloaded: s.lastDownloaded || s.lastSubmitted || "",
+    isPending: Boolean(s.isPending),
+    isWarnings: Boolean(s.warnings > 0),
+    hasErrors: Boolean(s.errors > 0),
+    type: s.type || "sitemap",
+    submitted: s.contents?.[0]?.submitted || 0,
+    indexed: s.contents?.[0]?.indexed || 0,
+  }));
+
+  const totalClicks = topQueries.reduce((acc, q) => acc + q.clicks, 0) || dailySeries.reduce((acc, d) => acc + d.clicks, 0);
+  const totalImpressions = topQueries.reduce((acc, q) => acc + q.impressions, 0) || dailySeries.reduce((acc, d) => acc + d.impressions, 0);
+  const avgCtr = totalImpressions ? totalClicks / totalImpressions : 0;
+  const avgPosition = topQueries.length
+    ? topQueries.reduce((acc, q) => acc + q.position, 0) / topQueries.length
+    : (dailySeries.length ? dailySeries.reduce((acc, d) => acc + d.position, 0) / dailySeries.length : 0);
+
+  const opportunities: GscFullReportData["opportunities"] = [];
+
+  // Deterministic opportunity logic (NO AI)
+  topQueries
+    .filter((q) => q.impressions >= 40 && q.ctr < 0.025)
+    .slice(0, 5)
+    .forEach((q, idx) => {
+      opportunities.push({
+        id: `low_ctr_${idx}`,
+        type: "low_ctr",
+        title: `Low CTR on "${q.query}" (${q.impressions.toLocaleString()} impressions)`,
+        description: `This query gets ${q.impressions.toLocaleString()} search impressions but only a ${(q.ctr * 100).toFixed(1)}% CTR. Update page title and meta description to increase clicks.`,
+        queryOrPage: q.query,
+        metrics: { clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, position: q.position },
+      });
+    });
+
+  topQueries
+    .filter((q) => q.position >= 8 && q.position <= 20 && q.impressions >= 15)
+    .slice(0, 5)
+    .forEach((q, idx) => {
+      opportunities.push({
+        id: `striking_${idx}`,
+        type: "striking_distance",
+        title: `Striking Distance: "${q.query}" (Position #${q.position.toFixed(1)})`,
+        description: `Currently ranked on Page 2 / bottom Page 1 (Position #${q.position.toFixed(1)}). Optimize headings and internal links to push to top 3.`,
+        queryOrPage: q.query,
+        metrics: { clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, position: q.position },
+      });
+    });
+
+  topQueries
+    .filter((q) => q.impressions >= 25 && q.clicks === 0)
+    .slice(0, 5)
+    .forEach((q, idx) => {
+      opportunities.push({
+        id: `zero_click_${idx}`,
+        type: "zero_clicks",
+        title: `Zero Clicks for "${q.query}" (${q.impressions} impressions)`,
+        description: `Appeared ${q.impressions} times in search results but generated 0 clicks. Review search intent alignment.`,
+        queryOrPage: q.query,
+        metrics: { clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, position: q.position },
+      });
+    });
+
+  topQueries
+    .filter((q) => q.clicks >= 5 && q.ctr >= 0.05)
+    .slice(0, 3)
+    .forEach((q, idx) => {
+      opportunities.push({
+        id: `top_perf_${idx}`,
+        type: "top_performing",
+        title: `Top Performer: "${q.query}" (${(q.ctr * 100).toFixed(1)}% CTR)`,
+        description: `High user engagement (${q.clicks} clicks, ${(q.ctr * 100).toFixed(1)}% CTR). Expand content topics related to this term.`,
+        queryOrPage: q.query,
+        metrics: { clicks: q.clicks, impressions: q.impressions, ctr: q.ctr, position: q.position },
+      });
+    });
+
+  let indexingOverview: GscFullReportData["indexingOverview"] = undefined;
+  if (latestScanRes) {
+    const pagesCrawled = latestScanRes.crawlStats?.totalPagesCrawled || 0;
+    const criticals = latestScanRes.summaryMetrics?.criticalIssues || 0;
+    const highs = latestScanRes.summaryMetrics?.highIssues || 0;
+
+    indexingOverview = {
+      indexedPages: Math.max(0, pagesCrawled - criticals),
+      notIndexed: criticals,
+      errors: criticals,
+      excluded: highs,
+    };
+  }
+
+  await db.collection("integrations").updateOne(
+    { _id: integration._id },
+    { $set: { updatedAt: new Date() } }
+  );
+
+  return {
+    connected: true,
+    siteUrl,
+    lastSynced: new Date().toISOString(),
+    dateRange: {
+      startDate,
+      endDate,
+      days,
+    },
+    summary: {
+      totalClicks,
+      totalImpressions,
+      avgCtr,
+      avgPosition,
+    },
+    dailySeries,
+    topQueries,
+    topPages,
+    countries,
+    devices,
+    searchAppearance,
+    sitemaps,
+    opportunities,
+    indexingOverview,
+  };
+}
+
 // ----------------------------------------------------
 // GOOGLE ANALYTICS 4 (GA4)
 // ----------------------------------------------------
