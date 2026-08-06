@@ -307,9 +307,28 @@ export function AppConsole({
     setActiveTab("overview");
   };
 
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
   return (
     <div className="full-app-console">
-      {/* Main Layout without topbar */}
+      {/* Mobile Top Header Bar */}
+      <div className="mobile-console-header">
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            className="mobile-hamburger-btn"
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            aria-label="Toggle navigation menu"
+          >
+            {isMobileSidebarOpen ? "✕" : "☰"}
+          </button>
+          <Logo dark />
+        </div>
+        {activeSite && (
+          <span className="mobile-active-site-pill">{activeSite}</span>
+        )}
+      </div>
+
+      {/* Main Layout */}
       <div className="full-app-layout">
         {/* Sidebar */}
         <Sidebar
@@ -323,6 +342,8 @@ export function AppConsole({
           user={user}
           onBackToLanding={onBackToLanding}
           onDeleteWebsite={(site) => handleWebsiteDeleted(site._id || site.hostname)}
+          isOpenMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
         />
 
         {/* Console Main Content */}

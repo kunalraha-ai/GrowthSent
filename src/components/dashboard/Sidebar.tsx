@@ -106,6 +106,8 @@ export interface SidebarProps {
   user?: { name?: string; email: string };
   onBackToLanding?: () => void;
   onDeleteWebsite?: (site: { _id?: string; hostname: string }) => void;
+  isOpenMobile?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export function Sidebar({
@@ -119,13 +121,27 @@ export function Sidebar({
   user,
   onBackToLanding,
   onDeleteWebsite,
+  isOpenMobile,
+  onCloseMobile,
 }: SidebarProps) {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [siteToDelete, setSiteToDelete] = useState<{ _id?: string; hostname: string } | null>(null);
   const [isDeletingWebsite, setIsDeletingWebsite] = useState(false);
 
+  const handleTabClick = (tab: string) => {
+    onSelectTab(tab);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleSiteClick = (site: string) => {
+    onSelectSite(site);
+    if (onCloseMobile) onCloseMobile();
+  };
+
   return (
-    <aside className="dashboard-sidebar">
+    <>
+      {isOpenMobile && <div className="sidebar-backdrop-mobile" onClick={onCloseMobile} />}
+      <aside className={`dashboard-sidebar ${isOpenMobile ? "mobile-open" : ""}`}>
       {/* Brand Header */}
       <div className="sidebar-brand-wrapper">
         <div className="sidebar-logo-icon"><Logo dark iconOnly /></div>
@@ -147,7 +163,7 @@ export function Sidebar({
         {/* Overview */}
         <a
           className={`nav-item ${activeTab === "overview" ? "active" : ""}`}
-          onClick={() => onSelectTab("overview")}
+          onClick={() => handleTabClick("overview")}
           title="Overview"
         >
           <span className="icon"><Icons.Overview /></span>
@@ -159,7 +175,7 @@ export function Sidebar({
           <small className="nav-group-title">SEO</small>
           <a
             className={`nav-item ${activeTab === "seo_audit" ? "active" : ""}`}
-            onClick={() => onSelectTab("seo_audit")}
+            onClick={() => handleTabClick("seo_audit")}
             title="Audit &amp; Health"
           >
             <span className="icon"><Icons.Audit /></span>
@@ -167,7 +183,7 @@ export function Sidebar({
           </a>
           <a
             className={`nav-item ${activeTab === "pages" ? "active" : ""}`}
-            onClick={() => onSelectTab("pages")}
+            onClick={() => handleTabClick("pages")}
             title="Pages"
           >
             <span className="icon"><Icons.Pages /></span>
@@ -175,7 +191,7 @@ export function Sidebar({
           </a>
           <a
             className={`nav-item ${activeTab === "search_performance" ? "active" : ""}`}
-            onClick={() => onSelectTab("search_performance")}
+            onClick={() => handleTabClick("search_performance")}
             title="Search Performance"
           >
             <span className="icon"><Icons.Search /></span>
@@ -183,7 +199,7 @@ export function Sidebar({
           </a>
           <a
             className={`nav-item ${activeTab === "issues" ? "active" : ""}`}
-            onClick={() => onSelectTab("issues")}
+            onClick={() => handleTabClick("issues")}
             title="Issues"
           >
             <span className="icon"><Icons.Issues /></span>
@@ -196,7 +212,7 @@ export function Sidebar({
           <small className="nav-group-title">ANALYTICS</small>
           <a
             className={`nav-item ${activeTab === "analytics" ? "active" : ""}`}
-            onClick={() => onSelectTab("analytics")}
+            onClick={() => handleTabClick("analytics")}
             title="Analytics"
           >
             <span className="icon"><Icons.Analytics /></span>
@@ -209,7 +225,7 @@ export function Sidebar({
           <small className="nav-group-title">MONITORING</small>
           <a
             className={`nav-item ${activeTab === "alerts" ? "active" : ""}`}
-            onClick={() => onSelectTab("alerts")}
+            onClick={() => handleTabClick("alerts")}
             title="Alerts &amp; Monitoring"
           >
             <span className="icon"><Icons.Alerts /></span>
@@ -224,7 +240,7 @@ export function Sidebar({
             <div
               key={site.hostname}
               className={`nav-item site-item ${activeSite === site.hostname ? "active" : ""}`}
-              onClick={() => onSelectSite(site.hostname)}
+              onClick={() => handleSiteClick(site.hostname)}
               title={site.hostname}
               style={{ position: "relative" }}
             >
@@ -242,7 +258,7 @@ export function Sidebar({
               </button>
             </div>
           ))}
-          <button className="add-site-btn" onClick={onAddSite} title="Add Website">
+          <button className="add-site-btn" onClick={() => { onAddSite(); if (onCloseMobile) onCloseMobile(); }} title="Add Website">
             <span className="add-site-icon">+</span>
             <span className="nav-label">Add Website</span>
           </button>
@@ -253,7 +269,7 @@ export function Sidebar({
           <small className="nav-group-title">INTEGRATIONS</small>
           <a
             className={`nav-item ${activeTab === "gsc" ? "active" : ""}`}
-            onClick={() => onSelectTab("gsc")}
+            onClick={() => handleTabClick("gsc")}
             title="Google Search Console"
           >
             <span className="icon"><Icons.Integration /></span>
@@ -261,25 +277,28 @@ export function Sidebar({
           </a>
           <a
             className={`nav-item ${activeTab === "ga" ? "active" : ""}`}
-            onClick={() => onSelectTab("ga")}
-            title="Google Analytics"
+            onClick={() => handleTabClick("ga")}
+            title="Google Analytics 4"
           >
             <span className="icon"><Icons.Integration /></span>
-            <span className="nav-label">Google Analytics</span>
+            <span className="nav-label">Google Analytics 4</span>
           </a>
         </div>
 
-        {/* Settings, Landing Page & Logout at Bottom */}
-        <div className="nav-footer">
+        {/* Settings */}
+        <div className="nav-group">
+          <small className="nav-group-title">ACCOUNT</small>
           <a
             className={`nav-item ${activeTab === "settings" ? "active" : ""}`}
-            onClick={() => onSelectTab("settings")}
+            onClick={() => handleTabClick("settings")}
             title="Settings"
           >
             <span className="icon"><Icons.Settings /></span>
             <span className="nav-label">Settings</span>
           </a>
+        </div>
 
+        <div className="nav-footer">
           {onBackToLanding && (
             <a
               className="nav-item"
@@ -349,5 +368,6 @@ export function Sidebar({
         onCancel={() => setSiteToDelete(null)}
       />
     </aside>
+    </>
   );
 }
