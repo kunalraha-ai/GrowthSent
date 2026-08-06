@@ -482,7 +482,7 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
           onKeyDown={(e) => e.key === "Enter" && go()}
         />
         <button onClick={go} className="scan-button" disabled={scanning}>
-          {scanning ? <><b className="spinner" />Scanning...</> : <>✦&nbsp; Check my website</>}
+          {scanning ? <><b className="spinner" />Scanning...</> : <>Check my website &nbsp;→</>}
         </button>
       </div>
       {errorMessage && <small style={{ color: "#ef4444", fontSize: "12px" }}>{errorMessage}</small>}
@@ -1056,8 +1056,7 @@ function App() {
           <div className="console-preview" style={{ padding: "44px", textAlign: "center" }}>
             <p className="section-kicker">LIVE DATA, NOT A DEMO</p>
             <h3 style={{ margin: "12px 0" }}>Your dashboard starts empty.</h3>
-            <p>Connect an account, add your website, and GrowthSent fills this space with the scans and integrations you authorize.</p>
-            <button className="secondary-btn" onClick={() => setShowAuthModal(true)}>Create an account</button>
+            <button className="primary-btn" onClick={() => setShowAuthModal(true)} style={{ background: "#a4ef51", color: "#171817", fontWeight: 800, padding: "12px 28px", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", marginTop: "12px" }}>Create an account →</button>
           </div>
         </div>
       </section>
@@ -1103,7 +1102,7 @@ function App() {
           <p className="section-kicker">MAGIC FIXES</p>
           <h2>See the problem.<br />Fix the problem.<br /><em>Move on.</em></h2>
           <p>Let the signal travel from a website issue to your coding environment — without turning your growth work into a second job.</p>
-          <div className="magic-flow"><span>GrowthSent finds it</span><i>→</i><span>Explains it</span><i>→</i><b>✦ AI suggests a fix</b><i>→</i><span>Deploy</span><i>→</i><span>Checks again</span></div>
+          <div className="magic-flow"><span>GrowthSent finds it</span><i>→</i><span>Explains it</span><i>→</i><b>+ You fix it</b><i>→</i><span>Deploy</span><i>→</i><span>Checks again</span></div>
           <div className="tool-row"><span>Fix with</span><b>Claude Code</b><b>Cursor</b><b>Codex</b></div>
         </div>
       </section>
