@@ -411,6 +411,12 @@ export function AppConsole({
             <SettingsView
               activeSite={activeSite}
               websiteId={activeWebsiteId}
+              websites={websites}
+              onSelectWebsite={(site) => {
+                setActiveSite(site.hostname);
+                setActiveWebsiteId(site._id || null);
+              }}
+              onAddSite={() => setShowAddSite(true)}
               isGscConnected={isGscConnected}
               isGaConnected={isGaConnected}
               onWebsiteDeleted={handleWebsiteDeleted}

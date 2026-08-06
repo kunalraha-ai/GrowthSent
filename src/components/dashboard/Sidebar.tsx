@@ -199,37 +199,6 @@ export function Sidebar({
           </a>
         </div>
 
-        {/* Your Websites Group */}
-        <div className="nav-group">
-          <small className="nav-group-title">YOUR WEBSITES</small>
-          {websites.map((site) => (
-            <div
-              key={site.hostname}
-              className={`nav-item site-item ${activeSite === site.hostname ? "active" : ""}`}
-              onClick={() => handleSiteClick(site.hostname)}
-              title={site.hostname}
-              style={{ position: "relative" }}
-            >
-              <span className="icon"><Icons.Globe /></span>
-              <span className="nav-label site-name">{site.hostname}</span>
-              <button
-                className="delete-site-btn nav-label"
-                title={`Delete ${site.hostname}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSiteToDelete(site);
-                }}
-              >
-                <Icons.Trash />
-              </button>
-            </div>
-          ))}
-          <button className="add-site-btn" onClick={() => { onAddSite(); if (onCloseMobile) onCloseMobile(); }} title="Add Website">
-            <span className="add-site-icon">+</span>
-            <span className="nav-label">Add Website</span>
-          </button>
-        </div>
-
         {/* Integrations Group */}
         <div className="nav-group">
           <small className="nav-group-title">INTEGRATIONS</small>

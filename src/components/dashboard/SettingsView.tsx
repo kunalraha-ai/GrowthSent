@@ -1,9 +1,18 @@
 import React, { useState } from "react";
 import { ConfirmModal } from "../ConfirmModal";
 
+export interface WebsiteItem {
+  _id?: string;
+  hostname: string;
+  displayName?: string;
+}
+
 interface SettingsViewProps {
   activeSite: string;
   websiteId: string | null;
+  websites?: WebsiteItem[];
+  onSelectWebsite?: (site: WebsiteItem) => void;
+  onAddSite?: () => void;
   isGscConnected: boolean;
   isGaConnected: boolean;
   onWebsiteDeleted?: (deletedWebsiteId: string) => void;
@@ -13,6 +22,9 @@ interface SettingsViewProps {
 export function SettingsView({
   activeSite,
   websiteId,
+  websites = [],
+  onSelectWebsite,
+  onAddSite,
   isGscConnected,
   isGaConnected,
   onWebsiteDeleted,
@@ -20,6 +32,9 @@ export function SettingsView({
 }: SettingsViewProps) {
   const [siteName, setSiteName] = useState(activeSite);
   const [timezone, setTimezone] = useState("UTC (GMT+0)");
+
+  // Target website for delete modal
+  const [targetSiteToDelete, setTargetSiteToDelete] = useState<WebsiteItem | null>(null);
 
   // Modal states for Danger Zone actions
   const [showDeleteWebsiteModal, setShowDeleteWebsiteModal] = useState(false);
@@ -31,11 +46,12 @@ export function SettingsView({
   const [deleteAccountError, setDeleteAccountError] = useState("");
 
   const handleConfirmDeleteWebsite = async () => {
-    if (!websiteId) return;
+    const idToDelete = targetSiteToDelete?._id || websiteId;
+    if (!idToDelete) return;
     setIsDeletingWebsite(true);
     setDeleteWebsiteError("");
     try {
-      const response = await fetch(`/api/v1/websites/${websiteId}`, {
+      const response = await fetch(`/api/v1/websites/${idToDelete}`, {
         method: "DELETE",
       });
       const data = await response.json();
@@ -43,8 +59,9 @@ export function SettingsView({
         throw new Error(data.error?.message || "Failed to delete website.");
       }
       setShowDeleteWebsiteModal(false);
+      setTargetSiteToDelete(null);
       if (onWebsiteDeleted) {
-        onWebsiteDeleted(websiteId);
+        onWebsiteDeleted(idToDelete);
       }
     } catch (cause) {
       setDeleteWebsiteError(cause instanceof Error ? cause.message : "Failed to delete website.");
@@ -85,6 +102,85 @@ export function SettingsView({
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "24px" }}>
+        {/* Section: Your Websites & Add Website */}
+        <div className="console-section-card">
+          <div className="card-header flex-between" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <h4 className="card-title">Your Websites</h4>
+              <p className="card-sub" style={{ marginTop: "4px" }}>
+                Manage websites connected to your GrowthSent account.
+              </p>
+            </div>
+            {onAddSite && (
+              <button
+                className="primary-btn"
+                onClick={onAddSite}
+                style={{ padding: "8px 16px", fontSize: "13px" }}
+              >
+                + Add Website
+              </button>
+            )}
+          </div>
+          <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            {websites && websites.length > 0 ? (
+              websites.map((site) => {
+                const isActive = site.hostname === activeSite;
+                return (
+                  <div
+                    key={site.hostname}
+                    className="inspect-item flex-between"
+                    style={{
+                      padding: "12px 16px",
+                      borderRadius: "8px",
+                      background: isActive ? "#f7f7f3" : "transparent",
+                      border: isActive ? "1px solid #e5e7eb" : "1px solid #f3f4f6",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <span style={{ fontSize: "16px" }}>🌐</span>
+                      <span style={{ fontWeight: 700, fontSize: "14px", color: "#171817" }}>
+                        {site.hostname}
+                      </span>
+                      {isActive && (
+                        <span className="status-pill healthy" style={{ fontSize: "11px", padding: "2px 8px" }}>
+                          ● Active
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                      {!isActive && onSelectWebsite && (
+                        <button
+                          className="secondary-btn"
+                          style={{ padding: "6px 14px", fontSize: "12px" }}
+                          onClick={() => onSelectWebsite(site)}
+                        >
+                          Switch
+                        </button>
+                      )}
+                      <button
+                        className="danger-btn"
+                        style={{ padding: "6px 12px", fontSize: "12px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca" }}
+                        title={`Delete ${site.hostname}`}
+                        onClick={() => {
+                          setTargetSiteToDelete(site);
+                          setShowDeleteWebsiteModal(true);
+                        }}
+                      >
+                        🗑 Delete
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="card-sub">No websites added yet.</p>
+            )}
+          </div>
+        </div>
         {/* Section 1: General */}
         <div className="console-section-card">
           <div className="card-header">
@@ -247,7 +343,7 @@ export function SettingsView({
       <ConfirmModal
         isOpen={showDeleteWebsiteModal}
         title="Delete Website"
-        message={`Are you sure you want to delete ${activeSite || "this website"} and all its data?`}
+        message={`Are you sure you want to delete ${targetSiteToDelete?.hostname || activeSite || "this website"} and all its data?`}
         description="This will permanently remove all crawled pages, audit logs, and monitoring history for this website. This action cannot be undone."
         confirmText="Confirm Delete"
         cancelText="Cancel"
