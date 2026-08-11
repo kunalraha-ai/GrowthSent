@@ -9,6 +9,7 @@ import { IssuesView } from "./IssuesView";
 import { AnalyticsView } from "./AnalyticsView";
 import { SettingsView } from "./SettingsView";
 import BacklinkAnalyticsView from "./BacklinkAnalyticsView";
+import { toAuditJobUiStatus, type AuditJobUiStatus } from "./audit-status";
 
 export interface UserProfile {
   id?: string;
@@ -164,6 +165,7 @@ export function AppConsole({
   const [activeWebsiteId, setActiveWebsiteId] = useState<string | null>(null);
   const [showAddSite, setShowAddSite] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [auditStatus, setAuditStatus] = useState<AuditJobUiStatus>(null);
   const [scanResult, setScanResult] = useState<any>(null);
   const [isGscConnected, setIsGscConnected] = useState(false);
   const [isGaConnected, setIsGaConnected] = useState(false);
@@ -219,28 +221,34 @@ export function AppConsole({
     setActiveWebsiteId(website?._id || null);
   };
 
-  const pollAudit = (jobId: string) => {
+  const pollAudit = (jobId: string, initialStatus: AuditJobUiStatus = "queued") => {
     setIsScanning(true);
+    setAuditStatus(initialStatus);
     const interval = window.setInterval(async () => {
       try {
         const response = await fetch(`/api/v1/audit/${jobId}`);
         const data = await response.json();
+        const status = toAuditJobUiStatus(data.status);
+        if (status) setAuditStatus(status);
         if (data.status === "completed" || data.status === "failed") {
           window.clearInterval(interval);
           setIsScanning(false);
+          setAuditStatus(null);
           if (data.status === "completed") setScanResult(data);
           else setScanError(data.error || "The audit could not be completed.");
         }
       } catch {
         window.clearInterval(interval);
         setIsScanning(false);
+        setAuditStatus(null);
         setScanError("Lost connection while checking audit progress.");
       }
-    }, 1500);
+    }, 3000);
   };
 
   const handleScanForUrl = async (targetUrl: string) => {
     setIsScanning(true);
+    setAuditStatus(null);
     setScanError("");
     setScanResult(null);
 
@@ -279,9 +287,10 @@ export function AppConsole({
       });
       const data = await res.json();
       if (!res.ok || !data.jobId) throw new Error(data.error?.message || "Unable to start the audit.");
-      pollAudit(data.jobId);
+      pollAudit(data.jobId, toAuditJobUiStatus(data.status) || "queued");
     } catch (error) {
       setIsScanning(false);
+      setAuditStatus(null);
       setScanError(error instanceof Error ? error.message : "Unable to start the audit.");
     }
   };
@@ -360,6 +369,7 @@ export function AppConsole({
               onRunScan={handleFreshScan}
               onScanUrl={handleScanForUrl}
               isScanning={isScanning}
+              auditStatus={auditStatus}
               isGscConnected={isGscConnected}
               scanResult={scanResult}
             />
@@ -371,6 +381,7 @@ export function AppConsole({
               onNavigateTab={setActiveTab}
               onRunScan={handleFreshScan}
               isScanning={isScanning}
+              auditStatus={auditStatus}
               scanResult={scanResult}
             />
           )}

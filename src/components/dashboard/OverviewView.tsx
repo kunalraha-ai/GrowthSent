@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
+import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
 
 interface OverviewViewProps {
   activeSite: string;
@@ -10,6 +11,7 @@ interface OverviewViewProps {
   onRunScan: () => void;
   onScanUrl?: (url: string) => void;
   isScanning: boolean;
+  auditStatus?: AuditJobUiStatus;
   isGscConnected: boolean;
   scanResult?: { scan?: any; issues?: any[] } | null;
 }
@@ -22,6 +24,7 @@ export function OverviewView({
   onRunScan,
   onScanUrl,
   isScanning,
+  auditStatus = null,
   isGscConnected,
   scanResult,
 }: OverviewViewProps) {
@@ -43,7 +46,7 @@ export function OverviewView({
           <h3 className="title-text">Website Overview</h3>
           {websites.length > 0 && <select value={activeSite} onChange={(event) => onSelectSite(event.target.value)} className="site-selector-dropdown"><option value="" disabled>Select a website</option>{websites.map((site) => <option key={site.hostname} value={site.hostname}>{site.hostname}</option>)}</select>}
         </div>
-        <button className="secondary-btn" onClick={onRunScan} disabled={isScanning || !activeSite}>{isScanning ? "Crawling & Analyzing..." : "Run Fresh Scan ↻"}</button>
+        <button className="secondary-btn" onClick={onRunScan} disabled={isScanning || !activeSite}>{auditProgressLabel(isScanning, auditStatus)}</button>
       </div>
 
       <form onSubmit={submit} style={{ marginTop: "16px", display: "flex", gap: "10px" }}>

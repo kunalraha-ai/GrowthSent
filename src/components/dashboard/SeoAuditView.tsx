@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
+import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
 
 interface SeoAuditViewProps {
   activeSite: string;
   onNavigateTab: (tab: string) => void;
   onRunScan: () => void;
   isScanning: boolean;
+  auditStatus?: AuditJobUiStatus;
   scanResult?: any;
 }
 
@@ -160,6 +162,7 @@ export function SeoAuditView({
   onNavigateTab,
   onRunScan,
   isScanning,
+  auditStatus = null,
   scanResult,
 }: SeoAuditViewProps) {
   const [selectedMetric, setSelectedMetric] = useState<MetricRowData | null>(null);
@@ -182,7 +185,7 @@ export function SeoAuditView({
         </div>
 
         <button className="secondary-btn" onClick={onRunScan} disabled={isScanning}>
-          {isScanning ? "Crawling pages..." : "Run Fresh Scan ↻"}
+          {auditProgressLabel(isScanning, auditStatus)}
         </button>
       </div>
 

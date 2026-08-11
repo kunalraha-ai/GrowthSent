@@ -17,6 +17,7 @@ import { recordAnalyticsEvent } from "../analytics/collector.js";
 import { getAnalyticsSummary } from "../analytics/aggregator.js";
 import { getAdminStats } from "../admin/service.js";
 import { AuditService } from "../services/audit.service.js";
+import { handleDurableCrawlCronRequest } from "../jobs/cron-worker.js";
 import {
   completeGoogleAuthorization,
   createGoogleAuthorizationUrl,
@@ -240,6 +241,13 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
   // Authentication is based exclusively on the signed, HttpOnly session cookie.
   // Never trust browser-controlled identity headers for account-owned resources.
   try {
+    if (method === "GET" && path === "/api/v1/internal/audit-worker") {
+      return handleDurableCrawlCronRequest({
+        method,
+        authorization: getHeader(req.headers, "authorization"),
+      });
+    }
+
     const sessionToken = extractSessionTokenFromCookie(getHeader(req.headers, "cookie"));
     const authStartedAt = new Date().toISOString();
     const authStartedMs = Date.now();
