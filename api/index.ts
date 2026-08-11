@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { parseBoundedRequestBody } from "../lib/api/request-body.js";
 import { initializeDatabaseIndexes } from "../lib/db/indexes.js";
 import { resolveTrustedClientIp } from "../lib/api/client-ip.js";
+import { logProductionApiHandlerError } from "../lib/api/production-error-log.js";
 
 let indexesReady: Promise<void> | null = null;
 
@@ -31,6 +32,8 @@ function ensureIndexes() {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  let requestPath = "";
+  const requestMethod = req.method || "UNKNOWN";
   try {
     // This direct Vercel function is normally bypassed by the filesystem route,
     // but keep the operator-only index gate consistent if rewrites are changed.
@@ -40,6 +43,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const path = urlObj.pathname;
+    requestPath = path;
 
     let body: any = null;
     if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH" || req.method === "DELETE") {
@@ -106,7 +110,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       throw error;
     }
   } catch (err) {
-    console.error("[Vercel handler] Request failed.", { errorType: err instanceof Error ? err.name : "UnknownError" });
+    logProductionApiHandlerError("[Vercel handler] Request failed.", err, {
+      route: requestPath,
+      method: requestMethod,
+    });
     res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
     res.end(

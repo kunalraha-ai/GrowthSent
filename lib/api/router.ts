@@ -38,6 +38,7 @@ import {
 } from "../auth/social.js";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
+import { logProductionApiHandlerError } from "./production-error-log.js";
 
 // Input Validation Schemas
 export const ScanInputSchema = z.object({
@@ -1001,7 +1002,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       body: { error: { code: "NOT_FOUND", message: `Endpoint ${method} ${path} not found.` } },
     };
   } catch (err) {
-    console.error("API handler failed.", { errorType: err instanceof Error ? err.name : "UnknownError" });
+    logProductionApiHandlerError("API handler failed.", err, { route: path, method });
     return {
       statusCode: 500,
       body: {
