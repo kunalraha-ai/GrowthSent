@@ -1,4 +1,5 @@
-import { ClientSession, Db, Filter, ObjectId } from "mongodb";
+import * as mongodbDriver from "mongodb";
+import type { ClientSession, Db, Filter, ObjectId } from "mongodb";
 import { randomBytes } from "node:crypto";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { validateUrlForScan } from "../security/ssrf.js";
@@ -180,7 +181,7 @@ export class AuditService {
       status: "queued",
       progressPercent: 0,
       pagesCrawled: 0,
-      scanId: new ObjectId(),
+      scanId: new mongodbDriver.ObjectId(),
       attempts: 0,
       createdAt: now,
     };
@@ -253,7 +254,7 @@ export class AuditService {
   private static async claimCrawlJob(jobId: string): Promise<ClaimedCrawlJob | null> {
     const { db } = await connectToDatabase();
     const now = new Date();
-    const leaseId = new ObjectId().toHexString();
+    const leaseId = new mongodbDriver.ObjectId().toHexString();
     const leaseExpiresAt = new Date(now.getTime() + LEASE_DURATION_MS);
     const claimed = await db.collection<CrawlJobDocument>("crawlJobs").findOneAndUpdate(
       { jobId, ...retryableClaimFilter(now) },
@@ -382,7 +383,7 @@ export class AuditService {
 
   private static async ensureScanId(job: ClaimedCrawlJob): Promise<ObjectId> {
     if (job.scanId) return job.scanId;
-    const scanId = new ObjectId();
+    const scanId = new mongodbDriver.ObjectId();
     const { db } = await connectToDatabase();
     const updated = await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
       { _id: job._id, leaseId: job.leaseId, scanId: { $exists: false } },

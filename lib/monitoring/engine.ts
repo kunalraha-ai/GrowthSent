@@ -1,4 +1,5 @@
-import { ObjectId } from "mongodb";
+import * as mongodbDriver from "mongodb";
+import type { ObjectId } from "mongodb";
 import { connectToDatabase } from "../db/mongodb.js";
 import { IssueDocument, PageDocument, MonitoringSnapshotDocument } from "../db/types.js";
 
@@ -21,12 +22,12 @@ export async function compareScansAndSnapshot(
   previousScanId?: string
 ): Promise<MonitoringSnapshotDocument | null> {
   const { db } = await connectToDatabase();
-  const webObjId = new ObjectId(websiteId);
-  const currScanObjId = new ObjectId(currentScanId);
+  const webObjId = new mongodbDriver.ObjectId(websiteId);
+  const currScanObjId = new mongodbDriver.ObjectId(currentScanId);
 
   let prevScanObjId: ObjectId | null = null;
   if (previousScanId) {
-    prevScanObjId = new ObjectId(previousScanId);
+    prevScanObjId = new mongodbDriver.ObjectId(previousScanId);
   } else {
     // Find previous scan automatically
     const prevScan = await db
