@@ -8,6 +8,7 @@ import { SearchPerformanceView } from "./SearchPerformanceView";
 import { IssuesView } from "./IssuesView";
 import { AnalyticsView } from "./AnalyticsView";
 import { SettingsView } from "./SettingsView";
+import BacklinkAnalyticsView from "./BacklinkAnalyticsView";
 
 export interface UserProfile {
   id?: string;
@@ -390,6 +391,8 @@ export function AppConsole({
               scanResult={scanResult}
             />
           )}
+
+          {activeTab === "backlinks" && <BacklinkAnalyticsView initialDomain={activeSite} />}
 
           {activeTab === "gsc" && (
             <SearchPerformanceView

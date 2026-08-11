@@ -24,9 +24,8 @@ async function testSsrfProtection() {
   const res5 = await validateUrlForScan("ftp://example.com/file.txt");
   assert.strictEqual(res5.isValid, false, "FTP protocol should be blocked");
 
-  // Valid HTTPS public URL should pass
-  process.env.ALLOW_OFFLINE_DNS = "true";
-  const res6 = await validateUrlForScan("https://example.com");
+  // A public literal can be validated without a live DNS lookup or HTTP request.
+  const res6 = await validateUrlForScan("https://8.8.8.8");
   assert.strictEqual(res6.isValid, true, "Public HTTPS URL should pass validation");
 
   console.log("✔ SSRF Protection Tests Passed!");

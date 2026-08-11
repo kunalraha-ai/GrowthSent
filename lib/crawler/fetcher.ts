@@ -1,4 +1,8 @@
-import { validateUrlForScan } from "../security/ssrf.js";
+import { request as httpRequest, type ClientRequestArgs, type IncomingMessage } from "node:http";
+import { request as httpsRequest } from "node:https";
+import type { LookupFunction } from "node:net";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
+import { type ResolvedAddress, validateUrlForScan } from "../security/ssrf.js";
 
 export interface FetchOptions {
   timeoutMs?: number;
@@ -19,17 +23,174 @@ export interface FetchResult {
   error?: string;
 }
 
+export interface BoundedBodyResult {
+  body?: Buffer;
+  pageSizeBytes: number;
+  exceeded: boolean;
+}
+
+type AsyncBody = AsyncIterable<unknown> & {
+  destroy?: (error?: Error) => unknown;
+};
+
 const DEFAULT_USER_AGENT = process.env.CRAWLER_USER_AGENT || "GrowthSentBot/1.0 (+https://growthsent.com)";
-const DEFAULT_TIMEOUT_MS = parseInt(process.env.CRAWLER_TIMEOUT || "10000", 10);
+const DEFAULT_TIMEOUT_MS = Number.parseInt(process.env.CRAWLER_TIMEOUT || "10000", 10);
 const DEFAULT_MAX_SIZE = 2 * 1024 * 1024; // 2 MB max
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value) || value < 0) return fallback;
+  return Math.floor(value);
+}
+
+function toBuffer(chunk: unknown): Buffer {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (chunk instanceof Uint8Array || typeof chunk === "string") return Buffer.from(chunk);
+  throw new Error("Response stream yielded an unsupported chunk.");
+}
+
+/**
+ * Read a stream without retaining more than maxSizeBytes. Exported for safe
+ * regression testing; fetchUrl uses it for every crawler response.
+ */
+export async function readBodyWithLimit(source: AsyncBody, maxSizeBytes: number): Promise<BoundedBodyResult> {
+  const chunks: Buffer[] = [];
+  let pageSizeBytes = 0;
+
+  for await (const chunk of source) {
+    const buffer = toBuffer(chunk);
+    pageSizeBytes += buffer.byteLength;
+
+    if (pageSizeBytes > maxSizeBytes) {
+      source.destroy?.(new Error("Response size limit exceeded."));
+      return { pageSizeBytes, exceeded: true };
+    }
+
+    chunks.push(buffer);
+  }
+
+  return {
+    body: Buffer.concat(chunks, pageSizeBytes),
+    pageSizeBytes,
+    exceeded: false,
+  };
+}
+
+function headerValue(headers: IncomingMessage["headers"], name: string): string | undefined {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function declaredContentLength(headers: IncomingMessage["headers"]): number | undefined {
+  const header = headerValue(headers, "content-length");
+  if (!header || !/^\d+$/.test(header)) return undefined;
+
+  const parsed = Number.parseInt(header, 10);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+function decodedStream(response: IncomingMessage): { source?: AsyncBody; error?: string } {
+  const rawEncoding = headerValue(response.headers, "content-encoding")?.toLowerCase();
+  const encodings = rawEncoding
+    ? rawEncoding.split(",").map((encoding) => encoding.trim()).filter((encoding) => encoding && encoding !== "identity")
+    : [];
+
+  let source: AsyncBody = response;
+  for (const encoding of encodings.reverse()) {
+    switch (encoding) {
+      case "gzip":
+      case "x-gzip":
+        source = (source as IncomingMessage).pipe(createGunzip());
+        break;
+      case "deflate":
+        source = (source as IncomingMessage).pipe(createInflate());
+        break;
+      case "br":
+        source = (source as IncomingMessage).pipe(createBrotliDecompress());
+        break;
+      default:
+        return { error: "Response uses an unsupported content encoding." };
+    }
+  }
+
+  return { source };
+}
+
+async function readHttpResponse(response: IncomingMessage, maxSizeBytes: number): Promise<BoundedBodyResult | { error: string }> {
+  const declaredSize = declaredContentLength(response.headers);
+  if (declaredSize !== undefined && declaredSize > maxSizeBytes) {
+    response.resume();
+    return {
+      pageSizeBytes: maxSizeBytes,
+      exceeded: true,
+    };
+  }
+
+  const decoded = decodedStream(response);
+  if (!decoded.source) {
+    response.resume();
+    return { error: decoded.error || "Response body could not be decoded." };
+  }
+
+  try {
+    const result = await readBodyWithLimit(decoded.source, maxSizeBytes);
+    if (result.exceeded) {
+      response.destroy();
+    }
+    return result;
+  } catch {
+    response.destroy();
+    return { error: "Response body could not be read safely." };
+  }
+}
+
+function requestPinnedUrl(
+  url: string,
+  hostname: string,
+  resolvedAddress: ResolvedAddress,
+  userAgent: string,
+  signal: AbortSignal
+): Promise<IncomingMessage> {
+  const parsed = new URL(url);
+  const lookup: LookupFunction = (_requestedHostname, _options, callback) => {
+    callback(null, resolvedAddress.address, resolvedAddress.family);
+  };
+
+  const requestOptions: ClientRequestArgs = {
+    protocol: parsed.protocol,
+    hostname,
+    port: parsed.port ? Number.parseInt(parsed.port, 10) : undefined,
+    path: `${parsed.pathname}${parsed.search}`,
+    method: "GET",
+    headers: {
+      "User-Agent": userAgent,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+    lookup,
+    // Do not reuse a socket that was opened for another resolution. This keeps
+    // the connection tied to the DNS answer validated immediately above.
+    agent: false,
+    signal,
+  };
+
+  return new Promise((resolve, reject) => {
+    const onResponse = (response: IncomingMessage) => resolve(response);
+    const request = parsed.protocol === "https:"
+      ? httpsRequest(requestOptions, onResponse)
+      : httpRequest(requestOptions, onResponse);
+
+    request.once("error", reject);
+    request.end();
+  });
+}
 
 export async function fetchUrl(
   inputUrl: string,
   options: FetchOptions = {}
 ): Promise<FetchResult> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE;
-  const maxRedirects = options.maxRedirects ?? 5;
+  const timeoutMs = normalizePositiveInteger(options.timeoutMs, DEFAULT_TIMEOUT_MS);
+  const maxSizeBytes = normalizePositiveInteger(options.maxSizeBytes, DEFAULT_MAX_SIZE);
+  const maxRedirects = normalizePositiveInteger(options.maxRedirects, 5);
   const userAgent = options.userAgent ?? DEFAULT_USER_AGENT;
 
   let currentUrl = inputUrl;
@@ -39,7 +200,7 @@ export async function fetchUrl(
 
   while (redirectCount <= maxRedirects) {
     const ssrfCheck = await validateUrlForScan(currentUrl);
-    if (!ssrfCheck.isValid) {
+    if (!ssrfCheck.isValid || !ssrfCheck.normalizedUrl || !ssrfCheck.hostname || !ssrfCheck.resolvedAddress) {
       return {
         url: inputUrl,
         finalUrl: currentUrl,
@@ -49,33 +210,33 @@ export async function fetchUrl(
         body: "",
         pageSizeBytes: 0,
         redirectChain,
-        error: `SSRF Guard blocked URL: ${ssrfCheck.reason}`,
+        error: "URL was blocked by the crawler safety policy.",
       };
     }
 
+    currentUrl = ssrfCheck.normalizedUrl;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(currentUrl, {
-        method: "GET",
-        headers: {
-          "User-Agent": userAgent,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-        redirect: "manual",
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
+      // Pin the request to the validated address so the HTTP client cannot
+      // resolve the hostname again between SSRF validation and connection.
+      const response = await requestPinnedUrl(
+        currentUrl,
+        ssrfCheck.hostname,
+        ssrfCheck.resolvedAddress,
+        userAgent,
+        controller.signal
+      );
       const responseTimeMs = Date.now() - startTime;
-      const statusCode = response.status;
-      const contentType = response.headers.get("content-type") || "";
+      const statusCode = response.statusCode || 0;
+      const contentType = headerValue(response.headers, "content-type") || "";
 
-      // Check redirects
+      // Validate each redirect target before opening a new connection.
       if ([301, 302, 303, 307, 308].includes(statusCode)) {
-        const location = response.headers.get("location");
+        const location = headerValue(response.headers, "location");
+        response.resume();
+
         if (!location) {
           return {
             url: inputUrl,
@@ -86,22 +247,47 @@ export async function fetchUrl(
             body: "",
             pageSizeBytes: 0,
             redirectChain,
-            error: "Redirect status returned without Location header.",
+            error: "Redirect status returned without a Location header.",
           };
         }
 
-        const resolvedLocation = new URL(location, currentUrl).toString();
-        redirectChain.push(resolvedLocation);
-        currentUrl = resolvedLocation;
+        try {
+          const redirectTarget = new URL(location, currentUrl);
+          if (redirectTarget.username || redirectTarget.password) {
+            return {
+              url: inputUrl,
+              finalUrl: currentUrl,
+              statusCode,
+              responseTimeMs,
+              contentType,
+              body: "",
+              pageSizeBytes: 0,
+              redirectChain,
+              error: "Redirect URL contains credentials.",
+            };
+          }
+          currentUrl = redirectTarget.toString();
+        } catch {
+          return {
+            url: inputUrl,
+            finalUrl: currentUrl,
+            statusCode,
+            responseTimeMs,
+            contentType,
+            body: "",
+            pageSizeBytes: 0,
+            redirectChain,
+            error: "Redirect returned an invalid Location header.",
+          };
+        }
+
+        redirectChain.push(currentUrl);
         redirectCount++;
         continue;
       }
 
-      // Download content with size cap
-      const arrayBuffer = await response.arrayBuffer();
-      const pageSizeBytes = arrayBuffer.byteLength;
-
-      if (pageSizeBytes > maxSizeBytes) {
+      const bodyResult = await readHttpResponse(response, maxSizeBytes);
+      if ("error" in bodyResult) {
         return {
           url: inputUrl,
           finalUrl: currentUrl,
@@ -109,14 +295,25 @@ export async function fetchUrl(
           responseTimeMs,
           contentType,
           body: "",
-          pageSizeBytes,
+          pageSizeBytes: 0,
+          redirectChain,
+          error: bodyResult.error,
+        };
+      }
+
+      if (bodyResult.exceeded || !bodyResult.body) {
+        return {
+          url: inputUrl,
+          finalUrl: currentUrl,
+          statusCode,
+          responseTimeMs,
+          contentType,
+          body: "",
+          pageSizeBytes: bodyResult.pageSizeBytes,
           redirectChain,
           error: `Response size exceeds limit of ${maxSizeBytes} bytes.`,
         };
       }
-
-      const decoder = new TextDecoder("utf-8");
-      const body = decoder.decode(arrayBuffer);
 
       return {
         url: inputUrl,
@@ -124,14 +321,13 @@ export async function fetchUrl(
         statusCode,
         responseTimeMs,
         contentType,
-        body,
-        pageSizeBytes,
+        body: new TextDecoder("utf-8").decode(bodyResult.body),
+        pageSizeBytes: bodyResult.pageSizeBytes,
         redirectChain,
       };
-    } catch (err: any) {
-      clearTimeout(timeout);
+    } catch (err: unknown) {
       const responseTimeMs = Date.now() - startTime;
-      const errMsg = err.name === "AbortError" ? "Request timed out." : err.message || "Network request failed.";
+      const wasAborted = err instanceof Error && (err.name === "AbortError" || controller.signal.aborted);
       return {
         url: inputUrl,
         finalUrl: currentUrl,
@@ -141,8 +337,10 @@ export async function fetchUrl(
         body: "",
         pageSizeBytes: 0,
         redirectChain,
-        error: errMsg,
+        error: wasAborted ? "Request timed out." : "Network request failed.",
       };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

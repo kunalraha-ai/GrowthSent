@@ -59,6 +59,15 @@ export const SEO_RULES: Record<string, SEORuleDefinition> = {
     explanation: "Canonical tags prevent duplicate content issues by specifying the preferred URL version.",
     recommendation: "Add a <link rel='canonical' href='...' /> tag pointing to the authoritative version of this page.",
   },
+  "canonical-invalid": {
+    ruleId: "canonical-invalid",
+    category: "indexability",
+    severity: "medium",
+    title: "Canonical URL Is Invalid",
+    description: "Page contains a canonical link that is malformed or uses an unsupported protocol.",
+    explanation: "Search engines may ignore malformed canonical URLs, which can leave duplicate-content signals unresolved.",
+    recommendation: "Use an absolute or valid relative HTTP(S) URL in the rel='canonical' link tag.",
+  },
   "canonical-external": {
     ruleId: "canonical-external",
     category: "indexability",

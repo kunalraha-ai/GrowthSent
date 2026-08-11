@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import type { CommonCrawlMetrics, CommonCrawlPageProvenance, CrawlDataProviderName } from "../crawler/types.js";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type IssueCategory =
@@ -48,19 +49,41 @@ export interface WebsiteDocument {
   updatedAt: Date;
   lastScanAt?: Date;
   nextScanAt?: Date;
+  /** Durable per-site audit lease used to serialize issue-lifecycle writes. */
+  activeAuditLeaseId?: string;
+  activeAuditLeaseExpiresAt?: Date;
 }
 
 export interface CrawlJobDocument {
   _id?: ObjectId;
   jobId: string;
   url: string;
+  /** Server-selected and persisted at enqueue time; never accepted from the public API. */
+  crawlProvider?: CrawlDataProviderName;
+  /** Opaque HMAC admission identity for archive work; never returned publicly. */
+  commonCrawlRequesterKey?: string;
   clerkUserId?: string;
   websiteId?: ObjectId;
+  /** SHA-256 hash of the bearer capability for anonymous audit jobs. */
+  accessTokenHash?: string;
   status: ScanStatus;
   progressPercent: number;
   pagesCrawled: number;
   error?: string;
   scanId?: ObjectId;
+  /** Durable-worker lease fields. They are never trusted without an atomic claim. */
+  leaseId?: string;
+  leaseExpiresAt?: Date;
+  attempts?: number;
+  nextAttemptAt?: Date;
+  /** Redacted provider measurements retained for completed or failed attempts. */
+  instrumentation?: {
+    provider: CrawlDataProviderName;
+    commonCrawl?: CommonCrawlMetrics;
+    mongoPersistenceMs?: number;
+    totalJobDurationMs?: number;
+  };
+  startedAt?: Date;
   createdAt: Date;
   completedAt?: Date;
 }
@@ -68,8 +91,23 @@ export interface CrawlJobDocument {
 export interface ScanDocument {
   _id?: ObjectId;
   websiteId?: ObjectId;
+  /** Owner for authenticated scans that are not attached to a saved website. */
+  ownerUserId?: ObjectId;
   clerkUserId?: string;
   anonymousSessionId?: string;
+  /** SHA-256 hash of the bearer capability for anonymous scans. */
+  anonymousAccessTokenHash?: string;
+  /** Requested crawl bound, persisted so a worker need not trust a later request. */
+  requestedMaxPages?: number;
+  /** Durable-worker lease fields. */
+  leaseId?: string;
+  leaseExpiresAt?: Date;
+  attempts?: number;
+  nextAttemptAt?: Date;
+  /** Server-selected provider for a queued scan. Historical documents are live crawls. */
+  crawlProvider?: CrawlDataProviderName;
+  /** Opaque HMAC admission identity for archive work; never returned publicly. */
+  commonCrawlRequesterKey?: string;
   url: string;
   hostname: string;
   startTime: Date;
@@ -81,6 +119,10 @@ export interface ScanDocument {
     totalDurationMs: number;
     bytesDownloaded: number;
     statusCodesCount: Record<string, number>;
+    provider?: CrawlDataProviderName;
+    commonCrawl?: CommonCrawlMetrics;
+    mongoPersistenceMs?: number;
+    totalJobDurationMs?: number;
   };
   summaryMetrics: {
     totalChecks: number;
@@ -140,6 +182,8 @@ export interface PageDocument {
   internalLinks: string[];
   externalLinks: string[];
   hreflangs: Record<string, string>;
+  /** Archive provenance for Common Crawl-backed pages, when applicable. */
+  provenance?: CommonCrawlPageProvenance;
   createdAt: Date;
 }
 

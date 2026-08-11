@@ -451,7 +451,7 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
 
           {/* Refresh Button */}
           <button
-            onClick={fetchReport}
+            onClick={() => { fetchReport(); }}
             disabled={isLoading}
             className="secondary-btn"
             style={{ padding: "6px 14px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}
@@ -465,7 +465,7 @@ export function AnalyticsView({ activeSite, websiteId, onNavigateTab }: Analytic
       {error && (
         <div role="alert" style={{ marginTop: "16px", padding: "12px 16px", borderRadius: "8px", color: "#b42318", background: "#fef3f2", border: "1px solid #fecdca", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>{error}</span>
-          <button onClick={fetchReport} className="secondary-btn" style={{ fontSize: "12px", padding: "3px 8px" }}>Retry</button>
+          <button onClick={() => { fetchReport(); }} className="secondary-btn" style={{ fontSize: "12px", padding: "3px 8px" }}>Retry</button>
         </div>
       )}
 

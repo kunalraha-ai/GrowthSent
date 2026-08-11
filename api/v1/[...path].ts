@@ -1,45 +1,43 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleApiRequest } from "../../lib/api/router.js";
 import { initializeDatabaseIndexes } from "../../lib/db/indexes.js";
+import { parseBoundedRequestBody } from "../../lib/api/request-body.js";
+import { resolveTrustedClientIp } from "../../lib/api/client-ip.js";
 
 let indexesReady: Promise<void> | null = null;
 
 function ensureIndexes() {
-  if (!indexesReady) indexesReady = initializeDatabaseIndexes();
+  if (!indexesReady) {
+    indexesReady = initializeDatabaseIndexes({
+      includeUnique: process.env.PROVISION_MONGODB_UNIQUE_INDEXES === "true",
+      auditUniqueIndexes: process.env.PROVISION_MONGODB_UNIQUE_INDEXES === "true",
+      includeTtl: process.env.PROVISION_MONGODB_TTL_INDEXES === "true",
+    });
+  }
   return indexesReady;
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   try {
+    // Index provisioning is a deliberate operator action, never a side effect
+    // of normal request traffic. Unique definitions remain duplicate-audited.
+    if (process.env.PROVISION_MONGODB_INDEXES === "true") {
+      await ensureIndexes();
+    }
+
     const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
     const path = urlObj.pathname;
 
-    const isPublicCollectRoute = /^\/api\/v1\/websites\/[a-f0-9]{24}\/analytics\/collect$/.test(path);
-    if (isPublicCollectRoute) {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-      if (req.method === "OPTIONS") {
-        res.statusCode = 204;
-        res.end();
-        return;
-      }
-    }
-
     let body: any = null;
     if (req.method === "POST" || req.method === "PUT" || req.method === "PATCH" || req.method === "DELETE") {
-      const buffers: Buffer[] = [];
-      for await (const chunk of req) {
-        buffers.push(chunk);
+      const parsed = await parseBoundedRequestBody(req);
+      if (parsed.tooLarge) {
+        res.statusCode = 413;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ error: { code: "PAYLOAD_TOO_LARGE", message: "Request body exceeds the allowed size." } }));
+        return;
       }
-      const raw = Buffer.concat(buffers).toString("utf-8");
-      if (raw) {
-        try {
-          body = JSON.parse(raw);
-        } catch {
-          body = raw;
-        }
-      }
+      body = parsed.body;
     }
 
     const query: Record<string, string> = {};
@@ -53,7 +51,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       query,
       body,
       headers: req.headers as Record<string, string | undefined>,
-      ip: (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket.remoteAddress || "127.0.0.1",
+      ip: resolveTrustedClientIp(req),
     };
 
     const apiRes = await handleApiRequest(apiReq);
@@ -68,13 +66,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
 
     res.end(JSON.stringify(apiRes.body));
-  } catch (err: any) {
-    console.error("[Vercel Handler Error]:", err);
+  } catch (err) {
+    console.error("[Vercel handler] Request failed.", { errorType: err instanceof Error ? err.name : "UnknownError" });
     res.statusCode = 500;
     res.setHeader("Content-Type", "application/json");
     res.end(
       JSON.stringify({
-        error: { code: "SERVER_ERROR", message: err?.message || "A server error occurred on Vercel." },
+        error: { code: "SERVER_ERROR", message: "A server error occurred." },
       })
     );
   }

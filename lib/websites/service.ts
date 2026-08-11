@@ -1,7 +1,6 @@
-import { ObjectId } from "mongodb";
+import { ClientSession, Db, Filter, ObjectId } from "mongodb";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
-import { WebsiteDocument, ScanDocument } from "../db/types.js";
-import { createScan } from "../scans/service.js";
+import { ScanDocument, WebsiteDocument } from "../db/types.js";
 
 export interface CreateWebsiteOptions {
   userId: string;
@@ -9,6 +8,68 @@ export interface CreateWebsiteOptions {
   displayName?: string;
   monitoringEnabled?: boolean;
   monitoringFrequency?: "daily" | "weekly";
+}
+
+export async function deleteScansAndChildrenInTransaction(
+  db: Db,
+  scanFilter: Filter<ScanDocument>,
+  session: ClientSession
+): Promise<void> {
+  const scanIds: ObjectId[] = [];
+  const deleteChildren = async () => {
+    if (scanIds.length === 0) return;
+    const ids = scanIds.splice(0, scanIds.length);
+    await db.collection("pages").deleteMany({ scanId: { $in: ids } }, { session });
+    await db.collection("issues").deleteMany({ scanId: { $in: ids } }, { session });
+  };
+
+  const cursor = db.collection<ScanDocument>("scans").find(scanFilter, {
+    session,
+    projection: { _id: 1 },
+    batchSize: 500,
+  });
+  for await (const scan of cursor) {
+    if (scan._id) scanIds.push(scan._id);
+    if (scanIds.length >= 500) await deleteChildren();
+  }
+  await deleteChildren();
+  await db.collection<ScanDocument>("scans").deleteMany(scanFilter, { session });
+}
+
+/**
+ * Removes every active legacy child collection before deleting a saved website.
+ * The caller must already be inside a MongoDB transaction.
+ */
+export async function deleteWebsiteDataInTransaction(
+  db: Db,
+  websiteId: ObjectId,
+  userId: ObjectId,
+  session: ClientSession
+): Promise<boolean> {
+  const website = await db.collection<WebsiteDocument>("websites").findOne(
+    { _id: websiteId, userId },
+    { session, projection: { _id: 1 } }
+  );
+  if (!website) return false;
+
+  // Delete dependents before their parent. Direct websiteId deletes cover old
+  // records; scanId deletes cover historical page/issue documents without one.
+  await deleteScansAndChildrenInTransaction(db, { websiteId }, session);
+  await db.collection("pages").deleteMany({ websiteId }, { session });
+  await db.collection("issues").deleteMany({ websiteId }, { session });
+  await db.collection("crawlJobs").deleteMany({ websiteId }, { session });
+  await db.collection("crawlSnapshots").deleteMany({ websiteId }, { session });
+  await db.collection("seoIssueHistory").deleteMany({ websiteId }, { session });
+  await db.collection("monitoringSnapshots").deleteMany({ websiteId }, { session });
+  await db.collection("analyticsEvents").deleteMany({ websiteId }, { session });
+  await db.collection("analyticsAggregates").deleteMany({ websiteId }, { session });
+  await db.collection("integrations").deleteMany({ websiteId }, { session });
+  await db.collection("googleOAuthStates").deleteMany({ websiteId }, { session });
+  await db.collection("notifications").deleteMany({ websiteId }, { session });
+
+  const deleted = await db.collection<WebsiteDocument>("websites").deleteOne({ _id: websiteId, userId }, { session });
+  if (deleted.deletedCount !== 1) throw new Error("Website deletion lost ownership consistency.");
+  return true;
 }
 
 export async function createWebsite(options: CreateWebsiteOptions): Promise<WebsiteDocument> {
@@ -31,10 +92,7 @@ export async function createWebsite(options: CreateWebsiteOptions): Promise<Webs
     userId: userObjId,
     hostname,
   });
-
-  if (existing) {
-    return existing;
-  }
+  if (existing) return existing;
 
   const now = new Date();
   const websiteDoc: WebsiteDocument = {
@@ -48,17 +106,26 @@ export async function createWebsite(options: CreateWebsiteOptions): Promise<Webs
     updatedAt: now,
   };
 
-  const res = await db.collection("websites").insertOne(websiteDoc);
-  websiteDoc._id = res.insertedId;
-
-  return websiteDoc;
+  try {
+    const res = await db.collection<WebsiteDocument>("websites").insertOne(websiteDoc);
+    return { ...websiteDoc, _id: res.insertedId };
+  } catch (error: unknown) {
+    // Once the manually-audited unique index is provisioned, concurrent
+    // creates can race. Return the existing owned site instead of surfacing a
+    // transient duplicate-key error to the user.
+    if ((error as { code?: number })?.code === 11000) {
+      const duplicate = await db.collection<WebsiteDocument>("websites").findOne({ userId: userObjId, hostname });
+      if (duplicate) return duplicate;
+    }
+    throw error;
+  }
 }
 
 export async function getUserWebsites(userId: string): Promise<WebsiteDocument[]> {
   const { db } = await connectToDatabase();
-  return await db
+  return db
     .collection<WebsiteDocument>("websites")
-    .find({ userId: new ObjectId(userId) })
+    .find({ userId: safeObjectId(userId) })
     .sort({ createdAt: -1 })
     .toArray();
 }
@@ -67,8 +134,8 @@ export async function getWebsiteById(websiteId: string, userId: string): Promise
   const { db } = await connectToDatabase();
   try {
     return await db.collection<WebsiteDocument>("websites").findOne({
-      _id: new ObjectId(websiteId),
-      userId: new ObjectId(userId),
+      _id: safeObjectId(websiteId),
+      userId: safeObjectId(userId),
     });
   } catch {
     return null;
@@ -76,29 +143,37 @@ export async function getWebsiteById(websiteId: string, userId: string): Promise
 }
 
 export async function deleteWebsite(websiteId: string, userId: string): Promise<boolean> {
-  const { db } = await connectToDatabase();
-  const webObjId = new ObjectId(websiteId);
-  const userObjId = new ObjectId(userId);
+  let webObjId: ObjectId;
+  let userObjId: ObjectId;
+  try {
+    webObjId = safeObjectId(websiteId);
+    userObjId = safeObjectId(userId);
+  } catch {
+    return false;
+  }
 
-  const website = await db.collection<WebsiteDocument>("websites").findOne({ _id: webObjId, userId: userObjId });
-  if (!website) return false;
-
-  await db.collection("websites").deleteOne({ _id: webObjId });
-  await db.collection("scans").deleteMany({ websiteId: webObjId });
-  await db.collection("pages").deleteMany({ websiteId: webObjId });
-  await db.collection("issues").deleteMany({ websiteId: webObjId });
-  await db.collection("monitoringSnapshots").deleteMany({ websiteId: webObjId });
-  await db.collection("analyticsEvents").deleteMany({ websiteId: webObjId });
-  await db.collection("analyticsAggregates").deleteMany({ websiteId: webObjId });
-
-  return true;
+  const { client, db } = await connectToDatabase();
+  const session = client.startSession();
+  let deleted = false;
+  try {
+    await session.withTransaction(async () => {
+      deleted = await deleteWebsiteDataInTransaction(db, webObjId, userObjId, session);
+    });
+    return deleted;
+  } finally {
+    await session.endSession();
+  }
 }
 
 export async function getWebsiteScans(websiteId: string): Promise<ScanDocument[]> {
   const { db } = await connectToDatabase();
-  return await db
-    .collection<ScanDocument>("scans")
-    .find({ websiteId: new ObjectId(websiteId) })
-    .sort({ createdAt: -1 })
-    .toArray();
+  try {
+    return await db
+      .collection<ScanDocument>("scans")
+      .find({ websiteId: safeObjectId(websiteId) })
+      .sort({ createdAt: -1 })
+      .toArray();
+  } catch {
+    return [];
+  }
 }

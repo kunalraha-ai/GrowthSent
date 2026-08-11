@@ -1,0 +1,10 @@
+{
+  "crawl": "CC-MAIN-2026-30",
+  "format_version": 1,
+  "index_width": 5,
+  "input_count": 1000,
+  "inputs_sha256": "6ce2c0c06612de9d8816d6075a25b15929209504f346305dae8ee9ced03b3b7a",
+  "path_prefix": "crawl-data/CC-MAIN-2026-30/segments/1783663951123.52/wat/CC-MAIN-20260710070534-20260710100534-",
+  "path_suffix": ".warc.wat.gz",
+  "start_index": 0
+}

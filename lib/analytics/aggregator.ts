@@ -1,5 +1,4 @@
-import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb.js";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { AnalyticsEventDocument } from "../db/types.js";
 
 export interface AnalyticsSummaryResult {
@@ -12,13 +11,21 @@ export interface AnalyticsSummaryResult {
   trend: Array<{ date: string; pageviews: number; visitors: number }>;
 }
 
+export const MAX_ANALYTICS_RANGE_DAYS = 90;
+
+export function normalizeAnalyticsRangeDays(days: number | undefined): number {
+  if (!Number.isFinite(days)) return 30;
+  return Math.max(1, Math.min(MAX_ANALYTICS_RANGE_DAYS, Math.floor(days as number)));
+}
+
 export async function getAnalyticsSummary(
   websiteId: string,
   days: number = 30
 ): Promise<AnalyticsSummaryResult> {
   const { db } = await connectToDatabase();
-  const webObjId = new ObjectId(websiteId);
-  const startDate = new Date(Date.now() - days * 24 * 3600 * 1000);
+  const webObjId = safeObjectId(websiteId);
+  const rangeDays = normalizeAnalyticsRangeDays(days);
+  const startDate = new Date(Date.now() - rangeDays * 24 * 3600 * 1000);
 
   const events = await db
     .collection<AnalyticsEventDocument>("analyticsEvents")

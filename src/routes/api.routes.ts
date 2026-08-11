@@ -1,0 +1,51 @@
+import { Router } from "express";
+
+import userRoutes from "../modules/users/routes/user.routes";
+import projectRoutes from "../modules/projects/routes/project.routes";
+import projectMemberRoutes from "../modules/project_members/routes/project_member.routes";
+import domainRoutes from "../modules/domains/routes/domain.routes";
+import pageRoutes from "../modules/pages/routes/page.routes";
+import pageMetadataRoutes from "../modules/page_metadata/routes/page_metadata.routes";
+import crawlSourceRoutes from "../modules/crawl_sources/routes/crawl_source.routes";
+import crawlJobRoutes from "../modules/crawl_jobs/routes/crawl_job.routes";
+import crawlSnapshotRoutes from "../modules/crawl_snapshots/routes/crawl_snapshot.routes";
+import pageAuditRoutes from "../modules/page_audits/routes/page_audit.routes";
+import auditIssueRoutes from "../modules/audit_issues/routes/audit_issue.routes";
+import backlinkRoutes from "../modules/backlinks/routes/backlink.routes";
+import keywordRoutes from "../modules/keywords/routes/keyword.routes";
+import keywordRankingRoutes from "../modules/keyword_rankings/routes/keyword_ranking.routes";
+import rawDocumentRoutes from "../modules/raw_documents/routes/raw_document.routes";
+import gscPropertyRoutes from "../modules/gsc_properties/routes/gsc_property.routes";
+import ga4PropertyRoutes from "../modules/ga4_properties/routes/ga4_property.routes";
+import apiKeyRoutes from "../modules/api_keys/routes/api_key.routes";
+import activityLogRoutes from "../modules/activity_logs/routes/activity_log.routes";
+import cacheStatRoutes from "../modules/cache_stats/routes/cache_stat.routes";
+import pageAiOutputRoutes from "../modules/page_ai_outputs/routes/page_ai_output.routes";
+import systemSettingRoutes from "../modules/system_settings/routes/system_setting.routes";
+
+const apiRouter = Router();
+
+apiRouter.use("/users", userRoutes);
+apiRouter.use("/projects", projectRoutes);
+apiRouter.use("/project-members", projectMemberRoutes);
+apiRouter.use("/domains", domainRoutes);
+apiRouter.use("/pages", pageRoutes);
+apiRouter.use("/page-metadata", pageMetadataRoutes);
+apiRouter.use("/crawl-sources", crawlSourceRoutes);
+apiRouter.use("/crawl-jobs", crawlJobRoutes);
+apiRouter.use("/crawl-snapshots", crawlSnapshotRoutes);
+apiRouter.use("/page-audits", pageAuditRoutes);
+apiRouter.use("/audit-issues", auditIssueRoutes);
+apiRouter.use("/backlinks", backlinkRoutes);
+apiRouter.use("/keywords", keywordRoutes);
+apiRouter.use("/keyword-rankings", keywordRankingRoutes);
+apiRouter.use("/raw-documents", rawDocumentRoutes);
+apiRouter.use("/gsc-properties", gscPropertyRoutes);
+apiRouter.use("/ga4-properties", ga4PropertyRoutes);
+apiRouter.use("/api-keys", apiKeyRoutes);
+apiRouter.use("/activity-logs", activityLogRoutes);
+apiRouter.use("/cache-stats", cacheStatRoutes);
+apiRouter.use("/page-ai-outputs", pageAiOutputRoutes);
+apiRouter.use("/system-settings", systemSettingRoutes);
+
+export default apiRouter;

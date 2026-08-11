@@ -7,8 +7,23 @@ export type SocialProvider = "google" | "github";
 interface LoginOAuthStateDoc {
   state: string;
   provider: SocialProvider;
+  browserNonceHash: string;
   expiresAt: Date;
   createdAt: Date;
+}
+
+const OAUTH_STATE_BYTES = 32;
+
+function hashBrowserNonce(browserNonce: string): string {
+  return crypto.createHash("sha256").update(browserNonce).digest("hex");
+}
+
+function isValidBrowserNonce(browserNonce: string): boolean {
+  return /^[A-Za-z0-9_-]{43}$/.test(browserNonce);
+}
+
+function isValidOAuthState(state: string): boolean {
+  return /^[A-Za-z0-9_-]{43}$/.test(state);
 }
 
 function getAppUrl(): string {
@@ -16,11 +31,13 @@ function getAppUrl(): string {
 }
 
 function getGoogleLoginConfig() {
-  const clientId =
-    process.env.GOOGLE_CLIENT_ID?.trim() || "309205130532-0nnbbdg048cfcjhs3fjvkb61h9l93tql.apps.googleusercontent.com";
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim() || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim() || "";
   const redirectUri =
     process.env.GOOGLE_LOGIN_REDIRECT_URI?.trim() || `${getAppUrl()}/api/v1/auth/google/callback`;
+  if (!clientId || !clientSecret) {
+    throw new Error("Google sign-in is unavailable.");
+  }
   return { clientId, clientSecret, redirectUri };
 }
 
@@ -29,39 +46,43 @@ function getGithubLoginConfig() {
   const clientSecret = process.env.GITHUB_CLIENT_SECRET?.trim() || "";
   const redirectUri =
     process.env.GITHUB_LOGIN_REDIRECT_URI?.trim() || `${getAppUrl()}/api/v1/auth/github/callback`;
+  if (!clientId || !clientSecret) {
+    throw new Error("GitHub sign-in is unavailable.");
+  }
   return { clientId, clientSecret, redirectUri };
 }
 
-async function createLoginState(provider: SocialProvider): Promise<string> {
-  const state = crypto.randomBytes(32).toString("base64url");
-  try {
-    const { db } = await connectToDatabase();
-    await db.collection<LoginOAuthStateDoc>("loginOAuthStates").deleteMany({ expiresAt: { $lt: new Date() } });
-    await db.collection<LoginOAuthStateDoc>("loginOAuthStates").insertOne({
-      state,
-      provider,
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-      createdAt: new Date(),
-    });
-  } catch (err) {
-    console.warn("[OAuth State] Database state logging skipped:", err);
+async function createLoginState(provider: SocialProvider, browserNonce: string): Promise<string> {
+  if (!isValidBrowserNonce(browserNonce)) {
+    throw new Error("Invalid sign-in request.");
   }
+
+  const state = crypto.randomBytes(OAUTH_STATE_BYTES).toString("base64url");
+  const { db } = await connectToDatabase();
+  await db.collection<LoginOAuthStateDoc>("loginOAuthStates").insertOne({
+    state,
+    provider,
+    browserNonceHash: hashBrowserNonce(browserNonce),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    createdAt: new Date(),
+  });
   return state;
 }
 
-async function consumeLoginState(state: string, provider: SocialProvider): Promise<boolean> {
+async function consumeLoginState(state: string, provider: SocialProvider, browserNonce: string): Promise<boolean> {
+  if (!isValidOAuthState(state) || !isValidBrowserNonce(browserNonce)) return false;
+
   try {
     const { db } = await connectToDatabase();
-    const found = await db.collection<LoginOAuthStateDoc>("loginOAuthStates").findOne({
+    const found = await db.collection<LoginOAuthStateDoc>("loginOAuthStates").findOneAndDelete({
       state,
       provider,
+      browserNonceHash: hashBrowserNonce(browserNonce),
       expiresAt: { $gt: new Date() },
     });
-    if (!found) return true;
-    await db.collection<LoginOAuthStateDoc>("loginOAuthStates").deleteOne({ state });
-    return true;
+    return found !== null;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -75,13 +96,18 @@ async function findOrCreateSocialUser(input: {
   const normalizedEmail = input.email.toLowerCase().trim();
   const now = new Date();
   const providerField = input.provider === "google" ? "googleId" : "githubId";
+  const users = db.collection<UserDocument>("users");
 
-  const existing = await db.collection<UserDocument>("users").findOne({ email: normalizedEmail });
-  if (existing) {
-    await db
-      .collection<UserDocument>("users")
-      .updateOne({ _id: existing._id }, { $set: { [providerField]: input.providerId, updatedAt: now } });
-    return existing;
+  // A provider subject is the stable identity. Never attach it to an account merely
+  // because an OAuth provider returned a matching email address.
+  const existingProviderUser = await users.findOne({ [providerField]: input.providerId });
+  if (existingProviderUser) {
+    return existingProviderUser;
+  }
+
+  const existingEmailUser = await users.findOne({ email: normalizedEmail });
+  if (existingEmailUser) {
+    throw new Error("An account with this email already exists. Sign in using its existing method.");
   }
 
   const userDoc: UserDocument = {
@@ -93,22 +119,24 @@ async function findOrCreateSocialUser(input: {
     [providerField]: input.providerId,
   } as UserDocument;
 
-  const res = await db.collection("users").insertOne(userDoc);
-  userDoc._id = res.insertedId;
-  return userDoc;
+  try {
+    const res = await users.insertOne(userDoc);
+    userDoc._id = res.insertedId;
+    return userDoc;
+  } catch (error: any) {
+    // A concurrent callback for the same provider identity is safe to treat as
+    // the already-created account when a provider-ID unique index is present.
+    if (error?.code === 11000) {
+      const concurrentlyCreated = await users.findOne({ [providerField]: input.providerId });
+      if (concurrentlyCreated) return concurrentlyCreated;
+    }
+    throw error;
+  }
 }
 
-export async function createGoogleLoginUrl(): Promise<string> {
+export async function createGoogleLoginUrl(browserNonce: string): Promise<string> {
   const { clientId, redirectUri } = getGoogleLoginConfig();
-  if (!clientId) {
-    return "https://delicate-blowfish-60.clerk.accounts.dev/v1/oauth_choose_account";
-  }
-  let state = "google_auth";
-  try {
-    state = await createLoginState("google");
-  } catch (err) {
-    console.warn("[OAuth State] Storing Google state skipped:", err);
-  }
+  const state = await createLoginState("google", browserNonce);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -120,17 +148,9 @@ export async function createGoogleLoginUrl(): Promise<string> {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-export async function createGithubLoginUrl(): Promise<string> {
+export async function createGithubLoginUrl(browserNonce: string): Promise<string> {
   const { clientId, redirectUri } = getGithubLoginConfig();
-  if (!clientId) {
-    return "https://delicate-blowfish-60.clerk.accounts.dev/v1/oauth_choose_account";
-  }
-  let state = "github_auth";
-  try {
-    state = await createLoginState("github");
-  } catch (err) {
-    console.warn("[OAuth State] Storing GitHub state skipped:", err);
-  }
+  const state = await createLoginState("github", browserNonce);
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -140,8 +160,8 @@ export async function createGithubLoginUrl(): Promise<string> {
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }
 
-export async function completeGoogleLogin(code: string, state: string): Promise<UserDocument> {
-  const valid = await consumeLoginState(state, "google");
+export async function completeGoogleLogin(code: string, state: string, browserNonce: string): Promise<UserDocument> {
+  const valid = await consumeLoginState(state, "google", browserNonce);
   if (!valid) throw new Error("The Google sign-in request is invalid or has expired. Please try again.");
 
   const { clientId, clientSecret, redirectUri } = getGoogleLoginConfig();
@@ -156,27 +176,26 @@ export async function completeGoogleLogin(code: string, state: string): Promise<
       grant_type: "authorization_code",
     }),
   });
-  const tokenPayload = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string };
+  const tokenPayload = (await tokenRes.json()) as { access_token?: string };
   if (!tokenRes.ok || !tokenPayload.access_token) {
-    console.error("[Google OAuth] Token exchange FAILED", {
-      status: tokenRes.status,
-      tokenPayload,
-      client_id_used: clientId,
-      redirect_uri_used: redirectUri,
-      secret_length: clientSecret.length,
-      secret_prefix: clientSecret.slice(0, 7),
-      secret_suffix: clientSecret.slice(-4),
-    });
-    throw new Error(tokenPayload.error_description || tokenPayload.error || "Google did not return an access token.");
+    console.warn("[Google OAuth] Token exchange failed.", { status: tokenRes.status });
+    throw new Error("Unable to complete Google sign-in. Please try again.");
   }
 
   const profileRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
     headers: { Authorization: `Bearer ${tokenPayload.access_token}` },
   });
   if (!profileRes.ok) throw new Error("Unable to fetch your Google account profile.");
-  const profile = (await profileRes.json()) as { sub: string; email?: string; name?: string };
+  const profile = (await profileRes.json()) as {
+    sub?: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+  };
 
-  if (!profile.email) throw new Error("Google did not provide an email address for this account.");
+  if (!profile.sub || !profile.email || profile.email_verified !== true) {
+    throw new Error("Google did not provide a verified email address for this account.");
+  }
 
   return findOrCreateSocialUser({
     email: profile.email,
@@ -186,8 +205,8 @@ export async function completeGoogleLogin(code: string, state: string): Promise<
   });
 }
 
-export async function completeGithubLogin(code: string, state: string): Promise<UserDocument> {
-  const valid = await consumeLoginState(state, "github");
+export async function completeGithubLogin(code: string, state: string, browserNonce: string): Promise<UserDocument> {
+  const valid = await consumeLoginState(state, "github", browserNonce);
   if (!valid) throw new Error("The GitHub sign-in request is invalid or has expired. Please try again.");
 
   const { clientId, clientSecret, redirectUri } = getGithubLoginConfig();
@@ -201,29 +220,29 @@ export async function completeGithubLogin(code: string, state: string): Promise<
       redirect_uri: redirectUri,
     }),
   });
-  const tokenPayload = (await tokenRes.json()) as { access_token?: string; error?: string; error_description?: string };
+  const tokenPayload = (await tokenRes.json()) as { access_token?: string };
   if (!tokenRes.ok || !tokenPayload.access_token) {
-    throw new Error(tokenPayload.error_description || tokenPayload.error || "GitHub did not return an access token.");
+    console.warn("[GitHub OAuth] Token exchange failed.", { status: tokenRes.status });
+    throw new Error("Unable to complete GitHub sign-in. Please try again.");
   }
 
   const profileRes = await fetch("https://api.github.com/user", {
     headers: { Authorization: `Bearer ${tokenPayload.access_token}`, Accept: "application/vnd.github+json" },
   });
   if (!profileRes.ok) throw new Error("Unable to fetch your GitHub account profile.");
-  const profile = (await profileRes.json()) as { id: number; login: string; name?: string; email?: string };
+  const profile = (await profileRes.json()) as { id?: number; login?: string; name?: string };
 
-  let email = profile.email;
-  if (!email) {
-    const emailsRes = await fetch("https://api.github.com/user/emails", {
-      headers: { Authorization: `Bearer ${tokenPayload.access_token}`, Accept: "application/vnd.github+json" },
-    });
-    if (emailsRes.ok) {
-      const emails = (await emailsRes.json()) as Array<{ email: string; primary: boolean; verified: boolean }>;
-      const preferred = emails.find((e) => e.primary && e.verified) || emails.find((e) => e.verified);
-      email = preferred?.email;
-    }
+  const emailsRes = await fetch("https://api.github.com/user/emails", {
+    headers: { Authorization: `Bearer ${tokenPayload.access_token}`, Accept: "application/vnd.github+json" },
+  });
+  if (!emailsRes.ok) {
+    throw new Error("GitHub did not provide a verified email address for this account.");
   }
-  if (!email) {
+  const emails = (await emailsRes.json()) as Array<{ email: string; primary: boolean; verified: boolean }>;
+  const preferred = emails.find((email) => email.primary && email.verified) || emails.find((email) => email.verified);
+  const email = preferred?.email;
+
+  if (!profile.id || !email) {
     throw new Error(
       "GitHub did not provide a verified email address for this account. Add a verified email on GitHub and try again."
     );

@@ -1,0 +1,6 @@
+# Exact runtime dependency closure verified with Python 3.12 locally.
+pyarrow==19.0.1
+boto3==1.43.67
+botocore==1.43.67
+s3transfer==0.19.2
+jmespath==1.1.0

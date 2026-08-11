@@ -19,8 +19,17 @@ interface GoogleOAuthState {
   userId: ObjectId;
   websiteId: ObjectId;
   provider: GoogleProvider;
+  browserNonceHash: string;
   expiresAt: Date;
   createdAt: Date;
+}
+
+function hashBrowserNonce(browserNonce: string): string {
+  return crypto.createHash("sha256").update(browserNonce).digest("hex");
+}
+
+function isValidBrowserNonce(browserNonce: string): boolean {
+  return /^[A-Za-z0-9_-]{43}$/.test(browserNonce);
 }
 
 interface GoogleTokenResponse {
@@ -96,22 +105,24 @@ function providerScopes(provider: GoogleProvider): string[] {
 export async function createGoogleAuthorizationUrl(
   userId: string,
   websiteId: string,
-  provider: GoogleProvider
+  provider: GoogleProvider,
+  browserNonce: string
 ): Promise<string> {
+  if (!isValidBrowserNonce(browserNonce)) {
+    throw new Error("Invalid Google OAuth request.");
+  }
   const { clientId, redirectUri } = getGoogleConfig();
   const userObjectId = safeObjectId(userId);
   const websiteObjectId = safeObjectId(websiteId);
   const { db } = await connectToDatabase();
   const state = crypto.randomBytes(32).toString("base64url");
 
-  await db.collection<GoogleOAuthState>("googleOAuthStates").deleteMany({
-    expiresAt: { $lt: new Date() },
-  });
   await db.collection<GoogleOAuthState>("googleOAuthStates").insertOne({
     state,
     userId: userObjectId,
     websiteId: websiteObjectId,
     provider,
+    browserNonceHash: hashBrowserNonce(browserNonce),
     expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     createdAt: new Date(),
   });
@@ -157,19 +168,31 @@ async function lookupGoogleAccountEmail(accessToken: string): Promise<string | u
   return payload.email;
 }
 
-export async function completeGoogleAuthorization(code: string, state: string): Promise<{
+export async function completeGoogleAuthorization(code: string, state: string, browserNonce: string): Promise<{
   provider: GoogleProvider;
   websiteId: string;
 }> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(state) || !isValidBrowserNonce(browserNonce)) {
+    throw new Error("The Google OAuth request is invalid or has expired. Please try connecting again.");
+  }
+
   const { db } = await connectToDatabase();
-  const storedState = await db.collection<GoogleOAuthState>("googleOAuthStates").findOne({
+  const storedState = await db.collection<GoogleOAuthState>("googleOAuthStates").findOneAndDelete({
     state,
+    browserNonceHash: hashBrowserNonce(browserNonce),
     expiresAt: { $gt: new Date() },
   });
   if (!storedState) {
     throw new Error("The Google OAuth request is invalid or has expired. Please try connecting again.");
   }
-  await db.collection<GoogleOAuthState>("googleOAuthStates").deleteOne({ _id: storedState._id });
+
+  const website = await db.collection<WebsiteDocument>("websites").findOne({
+    _id: storedState.websiteId,
+    userId: storedState.userId,
+  });
+  if (!website) {
+    throw new Error("The selected website is no longer available. Please try connecting again.");
+  }
 
   const tokens = await exchangeGoogleCode(code);
   const accountEmail = await lookupGoogleAccountEmail(tokens.access_token!);

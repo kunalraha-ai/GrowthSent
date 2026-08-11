@@ -23,3 +23,18 @@ build
 *.sw?
 *.zip
 my-clerk-app
+
+.vercel
+
+# Common Crawl ingestion outputs (reproducible, potentially large)
+/artifacts/
+/scratch/
+**/__pycache__/
+*.pyc
+
+# Generated local Common Crawl samples and diagnostics
+/*.parquet
+/sample*.jsonl
+/sample.warc.wat.gz
+/wat.paths.gz
+*.log

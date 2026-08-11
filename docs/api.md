@@ -17,12 +17,13 @@ All API endpoints accept and return JSON. Error responses follow a standard enve
 - `POST /api/v1/scans`
   - Input: `{ "url": "https://example.com" }`
   - Response: `{ "scanId": "...", "status": "queued", "url": "..." }`
+  - Anonymous callers receive a short-lived, HttpOnly scan capability cookie. Scan IDs alone do not grant read access.
 - `GET /api/v1/scans/:id`
-  - Returns scan summary, status, score, metrics.
+  - Returns scan summary, status, score, metrics to the owner or matching anonymous capability.
 - `GET /api/v1/scans/:id/pages`
-  - Returns list of scanned page documents.
+  - Returns list of scanned page documents to the owner or matching anonymous capability.
 - `GET /api/v1/scans/:id/issues`
-  - Returns list of detected SEO issue documents.
+  - Returns list of detected SEO issue documents to the owner or matching anonymous capability.
 
 ### Authentication
 - `POST /api/v1/auth/signup` (`email`, `password`, `name?`)
@@ -41,7 +42,7 @@ All API endpoints accept and return JSON. Error responses follow a standard enve
 
 ### Privacy Analytics
 - `POST /api/v1/websites/:id/analytics/collect`
-  - Telemetry event ingest endpoint (pageview, session ID, referrer, user agent).
+  - Authenticated owner-only telemetry ingest endpoint (pageview, session ID, referrer, user agent).
 - `GET /api/v1/websites/:id/analytics?days=30`
   - Returns top pages, unique visitors, sessions, referrers, and device breakdown.
 

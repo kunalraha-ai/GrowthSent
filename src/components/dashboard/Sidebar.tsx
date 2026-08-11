@@ -190,6 +190,14 @@ export function Sidebar({
             <span className="nav-label">Pages</span>
           </a>
           <a
+            className={`nav-item ${activeTab === "backlinks" ? "active" : ""}`}
+            onClick={() => handleTabClick("backlinks")}
+            title="Backlink preview"
+          >
+            <span className="icon"><Icons.Globe /></span>
+            <span className="nav-label">Backlinks</span>
+          </a>
+          <a
             className={`nav-item ${activeTab === "issues" ? "active" : ""}`}
             onClick={() => handleTabClick("issues")}
             title="Issues"
@@ -282,7 +290,7 @@ export function Sidebar({
         confirmText="Delete Website"
         cancelText="Cancel"
         variant="danger"
-        isLoading={isDeletingWebsite}
+        loading={isDeletingWebsite}
         onConfirm={async () => {
           if (!siteToDelete) return;
           setIsDeletingWebsite(true);

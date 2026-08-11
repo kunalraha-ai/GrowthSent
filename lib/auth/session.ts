@@ -55,7 +55,7 @@ export async function destroySession(rawToken: string): Promise<boolean> {
 
 export function buildSessionCookieHeader(rawToken: string, isDelete = false): string {
   const maxAge = isDelete ? 0 : Math.floor(SESSION_DURATION_MS / 1000);
-  const secure = process.env.NODE_ENV === "production" ? "Secure; " : "";
+  const secure = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" ? "Secure; " : "";
   return `${SESSION_COOKIE_NAME}=${isDelete ? "" : rawToken}; Path=/; HttpOnly; SameSite=Lax; ${secure}Max-Age=${maxAge}`;
 }
 

@@ -1,8 +1,8 @@
-import { ObjectId } from "mongodb";
-import { connectToDatabase } from "../db/mongodb.js";
-import { AnalyticsEventDocument } from "../db/types.js";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { AnalyticsEventDocument, WebsiteDocument } from "../db/types.js";
 
 export interface RecordAnalyticsEventOptions {
+  userId: string;
   websiteId: string;
   anonymousVisitorId: string;
   sessionId: string;
@@ -31,9 +31,18 @@ export function detectBrowserCategory(userAgent?: string): string {
 
 export async function recordAnalyticsEvent(options: RecordAnalyticsEventOptions): Promise<boolean> {
   const { db } = await connectToDatabase();
+  const websiteId = safeObjectId(options.websiteId);
+  const userId = safeObjectId(options.userId);
+
+  // Keep the ownership check at the write boundary. This protects future callers
+  // from turning a valid ObjectId into cross-tenant analytics data.
+  const website = await db.collection<WebsiteDocument>("websites").findOne({ _id: websiteId, userId });
+  if (!website) {
+    throw new Error("Website not found.");
+  }
 
   const eventDoc: AnalyticsEventDocument = {
-    websiteId: new ObjectId(options.websiteId),
+    websiteId,
     anonymousVisitorId: options.anonymousVisitorId,
     sessionId: options.sessionId,
     pageUrl: options.pageUrl,

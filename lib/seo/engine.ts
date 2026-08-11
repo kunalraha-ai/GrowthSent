@@ -10,9 +10,11 @@ export interface AnalysisExecutionResult {
 
 export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecutionResult {
   const issues: Omit<IssueDocument, "_id" | "scanId" | "createdAt">[] = [];
+  const supportsSiteDiscovery = crawl.capabilities?.supportsSiteDiscovery !== false;
+  const supportsResponseTiming = crawl.capabilities?.supportsResponseTiming !== false;
 
   // Site-wide checks
-  if (!crawl.robots.exists) {
+  if (supportsSiteDiscovery && !crawl.robots.exists) {
     const rule = SEO_RULES["robots-txt-missing"];
     issues.push({
       ruleId: rule.ruleId,
@@ -26,7 +28,7 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
     });
   }
 
-  if (!crawl.sitemap.exists) {
+  if (supportsSiteDiscovery && !crawl.sitemap.exists) {
     const rule = SEO_RULES["sitemap-missing"];
     issues.push({
       ruleId: rule.ruleId,
@@ -40,7 +42,7 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
     });
   }
 
-  if (crawl.sitemap.errors.length > 0) {
+  if (supportsSiteDiscovery && crawl.sitemap.errors.length > 0) {
     const rule = SEO_RULES["sitemap-url-error"];
     issues.push({
       ruleId: rule.ruleId,
@@ -82,7 +84,7 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
       }
     }
 
-    if (page.responseTimeMs > 1500) {
+    if (supportsResponseTiming && page.responseTimeMs > 1500) {
       const rule = SEO_RULES["slow-response-time"];
       issues.push({
         ruleId: rule.ruleId,
@@ -114,7 +116,19 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
         });
       }
 
-      if (!data.canonicalUrl) {
+      if (data.canonicalError) {
+        const rule = SEO_RULES["canonical-invalid"];
+        issues.push({
+          ruleId: rule.ruleId,
+          category: rule.category,
+          severity: rule.severity,
+          title: rule.title,
+          description: data.canonicalError,
+          explanation: rule.explanation,
+          affectedUrl: page.url,
+          recommendation: rule.recommendation,
+        });
+      } else if (!data.canonicalUrl) {
         const rule = SEO_RULES["canonical-missing"];
         issues.push({
           ruleId: rule.ruleId,
@@ -126,19 +140,41 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
           affectedUrl: page.url,
           recommendation: rule.recommendation,
         });
-      } else if (new URL(data.canonicalUrl).hostname.toLowerCase() !== crawl.hostname) {
-        const rule = SEO_RULES["canonical-external"];
-        issues.push({
-          ruleId: rule.ruleId,
-          category: rule.category,
-          severity: rule.severity,
-          title: rule.title,
-          description: `Canonical URL points to an external domain: ${data.canonicalUrl}`,
-          explanation: rule.explanation,
-          affectedUrl: page.url,
-          evidence: data.canonicalUrl,
-          recommendation: rule.recommendation,
-        });
+      } else {
+        try {
+          const canonical = new URL(data.canonicalUrl);
+          if (canonical.protocol !== "http:" && canonical.protocol !== "https:") {
+            throw new Error("Canonical URL must use HTTP or HTTPS.");
+          }
+
+          if (canonical.hostname.toLowerCase() !== crawl.hostname) {
+            const rule = SEO_RULES["canonical-external"];
+            issues.push({
+              ruleId: rule.ruleId,
+              category: rule.category,
+              severity: rule.severity,
+              title: rule.title,
+              description: `Canonical URL points to an external domain: ${data.canonicalUrl}`,
+              explanation: rule.explanation,
+              affectedUrl: page.url,
+              evidence: data.canonicalUrl,
+              recommendation: rule.recommendation,
+            });
+          }
+        } catch {
+          const rule = SEO_RULES["canonical-invalid"];
+          issues.push({
+            ruleId: rule.ruleId,
+            category: rule.category,
+            severity: rule.severity,
+            title: rule.title,
+            description: "Canonical URL is malformed or uses an unsupported protocol.",
+            explanation: rule.explanation,
+            affectedUrl: page.url,
+            evidence: data.canonicalUrl,
+            recommendation: rule.recommendation,
+          });
+        }
       }
 
       if (!data.title) {

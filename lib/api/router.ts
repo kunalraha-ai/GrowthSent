@@ -1,7 +1,15 @@
+import crypto from "node:crypto";
 import { z } from "zod";
 import { checkRateLimit } from "../ratelimit/limiter.js";
 import { validateUrlForScan } from "../security/ssrf.js";
-import { createScan, getScanById, getScanPages, getScanIssues } from "../scans/service.js";
+import {
+  createScan,
+  getScanByIdForAccess,
+  getScanPagesForAccess,
+  getScanIssuesForAccess,
+  getScanPages,
+  getScanIssues,
+} from "../scans/service.js";
 import { createUser, verifyUserCredentials, deleteUserAccount } from "../auth/user.js";
 import { createSession, validateSession, destroySession, buildSessionCookieHeader, extractSessionTokenFromCookie } from "../auth/session.js";
 import { createWebsite, getUserWebsites, getWebsiteById, deleteWebsite, getWebsiteScans } from "../websites/service.js";
@@ -29,16 +37,17 @@ import {
   completeGithubLogin,
 } from "../auth/social.js";
 import { connectToDatabase } from "../db/mongodb.js";
+import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
 
 // Input Validation Schemas
 export const ScanInputSchema = z.object({
-  url: z.string().min(1, "URL is required"),
+  url: z.string().min(1, "URL is required").max(2048, "URL is too long"),
 });
 
 export const AuthSignupSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  name: z.string().optional(),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128, "Password is too long"),
+  name: z.string().trim().max(200, "Name is too long").optional(),
 });
 
 export const AuthLoginSchema = z.object({
@@ -51,13 +60,28 @@ export const WebsiteInputSchema = z.object({
   displayName: z.string().optional(),
 });
 
+export const AuditInputSchema = z
+  .object({
+    url: z.string().min(1, "URL is required").max(2048, "URL is too long"),
+    websiteId: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid website identifier").optional(),
+  })
+  .strict();
+
 export const AnalyticsCollectSchema = z.object({
-  anonymousVisitorId: z.string().min(1),
-  sessionId: z.string().min(1),
-  pageUrl: z.string().min(1),
-  referrer: z.string().optional(),
-  userAgent: z.string().optional(),
-});
+  anonymousVisitorId: z.string().min(8).max(128),
+  sessionId: z.string().min(8).max(128),
+  pageUrl: z.string().url().max(2048),
+  referrer: z.string().url().max(2048).optional(),
+  userAgent: z.string().max(1024).optional(),
+}).strict();
+
+export const Ga4PropertySelectionSchema = z
+  .object({
+    websiteId: z.string().regex(/^[a-f0-9]{24}$/i, "Invalid website identifier"),
+    propertyId: z.string().trim().min(1, "propertyId is required").max(128, "propertyId is too long"),
+    displayName: z.string().trim().max(256, "displayName is too long").optional(),
+  })
+  .strict();
 
 const GoogleProviderSchema = z.enum(["google_search_console", "google_analytics"]);
 
@@ -72,8 +96,95 @@ export interface ApiRequest {
 
 export interface ApiResponse {
   statusCode: number;
-  headers?: Record<string, string>;
+  headers?: Record<string, string | string[]>;
   body: any;
+}
+
+const OAUTH_CALLBACK_MAX_AGE_SECONDS = 10 * 60;
+const SCAN_ACCESS_MAX_AGE_SECONDS = 60 * 60;
+const GOOGLE_OAUTH_NONCE_COOKIE = "gs_google_oauth_nonce";
+const GITHUB_OAUTH_NONCE_COOKIE = "gs_github_oauth_nonce";
+const GOOGLE_INTEGRATION_NONCE_COOKIE = "gs_google_integration_nonce";
+const SCAN_ACCESS_COOKIE = "gs_scan_access";
+const AUDIT_ACCESS_COOKIE = "gs_audit_access";
+
+function getHeader(headers: ApiRequest["headers"], name: string): string | undefined {
+  const direct = headers[name];
+  if (direct) return direct;
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return match?.[1];
+}
+
+function getCookie(cookieHeader: string | undefined, name: string): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator <= 0) continue;
+    if (part.slice(0, separator).trim() === name) {
+      return part.slice(separator + 1).trim() || null;
+    }
+  }
+  return null;
+}
+
+function buildHttpOnlyCookie(name: string, value: string, path: string, maxAgeSeconds: number): string {
+  const secure = process.env.NODE_ENV === "production" || process.env.VERCEL === "1" ? "Secure; " : "";
+  return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Lax; ${secure}Max-Age=${maxAgeSeconds}`;
+}
+
+function clearHttpOnlyCookie(name: string, path: string): string {
+  return buildHttpOnlyCookie(name, "", path, 0);
+}
+
+function extractResourceAccessToken(
+  req: ApiRequest,
+  cookieName: string,
+  resourceId: string,
+  headerName: string
+): string | undefined {
+  const headerToken = getHeader(req.headers, headerName);
+  if (headerToken && /^[A-Za-z0-9_-]{32,128}$/.test(headerToken)) return headerToken;
+
+  const cookieValue = getCookie(getHeader(req.headers, "cookie"), cookieName);
+  const prefix = `${resourceId}.`;
+  if (!cookieValue?.startsWith(prefix)) return undefined;
+  const token = cookieValue.slice(prefix.length);
+  return /^[A-Za-z0-9_-]{32,128}$/.test(token) ? token : undefined;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function getFrontendRedirectBase(): string {
+  return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") || "";
+}
+
+/** Remove worker coordination and anonymous capability fields from API responses. */
+function toPublicScan(scan: object): Record<string, unknown> {
+  const {
+    anonymousAccessTokenHash: _anonymousAccessTokenHash,
+    accessToken: _accessToken,
+    leaseId: _leaseId,
+    leaseExpiresAt: _leaseExpiresAt,
+    attempts: _attempts,
+    nextAttemptAt: _nextAttemptAt,
+    ownerUserId: _ownerUserId,
+    clerkUserId: _clerkUserId,
+    anonymousSessionId: _anonymousSessionId,
+    commonCrawlRequesterKey: _commonCrawlRequesterKey,
+    error: _error,
+    ...publicScan
+  } = scan as Record<string, unknown>;
+  return publicScan.status === "failed"
+    ? { ...publicScan, error: "Crawl could not be completed." }
+    : publicScan;
+}
+
+function toPublicAuditStatus(status: Record<string, unknown>): Record<string, unknown> {
+  return status.scan && typeof status.scan === "object"
+    ? { ...status, scan: toPublicScan(status.scan) }
+    : status;
 }
 
 export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
@@ -98,14 +209,47 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
 
   // Authentication is based exclusively on the signed, HttpOnly session cookie.
   // Never trust browser-controlled identity headers for account-owned resources.
-  const sessionToken = extractSessionTokenFromCookie(req.headers["cookie"]);
-  const user = sessionToken ? await validateSession(sessionToken) : null;
-
   try {
+    const sessionToken = extractSessionTokenFromCookie(getHeader(req.headers, "cookie"));
+    const user = sessionToken ? await validateSession(sessionToken) : null;
     if (method === "GET" && path === "/api/v1/health") {
       const { db } = await connectToDatabase();
       await db.command({ ping: 1 });
       return { statusCode: 200, body: { status: "ok", database: "connected" } };
+    }
+
+    // ----------------------------------------------------
+    // COMMON CRAWL BACKLINK PREVIEW
+    // ----------------------------------------------------
+    if (method === "GET" && path === "/api/v1/backlinks") {
+      if (!user) {
+        return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Not authenticated." } } };
+      }
+
+      const domain = req.query.domain;
+      if (!domain) {
+        return { statusCode: 400, body: { error: { code: "INVALID_DOMAIN", message: "A domain is required." } } };
+      }
+
+      const page = req.query.page && /^\d+$/.test(req.query.page) ? Number.parseInt(req.query.page, 10) : undefined;
+      const pageSize = req.query.pageSize && /^\d+$/.test(req.query.pageSize)
+        ? Number.parseInt(req.query.pageSize, 10)
+        : undefined;
+
+      try {
+        const report = await getBacklinkAnalytics(domain, { page, pageSize });
+        return {
+          statusCode: 200,
+          headers: { "Cache-Control": "private, max-age=30" },
+          body: report,
+        };
+      } catch (error) {
+        if (error instanceof BacklinkAnalyticsError) {
+          const statusCode = error.code === "INVALID_DOMAIN" ? 400 : error.code === "QUERY_TIMEOUT" ? 504 : 503;
+          return { statusCode, body: { error: { code: error.code, message: error.message } } };
+        }
+        throw error;
+      }
     }
 
     // ----------------------------------------------------
@@ -115,17 +259,38 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     if (method === "GET" && integrationCallbackMatch) {
       const code = req.query.code;
       const state = req.query.state;
-      if (!code || !state) {
-        return { statusCode: 400, body: { error: { code: "INVALID_OAUTH_CALLBACK", message: "Missing Google OAuth code or state." } } };
-      }
-      const completed = await completeGoogleAuthorization(code, state);
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "/";
+      const browserNonce = getCookie(getHeader(req.headers, "cookie"), GOOGLE_INTEGRATION_NONCE_COOKIE) || "";
+      const appUrl = getFrontendRedirectBase() || "/";
       const separator = appUrl.includes("?") ? "&" : "?";
-      return {
-        statusCode: 302,
-        headers: { Location: `${appUrl}${separator}integration=${completed.provider}&websiteId=${completed.websiteId}` },
-        body: { success: true },
-      };
+      const clearNonceCookie = clearHttpOnlyCookie(
+        GOOGLE_INTEGRATION_NONCE_COOKIE,
+        "/api/v1/integrations/google/callback"
+      );
+      if (!code || !state || !browserNonce) {
+        return {
+          statusCode: 302,
+          headers: { Location: `${appUrl}${separator}integrationError=google`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
+          body: {},
+        };
+      }
+      try {
+        const completed = await completeGoogleAuthorization(code, state, browserNonce);
+        return {
+          statusCode: 302,
+          headers: {
+            Location: `${appUrl}${separator}integration=${completed.provider}&websiteId=${completed.websiteId}`,
+            "Set-Cookie": clearNonceCookie,
+            "Cache-Control": "no-store",
+          },
+          body: { success: true },
+        };
+      } catch {
+        return {
+          statusCode: 302,
+          headers: { Location: `${appUrl}${separator}integrationError=google`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
+          body: {},
+        };
+      }
     }
 
     if (method === "GET" && path === "/api/v1/integrations/google/start") {
@@ -137,8 +302,26 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       }
       const website = await getWebsiteById(websiteId, user._id!.toString());
       if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
-      const authorizationUrl = await createGoogleAuthorizationUrl(user._id!.toString(), websiteId, providerResult.data);
-      return { statusCode: 200, body: { authorizationUrl } };
+      const browserNonce = crypto.randomBytes(32).toString("base64url");
+      const authorizationUrl = await createGoogleAuthorizationUrl(
+        user._id!.toString(),
+        websiteId,
+        providerResult.data,
+        browserNonce
+      );
+      return {
+        statusCode: 200,
+        headers: {
+          "Set-Cookie": buildHttpOnlyCookie(
+            GOOGLE_INTEGRATION_NONCE_COOKIE,
+            browserNonce,
+            "/api/v1/integrations/google/callback",
+            OAUTH_CALLBACK_MAX_AGE_SECONDS
+          ),
+          "Cache-Control": "no-store",
+        },
+        body: { authorizationUrl },
+      };
     }
 
     if (method === "GET" && path === "/api/v1/integrations") {
@@ -173,12 +356,17 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const queries = await fetchSearchConsoleKeywords(user._id!.toString(), websiteId);
         return { statusCode: 200, body: { queries } };
-      } catch (err: any) {
-        const message = err?.message || "Unable to load Search Console data.";
+      } catch (err) {
+        const message = getErrorMessage(err);
         const isNotFound = message.includes("No Google Search Console property");
         return {
           statusCode: isNotFound ? 404 : 400,
-          body: { error: { code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR", message } },
+          body: {
+            error: {
+              code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR",
+              message: isNotFound ? "No Google Search Console property is configured for this website." : "Unable to load Search Console data.",
+            },
+          },
         };
       }
     }
@@ -191,12 +379,17 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const report = await fetchSearchConsoleFullReport(user._id!.toString(), websiteId, days);
         return { statusCode: 200, body: report };
-      } catch (err: any) {
-        const message = err?.message || "Unable to load Search Console data.";
+      } catch (err) {
+        const message = getErrorMessage(err);
         const isNotFound = message.includes("No Google Search Console property");
         return {
           statusCode: isNotFound ? 404 : 400,
-          body: { error: { code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR", message } },
+          body: {
+            error: {
+              code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR",
+              message: isNotFound ? "No Google Search Console property is configured for this website." : "Unable to load Search Console data.",
+            },
+          },
         };
       }
     }
@@ -211,13 +404,19 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
 
     if (method === "POST" && path === "/api/v1/ga4-properties/select") {
       if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
-      const websiteId = req.body?.websiteId;
-      const propertyId = req.body?.propertyId;
-      const displayName = req.body?.displayName;
-      if (!websiteId || !propertyId) {
-        return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: "websiteId and propertyId are required." } } };
+      const parsed = Ga4PropertySelectionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return {
+          statusCode: 400,
+          body: { error: { code: "INVALID_INPUT", message: parsed.error.issues[0]?.message || "Invalid Google Analytics property." } },
+        };
       }
-      await setGoogleAnalyticsProperty(user._id!.toString(), websiteId, propertyId, displayName);
+      await setGoogleAnalyticsProperty(
+        user._id!.toString(),
+        parsed.data.websiteId,
+        parsed.data.propertyId,
+        parsed.data.displayName
+      );
       return { statusCode: 200, body: { success: true } };
     }
 
@@ -229,16 +428,16 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const report = await fetchGoogleAnalyticsReport(user._id!.toString(), websiteId, days);
         return { statusCode: 200, body: report };
-      } catch (err: any) {
-        const msg: string = err?.message || "Unable to fetch Google Analytics report.";
+      } catch (err) {
+        const msg = getErrorMessage(err);
         if (/no google analytics property/i.test(msg)) {
-          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: msg } } };
+          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: "No Google Analytics property is configured for this website." } } };
         }
         if (/not connected/i.test(msg) || /no active.*integration/i.test(msg)) {
           return { statusCode: 400, body: { error: { code: "NOT_CONNECTED", message: "Google Analytics is not connected for this website." } } };
         }
-        console.error("[ga4-report] Error:", msg);
-        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: msg } } };
+        console.warn("[ga4-report] Request failed.");
+        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: "Unable to fetch Google Analytics data." } } };
       }
     }
 
@@ -250,15 +449,15 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const report = await fetchGa4FullReport(user._id!.toString(), websiteId, days);
         return { statusCode: 200, body: report };
-      } catch (err: any) {
-        const msg: string = err?.message || "Unable to fetch Google Analytics 4 report.";
+      } catch (err) {
+        const msg = getErrorMessage(err);
         if (/no google analytics property/i.test(msg)) {
-          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: msg } } };
+          return { statusCode: 400, body: { error: { code: "NO_PROPERTY", message: "No Google Analytics property is configured for this website." } } };
         }
         if (/not connected/i.test(msg) || /no active.*integration/i.test(msg)) {
           return { statusCode: 400, body: { error: { code: "NOT_CONNECTED", message: "Google Analytics is not connected for this website." } } };
         }
-        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: msg } } };
+        return { statusCode: 400, body: { error: { code: "GA4_ERROR", message: "Unable to fetch Google Analytics data." } } };
       }
     }
 
@@ -266,22 +465,36 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     // SCAN & AUDIT ENDPOINTS
     // ----------------------------------------------------
     if (method === "POST" && path === "/api/v1/audit") {
-      const targetUrl = req.body?.url;
-      if (!targetUrl || typeof targetUrl !== "string") {
+      const parsed = AuditInputSchema.safeParse(req.body);
+      if (!parsed.success) {
         return {
           statusCode: 400,
-          body: { error: { code: "INVALID_INPUT", message: "A valid URL string is required." } },
+          body: { error: { code: "INVALID_INPUT", message: parsed.error.issues[0]?.message || "Invalid audit request." } },
         };
       }
 
-      const websiteId = req.body?.websiteId;
-      if (websiteId && user) {
+      const { url: targetUrl, websiteId } = parsed.data;
+      if (websiteId) {
+        if (!user) {
+          return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+        }
         const website = await getWebsiteById(websiteId, user._id!.toString());
         if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
       }
-      const job = await AuditService.createCrawlJob(targetUrl, user?._id?.toString(), websiteId);
+      const job = await AuditService.createCrawlJob(targetUrl, user?._id?.toString(), websiteId, req.ip);
+      const headers = job.accessToken
+        ? {
+            "Set-Cookie": buildHttpOnlyCookie(
+              AUDIT_ACCESS_COOKIE,
+              `${job.jobId}.${job.accessToken}`,
+              `/api/v1/audit/${job.jobId}`,
+              SCAN_ACCESS_MAX_AGE_SECONDS
+            ),
+          }
+        : undefined;
       return {
         statusCode: 202,
+        headers,
         body: { jobId: job.jobId, status: job.status },
       };
     }
@@ -289,14 +502,17 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     const auditMatch = path.match(/^\/api\/v1\/audit\/(job_[a-zA-Z0-9_]+)$/);
     if (method === "GET" && auditMatch) {
       const jobId = auditMatch[1];
-      const statusData = await AuditService.getCrawlJobStatus(jobId, user?._id?.toString());
+      const statusData = await AuditService.getCrawlJobStatus(jobId, {
+        userId: user?._id?.toString(),
+        accessToken: extractResourceAccessToken(req, AUDIT_ACCESS_COOKIE, jobId, "x-audit-access-token"),
+      });
       if (!statusData) {
         return {
           statusCode: 404,
           body: { error: { code: "NOT_FOUND", message: "Job not found." } },
         };
       }
-      return { statusCode: 200, body: statusData };
+      return { statusCode: 200, body: toPublicAuditStatus(statusData) };
     }
 
     if (method === "POST" && path === "/api/v1/scans") {
@@ -328,13 +544,29 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
 
       const scan = await createScan({
         url: parse.data.url,
+        userId: user?._id?.toString(),
+        requestIp: req.ip,
         maxPages: user ? 150 : 50,
       });
 
+      const scanId = scan._id?.toString();
+      const headers =
+        scan.accessToken && scanId
+          ? {
+              "Set-Cookie": buildHttpOnlyCookie(
+                SCAN_ACCESS_COOKIE,
+                `${scanId}.${scan.accessToken}`,
+                `/api/v1/scans/${scanId}`,
+                SCAN_ACCESS_MAX_AGE_SECONDS
+              ),
+            }
+          : undefined;
+
       return {
         statusCode: 201,
+        headers,
         body: {
-          scanId: scan._id?.toString(),
+          scanId,
           status: scan.status,
           url: scan.url,
           createdAt: scan.createdAt,
@@ -346,21 +578,30 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     const scanMatch = path.match(/^\/api\/v1\/scans\/([a-f0-9]{24})$/);
     if (method === "GET" && scanMatch) {
       const scanId = scanMatch[1];
-      const scan = await getScanById(scanId);
+      const scan = await getScanByIdForAccess(scanId, {
+        userId: user?._id?.toString(),
+        accessToken: extractResourceAccessToken(req, SCAN_ACCESS_COOKIE, scanId, "x-scan-access-token"),
+      });
       if (!scan) {
         return {
           statusCode: 404,
           body: { error: { code: "NOT_FOUND", message: "Scan not found." } },
         };
       }
-      return { statusCode: 200, body: scan };
+      return { statusCode: 200, body: toPublicScan(scan) };
     }
 
     // GET /api/v1/scans/:id/pages
     const pagesMatch = path.match(/^\/api\/v1\/scans\/([a-f0-9]{24})\/pages$/);
     if (method === "GET" && pagesMatch) {
       const scanId = pagesMatch[1];
-      const pages = await getScanPages(scanId);
+      const pages = await getScanPagesForAccess(scanId, {
+        userId: user?._id?.toString(),
+        accessToken: extractResourceAccessToken(req, SCAN_ACCESS_COOKIE, scanId, "x-scan-access-token"),
+      });
+      if (!pages) {
+        return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Scan not found." } } };
+      }
       return { statusCode: 200, body: { pages } };
     }
 
@@ -368,7 +609,13 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     const issuesMatch = path.match(/^\/api\/v1\/scans\/([a-f0-9]{24})\/issues$/);
     if (method === "GET" && issuesMatch) {
       const scanId = issuesMatch[1];
-      const issues = await getScanIssues(scanId);
+      const issues = await getScanIssuesForAccess(scanId, {
+        userId: user?._id?.toString(),
+        accessToken: extractResourceAccessToken(req, SCAN_ACCESS_COOKIE, scanId, "x-scan-access-token"),
+      });
+      if (!issues) {
+        return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Scan not found." } } };
+      }
       return { statusCode: 200, body: { issues } };
     }
 
@@ -379,66 +626,110 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     // SOCIAL LOGIN (GOOGLE / GITHUB) — authenticates INTO GrowthSent itself
     // ----------------------------------------------------
     if (method === "GET" && path === "/api/v1/auth/google/start") {
+      const browserNonce = crypto.randomBytes(32).toString("base64url");
       try {
-        const authorizationUrl = await createGoogleLoginUrl();
-        return { statusCode: 200, body: { authorizationUrl } };
-      } catch (err: any) {
-        return { statusCode: 500, body: { error: { code: "OAUTH_NOT_CONFIGURED", message: err.message } } };
+        const authorizationUrl = await createGoogleLoginUrl(browserNonce);
+        return {
+          statusCode: 200,
+          headers: {
+            "Set-Cookie": buildHttpOnlyCookie(
+              GOOGLE_OAUTH_NONCE_COOKIE,
+              browserNonce,
+              "/api/v1/auth/google/callback",
+              OAUTH_CALLBACK_MAX_AGE_SECONDS
+            ),
+            "Cache-Control": "no-store",
+          },
+          body: { authorizationUrl },
+        };
+      } catch {
+        return {
+          statusCode: 503,
+          body: { error: { code: "OAUTH_UNAVAILABLE", message: "Google sign-in is temporarily unavailable." } },
+        };
       }
     }
 
     if (method === "GET" && path === "/api/v1/auth/google/callback") {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "/").replace(/\/$/, "");
+      const appUrl = getFrontendRedirectBase();
       const code = req.query.code;
       const state = req.query.state;
+      const browserNonce = getCookie(getHeader(req.headers, "cookie"), GOOGLE_OAUTH_NONCE_COOKIE) || "";
+      const clearNonceCookie = clearHttpOnlyCookie(GOOGLE_OAUTH_NONCE_COOKIE, "/api/v1/auth/google/callback");
       if (!code || !state) {
-        return { statusCode: 302, headers: { Location: `${appUrl}/?authError=Missing+Google+OAuth+code` }, body: {} };
+        return {
+          statusCode: 302,
+          headers: { Location: `${appUrl}/?authError=Google+sign-in+failed`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
+          body: {},
+        };
       }
       try {
-        const loggedInUser = await completeGoogleLogin(code, state);
+        const loggedInUser = await completeGoogleLogin(code, state, browserNonce);
         const { rawToken } = await createSession(loggedInUser._id!.toString());
         return {
           statusCode: 302,
-          headers: { Location: appUrl, "Set-Cookie": buildSessionCookieHeader(rawToken) },
+          headers: { Location: appUrl || "/", "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
           body: {},
         };
-      } catch (err: any) {
+      } catch {
         return {
           statusCode: 302,
-          headers: { Location: `${appUrl}/?authError=${encodeURIComponent(err.message || "Google sign-in failed.")}` },
+          headers: { Location: `${appUrl}/?authError=Google+sign-in+failed`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
           body: {},
         };
       }
     }
 
     if (method === "GET" && path === "/api/v1/auth/github/start") {
+      const browserNonce = crypto.randomBytes(32).toString("base64url");
       try {
-        const authorizationUrl = await createGithubLoginUrl();
-        return { statusCode: 200, body: { authorizationUrl } };
-      } catch (err: any) {
-        return { statusCode: 500, body: { error: { code: "OAUTH_NOT_CONFIGURED", message: err.message } } };
+        const authorizationUrl = await createGithubLoginUrl(browserNonce);
+        return {
+          statusCode: 200,
+          headers: {
+            "Set-Cookie": buildHttpOnlyCookie(
+              GITHUB_OAUTH_NONCE_COOKIE,
+              browserNonce,
+              "/api/v1/auth/github/callback",
+              OAUTH_CALLBACK_MAX_AGE_SECONDS
+            ),
+            "Cache-Control": "no-store",
+          },
+          body: { authorizationUrl },
+        };
+      } catch {
+        return {
+          statusCode: 503,
+          body: { error: { code: "OAUTH_UNAVAILABLE", message: "GitHub sign-in is temporarily unavailable." } },
+        };
       }
     }
 
     if (method === "GET" && path === "/api/v1/auth/github/callback") {
-      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "/").replace(/\/$/, "");
+      const appUrl = getFrontendRedirectBase();
       const code = req.query.code;
       const state = req.query.state;
+      const browserNonce = getCookie(getHeader(req.headers, "cookie"), GITHUB_OAUTH_NONCE_COOKIE) || "";
+      const clearNonceCookie = clearHttpOnlyCookie(GITHUB_OAUTH_NONCE_COOKIE, "/api/v1/auth/github/callback");
       if (!code || !state) {
-        return { statusCode: 302, headers: { Location: `${appUrl}/?authError=Missing+GitHub+OAuth+code` }, body: {} };
+        return {
+          statusCode: 302,
+          headers: { Location: `${appUrl}/?authError=GitHub+sign-in+failed`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
+          body: {},
+        };
       }
       try {
-        const loggedInUser = await completeGithubLogin(code, state);
+        const loggedInUser = await completeGithubLogin(code, state, browserNonce);
         const { rawToken } = await createSession(loggedInUser._id!.toString());
         return {
           statusCode: 302,
-          headers: { Location: appUrl, "Set-Cookie": buildSessionCookieHeader(rawToken) },
+          headers: { Location: appUrl || "/", "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
           body: {},
         };
-      } catch (err: any) {
+      } catch {
         return {
           statusCode: 302,
-          headers: { Location: `${appUrl}/?authError=${encodeURIComponent(err.message || "GitHub sign-in failed.")}` },
+          headers: { Location: `${appUrl}/?authError=GitHub+sign-in+failed`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
           body: {},
         };
       }
@@ -552,7 +843,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       const scan = scans.find((candidate) => candidate.status === "completed");
       if (!scan?._id) return { statusCode: 200, body: { scan: null, pages: [], issues: [] } };
       const [pages, issues] = await Promise.all([getScanPages(scan._id.toString()), getScanIssues(scan._id.toString())]);
-      return { statusCode: 200, body: { scan, pages, issues } };
+      return { statusCode: 200, body: { scan: toPublicScan(scan), pages, issues } };
     }
 
     if (method === "DELETE" && webIdMatch) {
@@ -565,8 +856,10 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     const webScansMatch = path.match(/^\/api\/v1\/websites\/([a-f0-9]{24})\/scans$/);
     if (method === "GET" && webScansMatch) {
       if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Not authenticated." } } };
+      const website = await getWebsiteById(webScansMatch[1], user._id!.toString());
+      if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
       const scans = await getWebsiteScans(webScansMatch[1]);
-      return { statusCode: 200, body: { scans } };
+      return { statusCode: 200, body: { scans: scans.map(toPublicScan) } };
     }
 
     if (method === "POST" && webScansMatch) {
@@ -577,9 +870,11 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       const scan = await createScan({
         url: `https://${website.hostname}`,
         websiteId: website._id!.toString(),
+        userId: user._id!.toString(),
+        requestIp: req.ip,
         maxPages: 200,
       });
-      return { statusCode: 201, body: scan };
+      return { statusCode: 201, body: toPublicScan(scan) };
     }
 
     // ----------------------------------------------------
@@ -587,12 +882,16 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     // ----------------------------------------------------
     const analyticsCollectMatch = path.match(/^\/api\/v1\/websites\/([a-f0-9]{24})\/analytics\/collect$/);
     if (method === "POST" && analyticsCollectMatch) {
+      if (!user) {
+        return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      }
       const websiteId = analyticsCollectMatch[1];
       const parse = AnalyticsCollectSchema.safeParse(req.body);
       if (!parse.success) {
         return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: parse.error.issues[0]?.message } } };
       }
       await recordAnalyticsEvent({
+        userId: user._id!.toString(),
         websiteId,
         anonymousVisitorId: parse.data.anonymousVisitorId,
         sessionId: parse.data.sessionId,
@@ -628,14 +927,14 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       statusCode: 404,
       body: { error: { code: "NOT_FOUND", message: `Endpoint ${method} ${path} not found.` } },
     };
-  } catch (err: any) {
-    console.error("API Handler error:", err);
+  } catch (err) {
+    console.error("API handler failed.", { errorType: err instanceof Error ? err.name : "UnknownError" });
     return {
       statusCode: 500,
       body: {
         error: {
           code: "INTERNAL_SERVER_ERROR",
-          message: err.message || "An unexpected internal server error occurred.",
+          message: "An unexpected internal server error occurred.",
         },
       },
     };

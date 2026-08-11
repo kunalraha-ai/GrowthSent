@@ -2,6 +2,12 @@ import { fetchUrl, FetchResult } from "./fetcher.js";
 import { fetchAndParseRobotsTxt, isPathDisallowedByRobots, RobotsTxtResult } from "./robots.js";
 import { fetchAndParseSitemap, SitemapParseResult } from "./sitemap.js";
 import { parsePageHtml, ParsedPageData } from "./parser.js";
+import type {
+  CommonCrawlMetrics,
+  CommonCrawlPageProvenance,
+  CrawlDataProviderName,
+  CrawlProviderCapabilities,
+} from "./types.js";
 
 export interface CrawledPageResult {
   url: string;
@@ -13,6 +19,8 @@ export interface CrawledPageResult {
   error?: string;
   parsedData?: ParsedPageData;
   hasRobotsTxtDisallow: boolean;
+  /** Present only when an archive provider supplied this existing page result. */
+  provenance?: CommonCrawlPageProvenance;
 }
 
 export interface CrawlEngineOptions {
@@ -32,6 +40,12 @@ export interface CrawlExecutionResult {
   robots: RobotsTxtResult;
   sitemap: SitemapParseResult;
   pages: CrawledPageResult[];
+  /** Omitted for legacy callers; live crawl results populate it. */
+  provider?: CrawlDataProviderName;
+  /** Prevent source-incompatible SEO assertions for archive-only captures. */
+  capabilities?: CrawlProviderCapabilities;
+  /** Redacted Common Crawl measurements, retained through the normal scan record. */
+  commonCrawlMetrics?: CommonCrawlMetrics;
 }
 
 export async function runCrawl(
@@ -164,5 +178,10 @@ export async function runCrawl(
     robots,
     sitemap,
     pages,
+    provider: "live",
+    capabilities: {
+      supportsSiteDiscovery: true,
+      supportsResponseTiming: true,
+    },
   };
 }

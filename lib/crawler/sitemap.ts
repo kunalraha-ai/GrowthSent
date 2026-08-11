@@ -65,7 +65,9 @@ export async function fetchAndParseSitemap(
         }
       }
     } else {
-      errors.push(`Child sitemap ${childSitemap} returned status ${fetchRes.statusCode}`);
+      // Do not persist an arbitrary sitemap URL in crawl findings. A target can
+      // supply credentials in a child location even though the fetcher blocks it.
+      errors.push(`A child sitemap returned status ${fetchRes.statusCode}`);
     }
   }
 
