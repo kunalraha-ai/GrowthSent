@@ -1,10 +1,11 @@
-import { MongoClient } from "mongodb";
-import { ObjectId as RuntimeObjectId } from "mongodb";
-import type { Db, ObjectId } from "mongodb";
+import * as mongodbDriver from "mongodb";
+import type { Db, MongoClient as MongoClientType, ObjectId } from "mongodb";
 
-let cachedClient: MongoClient | null = null;
+const MongoClient = mongodbDriver.MongoClient;
+
+let cachedClient: MongoClientType | null = null;
 let cachedDb: Db | null = null;
-let connecting: Promise<{ client: MongoClient; db: Db }> | null = null;
+let connecting: Promise<{ client: MongoClientType; db: Db }> | null = null;
 
 /**
  * Opens the application's configured MongoDB database.
@@ -14,7 +15,7 @@ let connecting: Promise<{ client: MongoClient; db: Db }> | null = null;
  * in-memory database. Set MONGODB_URI and MONGODB_DB_NAME in the deployment
  * environment before accepting traffic.
  */
-export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
+export async function connectToDatabase(): Promise<{ client: MongoClientType; db: Db }> {
   if (cachedClient && cachedDb) {
     return { client: cachedClient, db: cachedDb };
   }
@@ -57,9 +58,9 @@ export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db
 
 /** Converts an API identifier to an ObjectId without inventing a replacement. */
 export function safeObjectId(id: string | ObjectId): ObjectId {
-  if (id instanceof RuntimeObjectId) return id;
-  if (!RuntimeObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
+  if (id instanceof mongodbDriver.ObjectId) return id;
+  if (!mongodbDriver.ObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
     throw new Error("Invalid database identifier.");
   }
-  return new RuntimeObjectId(id);
+  return new mongodbDriver.ObjectId(id);
 }
