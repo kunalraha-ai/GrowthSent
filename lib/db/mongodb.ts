@@ -1,5 +1,6 @@
-import { MongoClient, ObjectId } from "mongodb";
-import type { Db } from "mongodb";
+import { MongoClient } from "mongodb";
+import { ObjectId as RuntimeObjectId } from "mongodb";
+import type { Db, ObjectId } from "mongodb";
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
@@ -56,9 +57,9 @@ export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db
 
 /** Converts an API identifier to an ObjectId without inventing a replacement. */
 export function safeObjectId(id: string | ObjectId): ObjectId {
-  if (id instanceof ObjectId) return id;
-  if (!ObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
+  if (id instanceof RuntimeObjectId) return id;
+  if (!RuntimeObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
     throw new Error("Invalid database identifier.");
   }
-  return new ObjectId(id);
+  return new RuntimeObjectId(id);
 }
