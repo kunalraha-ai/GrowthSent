@@ -305,7 +305,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
             <section id="backlink-panel-backlinks" role="tabpanel" aria-labelledby="backlink-tab-backlinks" className="console-section-card backlink-section">
               <div className="card-header backlink-card-header">
                 <div><h4 className="card-title">Backlinks</h4><p className="card-sub">{report.pagination.totalRows === null ? `${report.backlinks.length} rows returned for ${report.domain}` : `${formatCount(report.pagination.totalRows)} rows found for ${report.domain}`}</p></div>
-                <span className="backlink-page-size">25 per page</span>
+                <span className="backlink-page-size">{report.pagination.pageSize} per page</span>
               </div>
               {loading ? <BacklinkTableSkeleton /> : (
                 <>

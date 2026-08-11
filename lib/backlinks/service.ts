@@ -1,10 +1,10 @@
-import { Collection, Document, Filter } from "mongodb";
+import { Collection, Db, Document, Filter } from "mongodb";
 import { connectToDataFederation } from "../db/data-federation.js";
 
 const CRAWL = "CC-MAIN-2026-30";
 const LINKS_COLLECTION = "links_prod_2026_30";
 const QUERY_TIMEOUT_MS = 8_000;
-const MAX_PAGE_SIZE = 50;
+const MAX_FEDERATED_PAGE_SIZE = 10;
 const MAX_PAGE = 100;
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 100;
@@ -155,8 +155,8 @@ export function normalizeBacklinkDomain(value: string): string {
 export function normalizeBacklinkPagination(options: AnalyticsOptions): { page: number; pageSize: number } {
   const page = Number.isInteger(options.page) ? Math.min(Math.max(options.page!, 1), MAX_PAGE) : 1;
   const pageSize = Number.isInteger(options.pageSize)
-    ? Math.min(Math.max(options.pageSize!, 1), MAX_PAGE_SIZE)
-    : 25;
+    ? Math.min(Math.max(options.pageSize!, 1), MAX_FEDERATED_PAGE_SIZE)
+    : MAX_FEDERATED_PAGE_SIZE;
   return { page, pageSize };
 }
 
@@ -208,14 +208,62 @@ async function fetchBacklinkRows(
   }));
 }
 
+type BacklinkTimingOutcome = "started" | "completed" | "cache_hit" | "skipped" | "timed_out" | "failed";
+
+interface BacklinkTimingEvent {
+  section: "request" | "connection" | "rows" | "overview" | "referringDomains" | "anchors" | "linkedPages";
+  domain: string;
+  page: number;
+  pageSize: number;
+  startedAt: string;
+  elapsedMs: number;
+  outcome: BacklinkTimingOutcome;
+  timeoutReason?: string;
+  errorName?: string;
+  errorCode?: string | number;
+  rows?: number;
+}
+
+/**
+ * Temporary production diagnostics for the bounded Data Federation MVP.
+ * Deliberately excludes URIs, credentials, source URLs, and raw error text.
+ */
+function logBacklinkTiming(event: BacklinkTimingEvent): void {
+  console.info("[backlink-analytics] timing", event);
+}
+
+function safeErrorMetadata(error: unknown): Pick<BacklinkTimingEvent, "errorName" | "errorCode"> {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const errorCode = typeof error === "object" && error && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return typeof errorCode === "string" || typeof errorCode === "number"
+    ? { errorName, errorCode }
+    : { errorName };
+}
+
 type BacklinkSummary = Omit<BacklinkAnalyticsReport, "backlinks" | "pagination">;
 
-function unavailableSummary(domain: string): BacklinkSummary {
+function unavailableSummary(domain: string, page: number, pageSize: number): BacklinkSummary {
   // Data Federation plans the wildcard S3 mapping as a map-reduce source.
   // A limited find can stop after a small page of exact target_host matches,
   // but counts and grouped rankings must read every matching row group and
   // exceeded the fixed 8-second bound in production probes. Returning them
   // as unavailable is more accurate than delaying or failing the row lookup.
+  const startedAt = new Date().toISOString();
+  for (const section of ["overview", "referringDomains", "anchors", "linkedPages"] as const) {
+    logBacklinkTiming({
+      section,
+      domain,
+      page,
+      pageSize,
+      startedAt,
+      elapsedMs: 0,
+      outcome: "skipped",
+      timeoutReason: "global_aggregation_exceeds_8_second_bound",
+    });
+  }
+
   return {
     domain,
     coverage: { crawl: CRAWL, label: BACKLINK_COVERAGE_LABEL },
@@ -246,34 +294,107 @@ export async function getBacklinkAnalytics(domainInput: string, options: Analyti
   const domain = normalizeBacklinkDomain(domainInput);
   const { page, pageSize } = normalizeBacklinkPagination(options);
   const filter = backlinkTargetFilter(domain);
-  const { db } = await connectToDataFederation().catch(() => {
+  const requestStartedAt = new Date().toISOString();
+  const requestStartedMs = Date.now();
+  logBacklinkTiming({ section: "request", domain, page, pageSize, startedAt: requestStartedAt, elapsedMs: 0, outcome: "started" });
+
+  const connectionStartedAt = new Date().toISOString();
+  const connectionStartedMs = Date.now();
+  let db: Db;
+  try {
+    ({ db } = await connectToDataFederation());
+    logBacklinkTiming({
+      section: "connection",
+      domain,
+      page,
+      pageSize,
+      startedAt: connectionStartedAt,
+      elapsedMs: Date.now() - connectionStartedMs,
+      outcome: "completed",
+    });
+  } catch (error) {
+    logBacklinkTiming({
+      section: "connection",
+      domain,
+      page,
+      pageSize,
+      startedAt: connectionStartedAt,
+      elapsedMs: Date.now() - connectionStartedMs,
+      outcome: "failed",
+      timeoutReason: "data_federation_connection_failed",
+      ...safeErrorMetadata(error),
+    });
     throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
-  });
+  }
   const links = db.collection<LinkDocument>(LINKS_COLLECTION);
-  const rowCacheKey = `rows:v2:${domain}:${page}:${pageSize}`;
+  const rowCacheKey = `rows:v3:${domain}:${page}:${pageSize}`;
   let backlinks = cache.get<BacklinkRow[]>(rowCacheKey);
   let backlinksAvailable = Boolean(backlinks);
-  if (!backlinks) {
+  const rowsStartedAt = new Date().toISOString();
+  const rowsStartedMs = Date.now();
+  if (backlinks) {
+    logBacklinkTiming({
+      section: "rows",
+      domain,
+      page,
+      pageSize,
+      startedAt: rowsStartedAt,
+      elapsedMs: 0,
+      outcome: "cache_hit",
+      rows: backlinks.length,
+    });
+  } else {
+    logBacklinkTiming({ section: "rows", domain, page, pageSize, startedAt: rowsStartedAt, elapsedMs: 0, outcome: "started" });
     try {
       backlinks = await fetchBacklinkRows(links, filter, page, pageSize);
       backlinksAvailable = true;
       cache.set(rowCacheKey, backlinks, CACHE_TTL_MS);
+      logBacklinkTiming({
+        section: "rows",
+        domain,
+        page,
+        pageSize,
+        startedAt: rowsStartedAt,
+        elapsedMs: Date.now() - rowsStartedMs,
+        outcome: "completed",
+        rows: backlinks.length,
+      });
     } catch (error) {
-      console.warn("[backlink-analytics] Bounded backlink row lookup did not complete.", {
-        status: isTimeout(error) ? "timed_out" : "unavailable",
+      const timedOut = isTimeout(error);
+      logBacklinkTiming({
+        section: "rows",
+        domain,
+        page,
+        pageSize,
+        startedAt: rowsStartedAt,
+        elapsedMs: Date.now() - rowsStartedMs,
+        outcome: timedOut ? "timed_out" : "failed",
+        timeoutReason: timedOut ? "mongodb_driver_timeoutMS_8000" : "data_federation_query_failed",
+        ...safeErrorMetadata(error),
       });
       backlinks = [];
     }
   }
-  const summary = unavailableSummary(domain);
+  const summary = unavailableSummary(domain, page, pageSize);
   const unavailableSections: BacklinkAnalyticsSection[] = backlinksAvailable
     ? summary.unavailableSections
     : [...summary.unavailableSections, "backlinks"];
-  return {
+  const report = {
     ...summary,
     partial: unavailableSections.length > 0,
     unavailableSections,
     backlinks,
     pagination: { page, pageSize, totalRows: null, totalPages: null },
   };
+  logBacklinkTiming({
+    section: "request",
+    domain,
+    page,
+    pageSize,
+    startedAt: requestStartedAt,
+    elapsedMs: Date.now() - requestStartedMs,
+    outcome: "completed",
+    rows: backlinks.length,
+  });
+  return report;
 }
