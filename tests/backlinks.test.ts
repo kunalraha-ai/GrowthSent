@@ -23,12 +23,12 @@ test("backlink domain normalization rejects unsafe or malformed input", () => {
   }
 });
 
-test("backlink pagination and target filtering are bounded and deterministic", () => {
+test("backlink pagination and target filtering are bounded and use exact target-host lookup", () => {
   assert.deepEqual(normalizeBacklinkPagination({}), { page: 1, pageSize: 25 });
   assert.deepEqual(normalizeBacklinkPagination({ page: -4, pageSize: 0 }), { page: 1, pageSize: 1 });
   assert.deepEqual(normalizeBacklinkPagination({ page: 999, pageSize: 999 }), { page: 100, pageSize: 50 });
   assert.deepEqual(backlinkTargetFilter("github.com"), {
     crawl: "CC-MAIN-2026-30",
-    target_host: { $in: ["github.com", "www.github.com"] },
+    target_host: "github.com",
   });
 });

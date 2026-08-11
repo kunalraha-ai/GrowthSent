@@ -22,14 +22,16 @@ interface BacklinkReport {
   domain: string;
   coverage: { crawl: string; label: string };
   overview: {
-    totalBacklinks: number;
-    uniqueReferringDomains: number;
-    uniqueLinkedPages: number;
+    totalBacklinks: number | null;
+    uniqueReferringDomains: number | null;
+    uniqueLinkedPages: number | null;
     uniqueAnchors: number | null;
     uniqueAnchorsCapped: boolean;
   };
+  partial: boolean;
+  unavailableSections: string[];
   backlinks: BacklinkRow[];
-  pagination: { page: number; pageSize: number; totalRows: number; totalPages: number };
+  pagination: { page: number; pageSize: number; totalRows: number | null; totalPages: number | null };
   referringDomains: RankedValue[];
   topAnchors: RankedValue[];
   topLinkedPages: LinkedPage[];
@@ -48,7 +50,8 @@ const TAB_OPTIONS: Array<{ id: BacklinkTab; label: string }> = [
   { id: "pages", label: "Top Linked Pages" },
 ];
 
-function formatCount(value: number): string {
+function formatCount(value: number | null): string {
+  if (value === null) return "—";
   return new Intl.NumberFormat("en-US").format(value);
 }
 
@@ -190,7 +193,10 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
 
   const retry = () => void loadReport(report?.pagination.page || 1, report?.domain || domainInput, Boolean(report));
   const queryTimeout = errorCode === "QUERY_TIMEOUT";
-  const hasResults = Boolean(report && report.overview.totalBacklinks > 0);
+  const hasResults = Boolean(report && (report.backlinks.length > 0 || (report.overview.totalBacklinks !== null && report.overview.totalBacklinks > 0)));
+  const canLoadNextPage = Boolean(report && (report.pagination.totalPages === null
+    ? report.backlinks.length === report.pagination.pageSize
+    : report.pagination.page < report.pagination.totalPages));
 
   return (
     <section className="backlinks-view">
@@ -229,6 +235,12 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
         Preview coverage: first 1,000 CC-MAIN-2026-30 WAT files.
       </div>
 
+      {report?.partial && (
+        <div className="backlink-coverage-notice" role="status">
+          Some preview sections exceeded the query bound. Available results are shown; unavailable counts are marked —.
+        </div>
+      )}
+
       {error && (
         <div className="backlink-state backlink-error" role="alert">
           <div>
@@ -241,11 +253,13 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
 
       {loading && !report && <BacklinkAnalyticsSkeleton />}
 
-      {report && report.overview.totalBacklinks === 0 && !loading && (
+      {report && !hasResults && !loading && (
         <div className="backlink-empty-state">
           <div className="backlink-empty-icon" aria-hidden="true"><SearchIcon /></div>
-          <h4>No backlinks in this preview</h4>
-          <p>We found no rows for <strong>{report.domain}</strong> in the first 1,000 WAT files. This is preview coverage, not a statement about the wider web.</p>
+          <h4>{report.unavailableSections.includes("backlinks") ? "Backlink rows were not available" : "No backlinks in this preview"}</h4>
+          <p>{report.unavailableSections.includes("backlinks")
+            ? "The bounded lookup did not complete. Try again shortly; no backlink totals or SEO metrics were inferred."
+            : <>We found no rows for <strong>{report.domain}</strong> in the first 1,000 WAT files. This is preview coverage, not a statement about the wider web.</>}</p>
           <button type="button" className="backlink-secondary-button" onClick={() => document.getElementById("backlink-domain")?.focus()}>Search another domain</button>
         </div>
       )}
@@ -257,7 +271,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
               <p>RESULTS FOR</p>
               <h4>{report.domain}</h4>
             </div>
-            <span>{formatCount(report.overview.totalBacklinks)} backlink rows</span>
+            <span>{report.overview.totalBacklinks === null ? `${report.backlinks.length} rows returned` : `${formatCount(report.overview.totalBacklinks)} backlink rows`}</span>
           </div>
 
           <section aria-labelledby="backlink-overview-title">
@@ -266,7 +280,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
               <div className="metric-card backlink-metric-card"><p className="metric-label">BACKLINKS</p><strong className="metric-val">{formatCount(report.overview.totalBacklinks)}</strong><span className="metric-sub text-muted">Rows in preview</span></div>
               <div className="metric-card backlink-metric-card"><p className="metric-label">REFERRING DOMAINS</p><strong className="metric-val">{formatCount(report.overview.uniqueReferringDomains)}</strong><span className="metric-sub text-muted">Unique source domains</span></div>
               <div className="metric-card backlink-metric-card"><p className="metric-label">LINKED PAGES</p><strong className="metric-val">{formatCount(report.overview.uniqueLinkedPages)}</strong><span className="metric-sub text-muted">Unique target URLs</span></div>
-              <div className="metric-card backlink-metric-card"><p className="metric-label">ANCHORS</p><strong className="metric-val">{report.overview.uniqueAnchorsCapped ? "10,000+" : formatCount(report.overview.uniqueAnchors || 0)}</strong><span className="metric-sub text-muted">Non-empty anchor text</span></div>
+              <div className="metric-card backlink-metric-card"><p className="metric-label">ANCHORS</p><strong className="metric-val">{report.overview.uniqueAnchorsCapped ? "10,000+" : formatCount(report.overview.uniqueAnchors)}</strong><span className="metric-sub text-muted">Non-empty anchor text</span></div>
             </div>
           </section>
 
@@ -290,7 +304,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
           {activeTab === "backlinks" && (
             <section id="backlink-panel-backlinks" role="tabpanel" aria-labelledby="backlink-tab-backlinks" className="console-section-card backlink-section">
               <div className="card-header backlink-card-header">
-                <div><h4 className="card-title">Backlinks</h4><p className="card-sub">{formatCount(report.pagination.totalRows)} rows found for {report.domain}</p></div>
+                <div><h4 className="card-title">Backlinks</h4><p className="card-sub">{report.pagination.totalRows === null ? `${report.backlinks.length} rows returned for ${report.domain}` : `${formatCount(report.pagination.totalRows)} rows found for ${report.domain}`}</p></div>
                 <span className="backlink-page-size">25 per page</span>
               </div>
               {loading ? <BacklinkTableSkeleton /> : (
@@ -310,10 +324,10 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
                     </table>
                   </div>
                   <div className="backlink-pagination">
-                    <span>Page <strong>{report.pagination.page}</strong> of {report.pagination.totalPages}</span>
+                    <span>Page <strong>{report.pagination.page}</strong> of {formatCount(report.pagination.totalPages)}</span>
                     <div>
                       <button type="button" onClick={() => void loadReport(report.pagination.page - 1, report.domain, true)} disabled={report.pagination.page <= 1}>Previous</button>
-                      <button type="button" onClick={() => void loadReport(report.pagination.page + 1, report.domain, true)} disabled={report.pagination.page >= report.pagination.totalPages}>Next</button>
+                      <button type="button" onClick={() => void loadReport(report.pagination.page + 1, report.domain, true)} disabled={!canLoadNextPage}>Next</button>
                     </div>
                   </div>
                 </>

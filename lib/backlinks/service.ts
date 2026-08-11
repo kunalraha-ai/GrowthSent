@@ -4,12 +4,10 @@ import { connectToDataFederation } from "../db/data-federation.js";
 const CRAWL = "CC-MAIN-2026-30";
 const LINKS_COLLECTION = "links_prod_2026_30";
 const QUERY_TIMEOUT_MS = 8_000;
-const TOP_LIST_LIMIT = 25;
 const MAX_PAGE_SIZE = 50;
 const MAX_PAGE = 100;
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 100;
-const UNIQUE_ANCHOR_CAP = 10_000;
 
 export const BACKLINK_COVERAGE_LABEL = "Preview coverage: first 1,000 WAT files of CC-MAIN-2026-30, not a full-web backlink index.";
 
@@ -37,23 +35,35 @@ export interface BacklinkAnalyticsReport {
     label: string;
   };
   overview: {
-    totalBacklinks: number;
-    uniqueReferringDomains: number;
-    uniqueLinkedPages: number;
+    totalBacklinks: number | null;
+    uniqueReferringDomains: number | null;
+    uniqueLinkedPages: number | null;
     uniqueAnchors: number | null;
     uniqueAnchorsCapped: boolean;
   };
+  partial: boolean;
+  unavailableSections: BacklinkAnalyticsSection[];
   backlinks: BacklinkRow[];
   pagination: {
     page: number;
     pageSize: number;
-    totalRows: number;
-    totalPages: number;
+    totalRows: number | null;
+    totalPages: number | null;
   };
   referringDomains: RankedValue[];
   topAnchors: RankedValue[];
   topLinkedPages: LinkedPage[];
 }
+
+export type BacklinkAnalyticsSection =
+  | "backlinks"
+  | "totalBacklinks"
+  | "uniqueReferringDomains"
+  | "uniqueLinkedPages"
+  | "uniqueAnchors"
+  | "referringDomains"
+  | "topAnchors"
+  | "topLinkedPages";
 
 export class BacklinkAnalyticsError extends Error {
   constructor(
@@ -98,7 +108,7 @@ interface LinkDocument extends Document {
   crawl?: string;
   source_url?: string;
   source_host?: string | null;
-  target_url?: string;
+  target_url?: string | null;
   target_host?: string | null;
   anchor?: string | null;
   crawled_at?: Date | string | null;
@@ -153,16 +163,12 @@ export function normalizeBacklinkPagination(options: AnalyticsOptions): { page: 
 export function backlinkTargetFilter(domain: string): Filter<LinkDocument> {
   return {
     crawl: CRAWL,
-    target_host: { $in: [domain, `www.${domain}`] },
+    // Keep this a single equality expression. Data Federation can use the
+    // target_host Parquet row-group min/max metadata for this lookup, whereas
+    // the former canonical-plus-www $in predicate fanned out across the
+    // wildcard source.
+    target_host: domain,
   };
-}
-
-function valueFromId(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function countFromValue(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function toIsoDate(value: Date | string | null | undefined): string | null {
@@ -177,146 +183,97 @@ function isTimeout(error: unknown): boolean {
   return code === 50 || /time(?:d)? out|maxTimeMS|operation exceeded time limit/i.test(message);
 }
 
-async function aggregate(collection: Collection<LinkDocument>, pipeline: Document[]): Promise<Document[]> {
-  try {
-    return await collection.aggregate(pipeline, { maxTimeMS: QUERY_TIMEOUT_MS, allowDiskUse: false, batchSize: TOP_LIST_LIMIT }).toArray();
-  } catch (error) {
-    if (isTimeout(error)) {
-      throw new BacklinkAnalyticsError("QUERY_TIMEOUT", "This domain has too much preview data to summarize within the query limit. Try a more specific domain later.");
-    }
-    throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
-  }
-}
-
 async function fetchBacklinkRows(
   collection: Collection<LinkDocument>,
   filter: Filter<LinkDocument>,
   page: number,
   pageSize: number
 ): Promise<BacklinkRow[]> {
-  try {
-    const documents = await collection
-      .find(filter, {
-        projection: { _id: 0, source_url: 1, source_host: 1, target_url: 1, anchor: 1, crawled_at: 1 },
-        maxTimeMS: QUERY_TIMEOUT_MS,
-      })
-      .sort({ source_url: 1, target_url: 1, crawled_at: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .toArray();
-    return documents.map((document) => ({
-      sourceUrl: document.source_url || "",
-      sourceHost: document.source_host || null,
-      targetUrl: document.target_url || "",
-      anchor: document.anchor || null,
-      crawledAt: toIsoDate(document.crawled_at),
-    }));
-  } catch (error) {
-    if (isTimeout(error)) {
-      throw new BacklinkAnalyticsError("QUERY_TIMEOUT", "Backlink rows could not be loaded within the query limit. Try again shortly.");
-    }
-    throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
-  }
+  const documents = await collection
+    .find(filter, {
+      projection: { _id: 0, source_url: 1, source_host: 1, target_url: 1, anchor: 1, crawled_at: 1 },
+      maxTimeMS: QUERY_TIMEOUT_MS,
+      timeoutMS: QUERY_TIMEOUT_MS,
+      timeoutMode: "cursorLifetime",
+    })
+    .skip((page - 1) * pageSize)
+    .limit(pageSize)
+    .toArray();
+  return documents.map((document) => ({
+    sourceUrl: document.source_url || "",
+    sourceHost: document.source_host || null,
+    targetUrl: document.target_url || "",
+    anchor: document.anchor || null,
+    crawledAt: toIsoDate(document.crawled_at),
+  }));
 }
 
-async function getSummary(domain: string, filter: Filter<LinkDocument>) {
-  const cacheKey = `summary:${domain}`;
-  const cached = cache.get<Omit<BacklinkAnalyticsReport, "backlinks" | "pagination">>(cacheKey);
-  if (cached) return cached;
+type BacklinkSummary = Omit<BacklinkAnalyticsReport, "backlinks" | "pagination">;
 
-  const { db } = await connectToDataFederation().catch((error: unknown) => {
-    if (error instanceof BacklinkAnalyticsError) throw error;
-    throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
-  });
-  const links = db.collection<LinkDocument>(LINKS_COLLECTION);
-  const nonEmptyAnchorFilter: Filter<LinkDocument> = { ...filter, anchor: { $nin: [null, ""] } };
-
-  const [totalRows, referringDomainCount, linkedPageCount, anchorCount, referringDomains, topAnchors, topLinkedPages] = await Promise.all([
-    aggregate(links, [{ $match: filter }, { $count: "count" }]),
-    aggregate(links, [
-      { $match: filter },
-      { $match: { source_host: { $nin: [null, ""] } } },
-      { $group: { _id: "$source_host" } },
-      { $count: "count" },
-    ]),
-    aggregate(links, [
-      { $match: filter },
-      { $match: { target_url: { $nin: [null, ""] } } },
-      { $group: { _id: "$target_url" } },
-      { $count: "count" },
-    ]),
-    aggregate(links, [
-      { $match: nonEmptyAnchorFilter },
-      { $group: { _id: "$anchor" } },
-      { $limit: UNIQUE_ANCHOR_CAP + 1 },
-      { $count: "count" },
-    ]),
-    aggregate(links, [
-      { $match: filter },
-      { $match: { source_host: { $nin: [null, ""] } } },
-      { $group: { _id: "$source_host", backlinkCount: { $sum: 1 } } },
-      { $sort: { backlinkCount: -1, _id: 1 } },
-      { $limit: TOP_LIST_LIMIT },
-    ]),
-    aggregate(links, [
-      { $match: nonEmptyAnchorFilter },
-      { $group: { _id: "$anchor", backlinkCount: { $sum: 1 } } },
-      { $sort: { backlinkCount: -1, _id: 1 } },
-      { $limit: TOP_LIST_LIMIT },
-    ]),
-    aggregate(links, [
-      { $match: filter },
-      { $match: { target_url: { $nin: [null, ""] }, source_host: { $nin: [null, ""] } } },
-      { $group: { _id: "$target_url", backlinkCount: { $sum: 1 }, referringDomains: { $addToSet: "$source_host" } } },
-      { $project: { backlinkCount: 1, referringDomainCount: { $size: "$referringDomains" } } },
-      { $sort: { backlinkCount: -1, _id: 1 } },
-      { $limit: TOP_LIST_LIMIT },
-    ]),
-  ]);
-
-  const uniqueAnchorCount = countFromValue(anchorCount[0]?.count);
-  const summary = {
+function unavailableSummary(domain: string): BacklinkSummary {
+  // Data Federation plans the wildcard S3 mapping as a map-reduce source.
+  // A limited find can stop after a small page of exact target_host matches,
+  // but counts and grouped rankings must read every matching row group and
+  // exceeded the fixed 8-second bound in production probes. Returning them
+  // as unavailable is more accurate than delaying or failing the row lookup.
+  return {
     domain,
     coverage: { crawl: CRAWL, label: BACKLINK_COVERAGE_LABEL },
     overview: {
-      totalBacklinks: countFromValue(totalRows[0]?.count),
-      uniqueReferringDomains: countFromValue(referringDomainCount[0]?.count),
-      uniqueLinkedPages: countFromValue(linkedPageCount[0]?.count),
-      uniqueAnchors: uniqueAnchorCount > UNIQUE_ANCHOR_CAP ? null : uniqueAnchorCount,
-      uniqueAnchorsCapped: uniqueAnchorCount > UNIQUE_ANCHOR_CAP,
+      totalBacklinks: null,
+      uniqueReferringDomains: null,
+      uniqueLinkedPages: null,
+      uniqueAnchors: null,
+      uniqueAnchorsCapped: false,
     },
-    referringDomains: referringDomains.map((row) => ({ value: valueFromId(row._id), backlinkCount: countFromValue(row.backlinkCount) })),
-    topAnchors: topAnchors.map((row) => ({ value: valueFromId(row._id), backlinkCount: countFromValue(row.backlinkCount) })),
-    topLinkedPages: topLinkedPages.map((row) => ({
-      value: valueFromId(row._id),
-      backlinkCount: countFromValue(row.backlinkCount),
-      referringDomainCount: countFromValue(row.referringDomainCount),
-    })),
+    partial: true,
+    unavailableSections: [
+      "totalBacklinks",
+      "uniqueReferringDomains",
+      "uniqueLinkedPages",
+      "uniqueAnchors",
+      "referringDomains",
+      "topAnchors",
+      "topLinkedPages",
+    ],
+    referringDomains: [],
+    topAnchors: [],
+    topLinkedPages: [],
   };
-  cache.set(cacheKey, summary, CACHE_TTL_MS);
-  return summary;
 }
 
 export async function getBacklinkAnalytics(domainInput: string, options: AnalyticsOptions = {}): Promise<BacklinkAnalyticsReport> {
   const domain = normalizeBacklinkDomain(domainInput);
   const { page, pageSize } = normalizeBacklinkPagination(options);
   const filter = backlinkTargetFilter(domain);
-  const [summary, { db }] = await Promise.all([
-    getSummary(domain, filter),
-    connectToDataFederation().catch(() => {
-      throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
-    }),
-  ]);
-  const rowCacheKey = `rows:${domain}:${page}:${pageSize}`;
+  const { db } = await connectToDataFederation().catch(() => {
+    throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
+  });
+  const links = db.collection<LinkDocument>(LINKS_COLLECTION);
+  const rowCacheKey = `rows:v2:${domain}:${page}:${pageSize}`;
   let backlinks = cache.get<BacklinkRow[]>(rowCacheKey);
+  let backlinksAvailable = Boolean(backlinks);
   if (!backlinks) {
-    backlinks = await fetchBacklinkRows(db.collection<LinkDocument>(LINKS_COLLECTION), filter, page, pageSize);
-    cache.set(rowCacheKey, backlinks, CACHE_TTL_MS);
+    try {
+      backlinks = await fetchBacklinkRows(links, filter, page, pageSize);
+      backlinksAvailable = true;
+      cache.set(rowCacheKey, backlinks, CACHE_TTL_MS);
+    } catch (error) {
+      console.warn("[backlink-analytics] Bounded backlink row lookup did not complete.", {
+        status: isTimeout(error) ? "timed_out" : "unavailable",
+      });
+      backlinks = [];
+    }
   }
-  const totalPages = Math.max(1, Math.min(MAX_PAGE, Math.ceil(summary.overview.totalBacklinks / pageSize)) || 1);
+  const summary = unavailableSummary(domain);
+  const unavailableSections: BacklinkAnalyticsSection[] = backlinksAvailable
+    ? summary.unavailableSections
+    : [...summary.unavailableSections, "backlinks"];
   return {
     ...summary,
+    partial: unavailableSections.length > 0,
+    unavailableSections,
     backlinks,
-    pagination: { page, pageSize, totalRows: summary.overview.totalBacklinks, totalPages },
+    pagination: { page, pageSize, totalRows: null, totalPages: null },
   };
 }
