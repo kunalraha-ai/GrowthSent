@@ -1,4 +1,4 @@
-import { ClientSession, Db, Filter, ObjectId } from "mongodb";
+import type { ClientSession, Db, Filter, ObjectId } from "mongodb";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { ScanDocument, WebsiteDocument } from "../db/types.js";
 
@@ -8,6 +8,34 @@ export interface CreateWebsiteOptions {
   displayName?: string;
   monitoringEnabled?: boolean;
   monitoringFrequency?: "daily" | "weekly";
+}
+
+type WebsiteTimingOutcome = "started" | "completed" | "failed";
+
+function safeWebsiteErrorMetadata(error: unknown): { errorName: string; errorCode?: string | number } {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const errorCode = typeof error === "object" && error && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return typeof errorCode === "string" || typeof errorCode === "number"
+    ? { errorName, errorCode }
+    : { errorName };
+}
+
+function logWebsiteTiming(
+  phase: "db_connection" | "owner_validation" | "website_query",
+  startedAt: string,
+  startedMs: number,
+  outcome: WebsiteTimingOutcome,
+  extra: Record<string, unknown> = {}
+): void {
+  console.info("[websites] timing", {
+    phase,
+    startedAt,
+    elapsedMs: Date.now() - startedMs,
+    outcome,
+    ...extra,
+  });
 }
 
 export async function deleteScansAndChildrenInTransaction(
@@ -122,12 +150,54 @@ export async function createWebsite(options: CreateWebsiteOptions): Promise<Webs
 }
 
 export async function getUserWebsites(userId: string): Promise<WebsiteDocument[]> {
-  const { db } = await connectToDatabase();
-  return db
-    .collection<WebsiteDocument>("websites")
-    .find({ userId: safeObjectId(userId) })
-    .sort({ createdAt: -1 })
-    .toArray();
+  const ownerValidationStartedAt = new Date().toISOString();
+  const ownerValidationStartedMs = Date.now();
+  let ownerId: ObjectId;
+  try {
+    ownerId = safeObjectId(userId);
+    logWebsiteTiming("owner_validation", ownerValidationStartedAt, ownerValidationStartedMs, "completed", {
+      ownerIdValid: true,
+    });
+  } catch (error) {
+    logWebsiteTiming("owner_validation", ownerValidationStartedAt, ownerValidationStartedMs, "failed", {
+      ownerIdValid: false,
+      ...safeWebsiteErrorMetadata(error),
+    });
+    throw error;
+  }
+
+  const connectionStartedAt = new Date().toISOString();
+  const connectionStartedMs = Date.now();
+  let db: Db;
+  try {
+    ({ db } = await connectToDatabase());
+    logWebsiteTiming("db_connection", connectionStartedAt, connectionStartedMs, "completed", {
+      mongoUriConfigured: Boolean(process.env.MONGODB_URI?.trim()),
+      mongoDbNameConfigured: Boolean(process.env.MONGODB_DB_NAME?.trim()),
+    });
+  } catch (error) {
+    logWebsiteTiming("db_connection", connectionStartedAt, connectionStartedMs, "failed", {
+      mongoUriConfigured: Boolean(process.env.MONGODB_URI?.trim()),
+      mongoDbNameConfigured: Boolean(process.env.MONGODB_DB_NAME?.trim()),
+      ...safeWebsiteErrorMetadata(error),
+    });
+    throw error;
+  }
+
+  const queryStartedAt = new Date().toISOString();
+  const queryStartedMs = Date.now();
+  try {
+    const websites = await db
+      .collection<WebsiteDocument>("websites")
+      .find({ userId: ownerId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    logWebsiteTiming("website_query", queryStartedAt, queryStartedMs, "completed", { websiteCount: websites.length });
+    return websites;
+  } catch (error) {
+    logWebsiteTiming("website_query", queryStartedAt, queryStartedMs, "failed", safeWebsiteErrorMetadata(error));
+    throw error;
+  }
 }
 
 export async function getWebsiteById(websiteId: string, userId: string): Promise<WebsiteDocument | null> {

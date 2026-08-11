@@ -36,7 +36,7 @@ import {
   completeGoogleLogin,
   completeGithubLogin,
 } from "../auth/social.js";
-import { connectToDatabase } from "../db/mongodb.js";
+import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
 
 // Input Validation Schemas
@@ -156,6 +156,34 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function safeErrorMetadata(error: unknown): { errorName: string; errorCode?: string | number } {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const errorCode = typeof error === "object" && error && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return typeof errorCode === "string" || typeof errorCode === "number"
+    ? { errorName, errorCode }
+    : { errorName };
+}
+
+type WebsiteRoutePhase = "auth" | "owner_validation" | "website_query";
+
+function logWebsiteRouteTiming(
+  phase: WebsiteRoutePhase,
+  startedAt: string,
+  startedMs: number,
+  outcome: "started" | "completed" | "failed",
+  extra: Record<string, unknown> = {}
+): void {
+  console.info("[websites] route timing", {
+    phase,
+    startedAt,
+    elapsedMs: Date.now() - startedMs,
+    outcome,
+    ...extra,
+  });
+}
+
 function getFrontendRedirectBase(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") || "";
 }
@@ -206,12 +234,32 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
 
   const path = req.path.replace(/\/$/, "");
   const method = req.method.toUpperCase();
+  const isWebsiteCollectionRequest = path === "/api/v1/websites" && (method === "GET" || method === "POST");
 
   // Authentication is based exclusively on the signed, HttpOnly session cookie.
   // Never trust browser-controlled identity headers for account-owned resources.
   try {
     const sessionToken = extractSessionTokenFromCookie(getHeader(req.headers, "cookie"));
-    const user = sessionToken ? await validateSession(sessionToken) : null;
+    const authStartedAt = new Date().toISOString();
+    const authStartedMs = Date.now();
+    let user;
+    try {
+      user = sessionToken ? await validateSession(sessionToken) : null;
+      if (isWebsiteCollectionRequest) {
+        logWebsiteRouteTiming("auth", authStartedAt, authStartedMs, "completed", {
+          sessionCookiePresent: Boolean(sessionToken),
+          authenticated: Boolean(user),
+        });
+      }
+    } catch (error) {
+      if (isWebsiteCollectionRequest) {
+        logWebsiteRouteTiming("auth", authStartedAt, authStartedMs, "failed", {
+          sessionCookiePresent: Boolean(sessionToken),
+          ...safeErrorMetadata(error),
+        });
+      }
+      throw error;
+    }
     if (method === "GET" && path === "/api/v1/health") {
       const { db } = await connectToDatabase();
       await db.command({ ping: 1 });
@@ -822,8 +870,33 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
 
     if (method === "GET" && path === "/api/v1/websites") {
       if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Not authenticated." } } };
-      const websites = await getUserWebsites(user._id!.toString());
-      return { statusCode: 200, body: { websites } };
+      const ownerValidationStartedAt = new Date().toISOString();
+      const ownerValidationStartedMs = Date.now();
+      let ownerId: string;
+      try {
+        ownerId = user._id?.toString() || "";
+        safeObjectId(ownerId);
+        logWebsiteRouteTiming("owner_validation", ownerValidationStartedAt, ownerValidationStartedMs, "completed", {
+          ownerIdValid: true,
+        });
+      } catch (error) {
+        logWebsiteRouteTiming("owner_validation", ownerValidationStartedAt, ownerValidationStartedMs, "failed", {
+          ownerIdValid: false,
+          ...safeErrorMetadata(error),
+        });
+        throw error;
+      }
+
+      const queryStartedAt = new Date().toISOString();
+      const queryStartedMs = Date.now();
+      try {
+        const websites = await getUserWebsites(ownerId);
+        logWebsiteRouteTiming("website_query", queryStartedAt, queryStartedMs, "completed", { websiteCount: websites.length });
+        return { statusCode: 200, body: { websites } };
+      } catch (error) {
+        logWebsiteRouteTiming("website_query", queryStartedAt, queryStartedMs, "failed", safeErrorMetadata(error));
+        throw error;
+      }
     }
 
     const webIdMatch = path.match(/^\/api\/v1\/websites\/([a-f0-9]{24})$/);

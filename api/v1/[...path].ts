@@ -6,6 +6,20 @@ import { resolveTrustedClientIp } from "../../lib/api/client-ip.js";
 
 let indexesReady: Promise<void> | null = null;
 
+function isWebsiteCollectionRequest(path: string): boolean {
+  return path === "/api/v1/websites";
+}
+
+function safeErrorMetadata(error: unknown): { errorName: string; errorCode?: string | number } {
+  const errorName = error instanceof Error ? error.name : "UnknownError";
+  const errorCode = typeof error === "object" && error && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return typeof errorCode === "string" || typeof errorCode === "number"
+    ? { errorName, errorCode }
+    : { errorName };
+}
+
 function ensureIndexes() {
   if (!indexesReady) {
     indexesReady = initializeDatabaseIndexes({
@@ -65,7 +79,32 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
     }
 
-    res.end(JSON.stringify(apiRes.body));
+    const serializationStartedAt = new Date().toISOString();
+    const serializationStartedMs = Date.now();
+    try {
+      const body = JSON.stringify(apiRes.body);
+      if (isWebsiteCollectionRequest(path)) {
+        console.info("[websites] handler timing", {
+          phase: "serialization",
+          startedAt: serializationStartedAt,
+          elapsedMs: Date.now() - serializationStartedMs,
+          outcome: "completed",
+          statusCode: apiRes.statusCode,
+        });
+      }
+      res.end(body);
+    } catch (error) {
+      if (isWebsiteCollectionRequest(path)) {
+        console.info("[websites] handler timing", {
+          phase: "serialization",
+          startedAt: serializationStartedAt,
+          elapsedMs: Date.now() - serializationStartedMs,
+          outcome: "failed",
+          ...safeErrorMetadata(error),
+        });
+      }
+      throw error;
+    }
   } catch (err) {
     console.error("[Vercel handler] Request failed.", { errorType: err instanceof Error ? err.name : "UnknownError" });
     res.statusCode = 500;

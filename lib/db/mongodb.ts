@@ -1,4 +1,5 @@
-import { Db, MongoClient, ObjectId } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
+import type { Db } from "mongodb";
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
