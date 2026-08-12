@@ -20,7 +20,7 @@ interface LinkedPage extends RankedValue {
 
 interface BacklinkReport {
   domain: string;
-  coverage: { crawl: string; label: string };
+  coverage: { crawl: string; label: string; resultLabel: string; exactHostnameOnly: true };
   overview: {
     totalBacklinks: number | null;
     uniqueReferringDomains: number | null;
@@ -44,7 +44,7 @@ interface BacklinkAnalyticsViewProps {
 type BacklinkTab = "backlinks" | "domains" | "anchors" | "pages";
 
 const TAB_OPTIONS: Array<{ id: BacklinkTab; label: string }> = [
-  { id: "backlinks", label: "Backlinks" },
+  { id: "backlinks", label: "Link Observations" },
   { id: "domains", label: "Referring Domains" },
   { id: "anchors", label: "Top Anchors" },
   { id: "pages", label: "Top Linked Pages" },
@@ -203,7 +203,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
       <div className="console-title backlink-page-title">
         <div>
           <p>BACKLINK ANALYTICS</p>
-          <h3>Discover who links to a domain</h3>
+          <h3>Preview external link observations</h3>
         </div>
         <span className="backlink-preview-badge">Preview data</span>
       </div>
@@ -225,14 +225,14 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
             />
           </div>
           <button className="backlink-search-button" type="submit" disabled={loading}>
-            {loading ? "Searching..." : "Search backlinks"}
+            {loading ? "Searching..." : "Search link observations"}
           </button>
         </div>
         <p className="backlink-search-help">Enter a domain, URL, www domain, or trailing slash.</p>
       </form>
 
       <div className="backlink-coverage-notice" role="note">
-        Preview coverage: first 1,000 CC-MAIN-2026-30 WAT files.
+        Preview coverage — first 1,000 WAT files from CC-MAIN-2026-30. This is not a full-web backlink index.
       </div>
 
       {report?.partial && (
@@ -256,10 +256,10 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
       {report && !hasResults && !loading && (
         <div className="backlink-empty-state">
           <div className="backlink-empty-icon" aria-hidden="true"><SearchIcon /></div>
-          <h4>{report.unavailableSections.includes("backlinks") ? "Backlink rows were not available" : "No backlinks in this preview"}</h4>
+          <h4>{report.unavailableSections.includes("backlinks") ? "Link observations were not available" : "No external link observations in this preview"}</h4>
           <p>{report.unavailableSections.includes("backlinks")
             ? "The bounded lookup did not complete. Try again shortly; no backlink totals or SEO metrics were inferred."
-            : <>We found no rows for <strong>{report.domain}</strong> in the first 1,000 WAT files. This is preview coverage, not a statement about the wider web.</>}</p>
+            : <>We found no external link observations for <strong>{report.domain}</strong> in this bounded preview. This is not a statement about the wider web.</>}</p>
           <button type="button" className="backlink-secondary-button" onClick={() => document.getElementById("backlink-domain")?.focus()}>Search another domain</button>
         </div>
       )}
@@ -271,14 +271,14 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
               <p>RESULTS FOR</p>
               <h4>{report.domain}</h4>
             </div>
-            <span>{report.overview.totalBacklinks === null ? `${report.backlinks.length} rows returned` : `${formatCount(report.overview.totalBacklinks)} backlink rows`}</span>
+            <span>{report.overview.totalBacklinks === null ? `${report.backlinks.length} external observations returned` : `${formatCount(report.overview.totalBacklinks)} rows`}</span>
           </div>
 
           <section aria-labelledby="backlink-overview-title">
             <h4 id="backlink-overview-title" className="backlink-section-label">Overview</h4>
             <div className="metrics-grid backlink-metrics-grid">
-              <div className="metric-card backlink-metric-card"><p className="metric-label">BACKLINKS</p><strong className="metric-val">{formatCount(report.overview.totalBacklinks)}</strong><span className="metric-sub text-muted">Rows in preview</span></div>
-              <div className="metric-card backlink-metric-card"><p className="metric-label">REFERRING DOMAINS</p><strong className="metric-val">{formatCount(report.overview.uniqueReferringDomains)}</strong><span className="metric-sub text-muted">Unique source domains</span></div>
+              <div className="metric-card backlink-metric-card"><p className="metric-label">OBSERVATIONS</p><strong className="metric-val">{formatCount(report.overview.totalBacklinks)}</strong><span className="metric-sub text-muted">External rows in preview</span></div>
+              <div className="metric-card backlink-metric-card"><p className="metric-label">SOURCE DOMAINS</p><strong className="metric-val">{formatCount(report.overview.uniqueReferringDomains)}</strong><span className="metric-sub text-muted">Unavailable when bounded</span></div>
               <div className="metric-card backlink-metric-card"><p className="metric-label">LINKED PAGES</p><strong className="metric-val">{formatCount(report.overview.uniqueLinkedPages)}</strong><span className="metric-sub text-muted">Unique target URLs</span></div>
               <div className="metric-card backlink-metric-card"><p className="metric-label">ANCHORS</p><strong className="metric-val">{report.overview.uniqueAnchorsCapped ? "10,000+" : formatCount(report.overview.uniqueAnchors)}</strong><span className="metric-sub text-muted">Non-empty anchor text</span></div>
             </div>
@@ -304,7 +304,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
           {activeTab === "backlinks" && (
             <section id="backlink-panel-backlinks" role="tabpanel" aria-labelledby="backlink-tab-backlinks" className="console-section-card backlink-section">
               <div className="card-header backlink-card-header">
-                <div><h4 className="card-title">Backlinks</h4><p className="card-sub">{report.pagination.totalRows === null ? `${report.backlinks.length} rows returned for ${report.domain}` : `${formatCount(report.pagination.totalRows)} rows found for ${report.domain}`}</p></div>
+                <div><h4 className="card-title">External Link Observations</h4><p className="card-sub">{report.coverage.resultLabel}. Exact-host lookup for {report.domain}; internal same-registrable-domain links are excluded from this bounded sample.</p></div>
                 <span className="backlink-page-size">{report.pagination.pageSize} per page</span>
               </div>
               {loading ? <BacklinkTableSkeleton /> : (
@@ -337,17 +337,17 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
 
           {activeTab === "domains" && (
             <section id="backlink-panel-domains" role="tabpanel" aria-labelledby="backlink-tab-domains" className="console-section-card backlink-section">
-              <div className="card-header"><h4 className="card-title">Referring Domains</h4><p className="card-sub">Domains ranked by backlink rows in the preview dataset</p></div>
+              <div className="card-header"><h4 className="card-title">Source Domains</h4><p className="card-sub">Unavailable unless a bounded aggregate can be computed without a broad scan.</p></div>
               <div className="table-wrapper"><table className="data-table backlink-ranked-table"><thead><tr><th>Domain</th><th>Backlink count</th></tr></thead><tbody>
                 {report.referringDomains.map((item) => <tr key={item.value}><td><TruncatedValue value={item.value} className="backlink-domain-cell" /></td><td className="backlink-count-cell">{formatCount(item.backlinkCount)}</td></tr>)}
               </tbody></table></div>
-              {report.referringDomains.length === 0 && <EmptyRankedRows message="No referring domains are available for this preview." />}
+              {report.referringDomains.length === 0 && <EmptyRankedRows message="Source-domain totals are not computed from this bounded preview." />}
             </section>
           )}
 
           {activeTab === "anchors" && (
             <section id="backlink-panel-anchors" role="tabpanel" aria-labelledby="backlink-tab-anchors" className="console-section-card backlink-section">
-              <div className="card-header"><h4 className="card-title">Top Anchors</h4><p className="card-sub">Non-empty anchor text ranked by backlink rows</p></div>
+              <div className="card-header"><h4 className="card-title">Top Anchors</h4><p className="card-sub">Unavailable unless a bounded aggregate can be computed without a broad scan.</p></div>
               <div className="table-wrapper"><table className="data-table backlink-ranked-table"><thead><tr><th>Anchor text</th><th>Backlink count</th></tr></thead><tbody>
                 {report.topAnchors.map((item) => <tr key={item.value}><td><TruncatedValue value={item.value} className="backlink-anchor" /></td><td className="backlink-count-cell">{formatCount(item.backlinkCount)}</td></tr>)}
               </tbody></table></div>
@@ -357,7 +357,7 @@ export default function BacklinkAnalyticsView({ initialDomain = "" }: BacklinkAn
 
           {activeTab === "pages" && (
             <section id="backlink-panel-pages" role="tabpanel" aria-labelledby="backlink-tab-pages" className="console-section-card backlink-section">
-              <div className="card-header"><h4 className="card-title">Top Linked Pages</h4><p className="card-sub">Target URLs ranked by backlink rows in the preview dataset</p></div>
+              <div className="card-header"><h4 className="card-title">Top Linked Pages</h4><p className="card-sub">Unavailable unless a bounded aggregate can be computed without a broad scan.</p></div>
               <div className="table-wrapper"><table className="data-table backlink-ranked-table"><thead><tr><th>Target URL</th><th>Backlinks</th><th>Referring domains</th></tr></thead><tbody>
                 {report.topLinkedPages.map((item) => <tr key={item.value}><td><UrlCell url={item.value} /></td><td className="backlink-count-cell">{formatCount(item.backlinkCount)}</td><td className="backlink-count-cell">{formatCount(item.referringDomainCount)}</td></tr>)}
               </tbody></table></div>

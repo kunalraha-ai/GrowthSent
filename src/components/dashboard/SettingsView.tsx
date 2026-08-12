@@ -250,35 +250,9 @@ export function SettingsView({
             <h4 className="card-title">Developer</h4>
           </div>
           <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-            <div>
-              <label className="form-label">API Key</label>
-              <div style={{ display: "flex", gap: "10px" }}>
-                <input
-                  type="password"
-                  readOnly
-                  value="gs_live_9481a8c3d91f28b7e"
-                  className="form-input read-only"
-                  style={{ flex: 1 }}
-                />
-                <button className="secondary-btn" onClick={() => alert("API Key copied to clipboard.")}>
-                  Copy Key
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="form-label">MCP Server Access</label>
-              <span className="badge-status pass" style={{ fontSize: "12px" }}>Active — Ready for AI agents</span>
-            </div>
-
-            <div>
-              <label className="form-label">Webhook URL (Optional)</label>
-              <input
-                type="text"
-                placeholder="https://yourserver.com/webhooks/growthsent"
-                className="form-input"
-              />
-            </div>
+            <p className="card-sub" style={{ margin: 0 }}>
+              API keys, MCP access, and webhooks are not available in this external MVP.
+            </p>
           </div>
         </div>
 

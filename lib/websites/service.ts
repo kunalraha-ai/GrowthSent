@@ -128,7 +128,10 @@ export async function createWebsite(options: CreateWebsiteOptions): Promise<Webs
     hostname,
     displayName: options.displayName || hostname,
     verifiedStatus: false,
-    monitoringEnabled: options.monitoringEnabled ?? true,
+    // Monitoring has no production scheduler/execution path in this MVP. Keep
+    // the underlying field for future work, but never imply a new site is being
+    // actively monitored.
+    monitoringEnabled: options.monitoringEnabled ?? false,
     monitoringFrequency: options.monitoringFrequency || "weekly",
     createdAt: now,
     updatedAt: now,

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsOfService } from "./components/TermsOfService";
@@ -445,7 +445,7 @@ function AddWebsiteModal({ onClose, onAdded }: { onClose: () => void; onAdded: (
         padding: "28px",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800 }}>Add Website to Monitor</h3>
+          <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 800 }}>Add Website to Audit</h3>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#888982", fontSize: "20px", cursor: "pointer" }}>✕</button>
         </div>
 
@@ -468,7 +468,7 @@ function AddWebsiteModal({ onClose, onAdded }: { onClose: () => void; onAdded: (
             disabled={loading}
             style={{ background: "#a4ef51", color: "#171817", border: "none", padding: "10px", borderRadius: "8px", fontWeight: 800, cursor: "pointer", marginTop: "6px" }}
           >
-            {loading ? "Adding..." : "+ Add Website & Scan"}
+            {loading ? "Adding..." : "+ Add Website & Audit"}
           </button>
         </form>
       </div>
@@ -483,15 +483,26 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
   const [url, setUrl] = useState("");
   const [scanning, setScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const pollTimerRef = useRef<number | null>(null);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => stopPolling(), []);
 
   const go = async () => {
     if (!url.trim()) return;
+    stopPolling();
     setScanning(true);
     setErrorMessage("");
     if (onScanStarted) onScanStarted();
 
     try {
-      const res = await fetch("/api/v1/scans", {
+      const res = await fetch("/api/v1/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: url.trim() }),
@@ -499,29 +510,39 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        setErrorMessage(data.error?.message || "Failed to start scan.");
+        setErrorMessage(data.error?.message || "Failed to start the audit.");
         setScanning(false);
         return;
       }
 
-      const scanId = data.scanId;
+      const jobId = data.jobId;
+      if (!jobId) throw new Error("Audit job did not return an identifier.");
 
-      // Poll for completion
-      const interval = setInterval(async () => {
+      // Use the same bounded audit path as the dashboard. Polling is cleaned
+      // up on unmount and never starts a second legacy scan.
+      pollTimerRef.current = window.setInterval(async () => {
         try {
-          const pollRes = await fetch(`/api/v1/scans/${scanId}`);
-          const scanData: LiveScanResult = await pollRes.json();
+          const pollRes = await fetch(`/api/v1/audit/${jobId}`);
+          const scanData = await pollRes.json().catch(() => null);
+          if (!pollRes.ok || !scanData) {
+            stopPolling();
+            setScanning(false);
+            setErrorMessage("Unable to check audit progress. Please try again later.");
+            return;
+          }
 
           if (scanData.status === "completed" || scanData.status === "failed") {
-            clearInterval(interval);
+            stopPolling();
             setScanning(false);
-            if (onScanResult) onScanResult(scanData);
+            if (scanData.status === "completed" && scanData.scan && onScanResult) onScanResult(scanData.scan as LiveScanResult);
+            if (scanData.status === "failed") setErrorMessage(scanData.error || "The audit could not be completed.");
           }
         } catch {
-          clearInterval(interval);
+          stopPolling();
           setScanning(false);
+          setErrorMessage("Lost connection while checking audit progress.");
         }
-      }, 1500);
+      }, 3000);
     } catch {
       setErrorMessage("Network error starting scan.");
       setScanning(false);
@@ -1095,11 +1116,13 @@ function App() {
           <div className="findings-content">
             <div className="finding-head">
               <p>YOUR FIRST REPORT</p>
-              <h3>We found <u>{activeScan?.summaryMetrics ? activeScan.summaryMetrics.criticalIssues + activeScan.summaryMetrics.highIssues + activeScan.summaryMetrics.mediumIssues : 7} things</u><br />worth fixing.</h3>
+              <h3>{activeScan?.summaryMetrics
+                ? <>This audit found <u>{activeScan.summaryMetrics.criticalIssues + activeScan.summaryMetrics.highIssues + activeScan.summaryMetrics.mediumIssues} issues</u><br />to review.</>
+                : <>Your first audit reports<br /><u>only what it measures.</u></>}</h3>
             </div>
             <div className="finding-row critical"><span>↗</span><div><b>Important</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.criticalIssues} critical issues detected` : "Run a scan to identify indexing issues"}</p></div><em style={{ cursor: "pointer" }} onClick={handleOpenReport}>View</em></div>
             <div className="finding-row recommend"><span>↗</span><div><b>Recommended</b><p>{activeScan?.summaryMetrics ? `${activeScan.summaryMetrics.highIssues} high priority recommendations` : "Run a scan to get recommendations"}</p></div><em style={{ cursor: "pointer" }} onClick={handleOpenReport}>View</em></div>
-            <div className="finding-row healthy"><span>✓</span><div><b>Looking good</b><p>Sitemap &amp; canonical check healthy</p></div><em style={{ cursor: "pointer" }}>✓</em></div>
+            <div className="finding-row healthy"><span>—</span><div><b>Bounded coverage</b><p>Up to 25 public pages per audit</p></div><em>—</em></div>
           </div>
         </div>
       </section>
@@ -1112,7 +1135,7 @@ function App() {
             <p>SEO health, analytics, search visibility, and growth opportunities — simply arranged in one place.</p>
           </div>
           <div className="console-preview" style={{ padding: "44px", textAlign: "center" }}>
-            <p className="section-kicker">LIVE DATA, NOT A DEMO</p>
+            <p className="section-kicker">START WITH YOUR DATA</p>
             <h3 style={{ margin: "12px 0" }}>Your dashboard starts empty.</h3>
             <button className="primary-btn" onClick={() => setShowAuthModal(true)} style={{ background: "#a4ef51", color: "#171817", fontWeight: 800, padding: "12px 28px", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px", marginTop: "12px" }}>Create an account →</button>
           </div>
@@ -1123,7 +1146,7 @@ function App() {
         <div>
           <p className="section-kicker">GOOGLE IS OPTIONAL</p>
           <h2>You don’t need Google Search Console to get started.</h2>
-          <p>GrowthSent works on its own. Start monitoring your site today, then connect the tools you already use when you want deeper search and visitor insight.</p>
+          <p>GrowthSent starts with bounded technical audits. Connect the tools you already use when you want deeper search and visitor insight.</p>
         </div>
         <div className="integration-map">
           <div className="site-node"><span>⌁</span><b>Your website</b><small>Public website data</small></div>
@@ -1213,8 +1236,8 @@ function App() {
             </a>
           </small>
         </div>
-        <div><b>Product</b><a>SEO</a><a>Analytics</a><a>Keywords</a><a>Monitoring</a></div>
-        <div id="developers"><b>Developers</b><a>CLI</a><a>MCP</a><a>API</a></div>
+        <div><b>Product</b><a>Technical audits</a><a>Common Crawl preview</a></div>
+        <div id="developers"><b>Preview</b><a>Bounded audits</a><a>Public website data</a></div>
         <div>
           <b>Company</b>
           <a>About</a>

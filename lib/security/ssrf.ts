@@ -176,6 +176,12 @@ export async function validateUrlForScan(inputUrl: string): Promise<UrlValidatio
     return { isValid: false, reason: "Only HTTP and HTTPS URLs are allowed." };
   }
 
+  // Website audits intentionally use normal web endpoints only. URL normalizes
+  // explicit default ports away, so any remaining port is non-standard.
+  if (parsed.port) {
+    return { isValid: false, reason: "Only standard HTTP and HTTPS ports are allowed." };
+  }
+
   if (parsed.username || parsed.password) {
     return { isValid: false, reason: "URLs containing credentials are not allowed." };
   }

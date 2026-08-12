@@ -62,6 +62,25 @@ export function PricingPage({ onBack, onGetStarted, onContactSales }: PricingPag
     { feature: "Support", hobby: "Community", growth: "Email", team: "Priority", enterprise: "Dedicated SLA" },
   ];
 
+  // Commercial plans and product areas such as monitoring, API access, and
+  // unlimited crawls are not part of the external MVP. Keep the old pricing
+  // component below for later product work, but do not present unavailable
+  // capabilities as live offers.
+  return (
+    <div style={{ background: "#0e0f0e", color: "#f7f7f3", minHeight: "100vh", fontFamily: "'Inter', system-ui, sans-serif", display: "grid", placeItems: "center", padding: "24px" }}>
+      <main style={{ maxWidth: "620px", textAlign: "center" }}>
+        <div style={{ color: "#a4ef51", fontSize: "12px", fontWeight: 800, letterSpacing: "1px" }}>EXTERNAL MVP</div>
+        <h1 style={{ fontSize: "42px", margin: "16px 0" }}>GrowthSent is currently in preview.</h1>
+        <p style={{ color: "#a5a69f", lineHeight: 1.6 }}>
+          The preview provides bounded technical audits and clearly labeled Common Crawl link observations. Monitoring, API/MCP access, and commercial plan limits are not available yet.
+        </p>
+        <button onClick={onBack} style={{ marginTop: "24px", background: "#a4ef51", color: "#0e0f0e", border: "none", borderRadius: "8px", padding: "11px 18px", fontWeight: 800, cursor: "pointer" }}>
+          Back to GrowthSent
+        </button>
+      </main>
+    </div>
+  );
+
   return (
     <div style={{ background: "#0e0f0e", color: "#f7f7f3", minHeight: "100vh", fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Header Navigation */}
@@ -486,7 +505,7 @@ export function PricingPage({ onBack, onGetStarted, onContactSales }: PricingPag
             Ready to grow your website?
           </h2>
           <p style={{ color: "#888982", fontSize: "17px", maxWidth: "520px", margin: "0 auto 36px auto", lineHeight: "1.6" }}>
-            Start auditing, optimizing, and monitoring your website in seconds. No credit card required.
+            Start auditing and improving your website in seconds. No credit card required.
           </p>
           <div style={{ display: "flex", gap: "16px", justifyContent: "center", flexWrap: "wrap" }}>
             <button

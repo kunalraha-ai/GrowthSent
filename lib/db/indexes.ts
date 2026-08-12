@@ -127,6 +127,28 @@ export const DATABASE_INDEX_MANIFEST: readonly ManagedIndexDefinition[] = [
     description: "Recovery of expired audit-worker leases.",
   },
   {
+    collection: "crawlJobs",
+    name: "crawl_jobs_status_created_at",
+    key: { status: 1, createdAt: 1 },
+    description: "Bounded oldest-pending queue-health lookup.",
+  },
+  {
+    collection: "crawlAdmission",
+    name: "crawl_admission_expires_at_ttl",
+    key: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
+    requiresExplicitTtlApproval: true,
+    description: "Expire short-lived crawl quota, cooldown, and claim records.",
+  },
+  {
+    collection: "backlinkQueryProtection",
+    name: "backlink_query_protection_expires_at_ttl",
+    key: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0 },
+    requiresExplicitTtlApproval: true,
+    description: "Expire short-lived backlink request quotas and shared result leases.",
+  },
+  {
     collection: "crawlSnapshots",
     name: "crawl_snapshots_scan_unique",
     key: { scanId: 1 },
@@ -250,6 +272,32 @@ export interface IndexProvisionOptions {
   auditUniqueIndexes?: boolean;
   /** Must be true before TTL indexes are created, because they expire data. */
   includeTtl?: boolean;
+}
+
+export interface IndexVerificationResult {
+  collection: string;
+  name: string;
+  present: boolean;
+}
+
+/** Read-only index verification used by the release preflight. */
+export async function verifyDatabaseIndexes(db: Db): Promise<IndexVerificationResult[]> {
+  const byCollection = new Map<string, ManagedIndexDefinition[]>();
+  for (const definition of DATABASE_INDEX_MANIFEST) {
+    const definitions = byCollection.get(definition.collection) || [];
+    definitions.push(definition);
+    byCollection.set(definition.collection, definitions);
+  }
+
+  const results: IndexVerificationResult[] = [];
+  for (const [collection, definitions] of byCollection) {
+    const indexes = await db.collection(collection).listIndexes().toArray();
+    const names = new Set(indexes.map((index) => index.name));
+    for (const definition of definitions) {
+      results.push({ collection, name: definition.name, present: names.has(definition.name) });
+    }
+  }
+  return results;
 }
 
 function uniqueDefinitions(definitions: readonly ManagedIndexDefinition[]): ManagedIndexDefinition[] {

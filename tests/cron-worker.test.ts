@@ -14,6 +14,16 @@ test("internal audit worker route rejects unauthenticated public requests", asyn
   });
 
   assert.equal(response.statusCode, 401);
+
+  const health = await handleApiRequest({
+    method: "GET",
+    path: "/api/v1/internal/audit-worker/health",
+    query: {},
+    body: null,
+    headers: {},
+    ip: "cron-worker-health-test",
+  });
+  assert.equal(health.statusCode, 401);
 });
 
 test("durable crawl cron rejects unauthorized invocations without running work", async () => {
@@ -33,7 +43,7 @@ test("durable crawl cron rejects unauthorized invocations without running work",
   assert.equal(invoked, 0);
 });
 
-test("durable crawl cron authorizes Vercel Cron and invokes bounded work exactly once", async () => {
+test("durable crawl scheduler authorization invokes bounded work exactly once", async () => {
   let invoked = 0;
   const response = await handleDurableCrawlCronRequest(
     { method: "GET", authorization: "Bearer test-cron-secret" },
@@ -58,4 +68,26 @@ test("durable crawl cron only permits GET", async () => {
   );
 
   assert.equal(response.statusCode, 405);
+});
+
+test("legacy public scan creation routes cannot create higher-limit jobs", async () => {
+  const standalone = await handleApiRequest({
+    method: "POST",
+    path: "/api/v1/scans",
+    query: {},
+    body: { url: "https://example.com" },
+    headers: {},
+    ip: "legacy-scan-test",
+  });
+  const savedSite = await handleApiRequest({
+    method: "POST",
+    path: "/api/v1/websites/0123456789abcdef01234567/scans",
+    query: {},
+    body: null,
+    headers: {},
+    ip: "legacy-saved-scan-test",
+  });
+  assert.equal(standalone.statusCode, 410);
+  assert.equal(savedSite.statusCode, 410);
+  assert.equal((standalone.body as { error: { code: string } }).error.code, "LEGACY_SCAN_DISABLED");
 });

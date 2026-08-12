@@ -67,9 +67,9 @@ export function IssuesView({
       ) : rawIssuesList.length === 0 ? (
         <div className="console-section-card" style={{ marginTop: "20px" }}>
           <div className="gsc-empty-state" style={{ padding: "48px 20px" }}>
-            <div className="empty-icon-circle">✓</div>
-            <h5>No Issues Detected for {activeSite}</h5>
-            <p>All scanned pages passed technical SEO checks without critical errors.</p>
+            <div className="empty-icon-circle">—</div>
+            <h5>No Issues Returned for {activeSite}</h5>
+            <p>No issues were returned by the checks collected in this audit. This does not mean every technical SEO check passed.</p>
           </div>
         </div>
       ) : (

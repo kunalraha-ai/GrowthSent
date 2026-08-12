@@ -3,15 +3,18 @@ import test from "node:test";
 import {
   BacklinkAnalyticsError,
   backlinkTargetFilter,
+  isExternalBacklinkObservation,
   normalizeBacklinkDomain,
   normalizeBacklinkPagination,
 } from "../lib/backlinks/service";
+import { backlinkSharedCacheKey } from "../lib/backlinks/shared-protection";
 
 test("backlink domain normalization accepts common domain input forms", () => {
-  for (const input of ["github.com", "https://github.com", "www.github.com", "github.com/"]) {
+  for (const input of ["github.com", "https://github.com", "github.com/"]) {
     assert.equal(normalizeBacklinkDomain(input), "github.com");
   }
-  assert.equal(normalizeBacklinkDomain("HTTPS://WWW.Example.CO.UK/path?q=1"), "example.co.uk");
+  assert.equal(normalizeBacklinkDomain("www.github.com"), "www.github.com");
+  assert.equal(normalizeBacklinkDomain("HTTPS://WWW.Example.CO.UK/path?q=1"), "www.example.co.uk");
 });
 
 test("backlink domain normalization rejects unsafe or malformed input", () => {
@@ -31,4 +34,19 @@ test("backlink pagination and target filtering are bounded and use exact target-
     crawl: "CC-MAIN-2026-30",
     target_host: "github.com",
   });
+});
+
+test("backlink observations exclude internal registrable-domain relationships", () => {
+  assert.equal(isExternalBacklinkObservation("eignex.com", "eignex.com"), false, "same host is internal");
+  assert.equal(isExternalBacklinkObservation("www.example.com", "example.com"), false, "www and apex are internal");
+  assert.equal(isExternalBacklinkObservation("docs.example.com", "app.example.com"), false, "sibling subdomains are internal");
+  assert.equal(isExternalBacklinkObservation("referrer.net", "example.com"), true, "unrelated registrable domain is external");
+  assert.equal(isExternalBacklinkObservation(null, "example.com"), false, "missing referring host is not marketed as external");
+});
+
+test("shared backlink cache keys include every result-affecting bounded parameter", () => {
+  const base = backlinkSharedCacheKey("github.com", 1, 10);
+  assert.notEqual(base, backlinkSharedCacheKey("www.github.com", 1, 10));
+  assert.notEqual(base, backlinkSharedCacheKey("github.com", 2, 10));
+  assert.notEqual(base, backlinkSharedCacheKey("github.com", 1, 5));
 });

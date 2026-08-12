@@ -18,6 +18,7 @@ import {
   isCommonCrawlAdmissionDeferred,
 } from "../crawler/common-crawl-admission.js";
 import { commonCrawlMetricsFromError } from "../crawler/providers/common-crawl.js";
+import { admitAndInsertCrawlJob, releaseCrawlAdmission } from "../jobs/crawl-admission.js";
 import type { CrawlExecutionResult } from "../crawler/crawler.js";
 import { analyzeCrawlResults } from "../seo/engine.js";
 import {
@@ -40,7 +41,7 @@ export interface CrawlJobAccessContext {
   accessToken?: string;
 }
 
-export type CreatedCrawlJob = { jobId: string; status: string; accessToken?: string };
+export type CreatedCrawlJob = { jobId: string; status: string; accessToken?: string; reused?: boolean };
 
 interface ClaimedCrawlJob extends CrawlJobDocument {
   _id: ObjectId;
@@ -147,7 +148,7 @@ export class AuditService {
       throw new Error(ssrf.reason || "Invalid URL for scan.");
     }
 
-    const { db } = await connectToDatabase();
+    const { db, client } = await connectToDatabase();
     const websiteObjectId = websiteId ? safeObjectId(websiteId) : undefined;
 
     // Relationship creation is authorized here as well as at the route. This
@@ -186,7 +187,10 @@ export class AuditService {
       createdAt: now,
     };
 
-    await db.collection<CrawlJobDocument>("crawlJobs").insertOne(jobDoc);
+    const admission = await admitAndInsertCrawlJob(client, db, jobDoc, requestIp);
+    if (admission.reusedJobId) {
+      return { jobId: admission.reusedJobId, status: admission.reusedStatus || "queued", reused: true };
+    }
     return { jobId, status: "queued", accessToken: rawAccessToken };
   }
 
@@ -420,13 +424,16 @@ export class AuditService {
       };
     }
 
-    await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
+    const updated = await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
       { _id: job._id, leaseId: job.leaseId },
       {
         $set: setFields,
         $unset: { leaseId: "", leaseExpiresAt: "", ...(retry ? { completedAt: "" } : {}) },
       }
     );
+    if (!retry && updated.matchedCount === 1) {
+      await releaseCrawlAdmission(db, job);
+    }
   }
 
   /** Requeue admission contention without consuming a durable crawl attempt. */
@@ -630,6 +637,7 @@ export class AuditService {
           { session }
         );
         if (completedJob.matchedCount !== 1) throw new LeaseLostError();
+        await releaseCrawlAdmission(db, job, session);
       });
     } catch (error) {
       // A standalone MongoDB server cannot atomically fence child writes from
@@ -667,9 +675,10 @@ export class AuditService {
   }
 
   /** Processes one named job for an external durable worker. */
-  static async processCrawlJob(jobId: string): Promise<{ claimed: boolean; status?: ScanStatus }> {
+  static async processCrawlJob(jobId: string): Promise<{ claimed: boolean; status?: ScanStatus; attempt?: number; queueAgeMs?: number }> {
     const job = await AuditService.claimCrawlJob(jobId);
     if (!job) return { claimed: false };
+    const queueAgeMs = Math.max(0, Date.now() - job.createdAt.getTime());
     const stopHeartbeat = AuditService.startLeaseHeartbeat(job);
     const jobStartedAt = Date.now();
 
@@ -794,17 +803,17 @@ export class AuditService {
         : undefined;
 
       await AuditService.persistResults(job, scanDoc, pages, issues, snapshot, completionTime, jobStartedAt);
-      return { claimed: true, status: "completed" };
+      return { claimed: true, status: "completed", attempt: job.attempts, queueAgeMs };
     } catch (error) {
       if (isCommonCrawlAdmissionDeferred(error)) {
         await AuditService.deferForCommonCrawlAdmission(job);
-        return { claimed: true, status: "queued" };
+        return { claimed: true, status: "queued", attempt: job.attempts, queueAgeMs };
       }
       if (!(error instanceof LeaseLostError)) {
         console.error("[AuditService] A crawl attempt failed.");
         await AuditService.markAttemptFailed(job, error, jobStartedAt);
       }
-      return { claimed: true, status: "failed" };
+      return { claimed: true, status: "failed", attempt: job.attempts, queueAgeMs };
     } finally {
       stopHeartbeat();
       await AuditService.releaseWebsiteLease(job).catch(() => {
@@ -814,7 +823,7 @@ export class AuditService {
   }
 
   /** Claims and processes one due job for an external durable worker. */
-  static async processNextCrawlJob(): Promise<{ claimed: boolean; status?: ScanStatus }> {
+  static async processNextCrawlJob(): Promise<{ claimed: boolean; status?: ScanStatus; attempt?: number; queueAgeMs?: number }> {
     const { db } = await connectToDatabase();
     const candidate = await db
       .collection<CrawlJobDocument>("crawlJobs")

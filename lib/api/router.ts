@@ -3,7 +3,6 @@ import { z } from "zod";
 import { checkRateLimit } from "../ratelimit/limiter.js";
 import { validateUrlForScan } from "../security/ssrf.js";
 import {
-  createScan,
   getScanByIdForAccess,
   getScanPagesForAccess,
   getScanIssuesForAccess,
@@ -17,7 +16,9 @@ import { recordAnalyticsEvent } from "../analytics/collector.js";
 import { getAnalyticsSummary } from "../analytics/aggregator.js";
 import { getAdminStats } from "../admin/service.js";
 import { AuditService } from "../services/audit.service.js";
-import { handleDurableCrawlCronRequest } from "../jobs/cron-worker.js";
+import { CrawlAdmissionError } from "../jobs/crawl-admission.js";
+import { handleDurableCrawlCronRequest, hasValidCronAuthorization } from "../jobs/cron-worker.js";
+import { getInternalWorkerHealth } from "../jobs/worker-health.js";
 import {
   completeGoogleAuthorization,
   createGoogleAuthorizationUrl,
@@ -39,6 +40,7 @@ import {
 } from "../auth/social.js";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
+import { BacklinkProtectionError, enforceBacklinkRequestQuota } from "../backlinks/shared-protection.js";
 import { logProductionApiHandlerError } from "./production-error-log.js";
 
 // Input Validation Schemas
@@ -248,6 +250,14 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       });
     }
 
+    if (method === "GET" && path === "/api/v1/internal/audit-worker/health") {
+      const authorization = getHeader(req.headers, "authorization");
+      if (!hasValidCronAuthorization(authorization, process.env.CRON_SECRET)) {
+        return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Unauthorized." } } };
+      }
+      return { statusCode: 200, body: await getInternalWorkerHealth() };
+    }
+
     const sessionToken = extractSessionTokenFromCookie(getHeader(req.headers, "cookie"));
     const authStartedAt = new Date().toISOString();
     const authStartedMs = Date.now();
@@ -294,6 +304,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         : undefined;
 
       try {
+        await enforceBacklinkRequestQuota(user._id!.toString());
         const report = await getBacklinkAnalytics(domain, { page, pageSize });
         return {
           statusCode: 200,
@@ -301,6 +312,9 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
           body: report,
         };
       } catch (error) {
+        if (error instanceof BacklinkProtectionError) {
+          return { statusCode: 429, body: { error: { code: error.code, message: error.message } } };
+        }
         if (error instanceof BacklinkAnalyticsError) {
           const statusCode = error.code === "INVALID_DOMAIN" ? 400 : error.code === "QUERY_TIMEOUT" ? 504 : 503;
           return { statusCode, body: { error: { code: error.code, message: error.message } } };
@@ -538,7 +552,16 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         const website = await getWebsiteById(websiteId, user._id!.toString());
         if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
       }
-      const job = await AuditService.createCrawlJob(targetUrl, user?._id?.toString(), websiteId, req.ip);
+      let job;
+      try {
+        job = await AuditService.createCrawlJob(targetUrl, user?._id?.toString(), websiteId, req.ip);
+      } catch (error) {
+        if (error instanceof CrawlAdmissionError) {
+          const statusCode = error.code === "CRAWL_QUEUE_FULL" ? 503 : 429;
+          return { statusCode, body: { error: { code: error.code, message: error.message } } };
+        }
+        throw error;
+      }
       const headers = job.accessToken
         ? {
             "Set-Cookie": buildHttpOnlyCookie(
@@ -573,61 +596,9 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     }
 
     if (method === "POST" && path === "/api/v1/scans") {
-      const parse = ScanInputSchema.safeParse(req.body);
-      if (!parse.success) {
-        return {
-          statusCode: 400,
-          body: {
-            error: {
-              code: "INVALID_URL",
-              message: parse.error.issues[0]?.message || "Invalid URL format.",
-            },
-          },
-        };
-      }
-
-      const ssrf = await validateUrlForScan(parse.data.url);
-      if (!ssrf.isValid) {
-        return {
-          statusCode: 400,
-          body: {
-            error: {
-              code: "SSRF_BLOCKED",
-              message: ssrf.reason || "URL violates security policy.",
-            },
-          },
-        };
-      }
-
-      const scan = await createScan({
-        url: parse.data.url,
-        userId: user?._id?.toString(),
-        requestIp: req.ip,
-        maxPages: user ? 150 : 50,
-      });
-
-      const scanId = scan._id?.toString();
-      const headers =
-        scan.accessToken && scanId
-          ? {
-              "Set-Cookie": buildHttpOnlyCookie(
-                SCAN_ACCESS_COOKIE,
-                `${scanId}.${scan.accessToken}`,
-                `/api/v1/scans/${scanId}`,
-                SCAN_ACCESS_MAX_AGE_SECONDS
-              ),
-            }
-          : undefined;
-
       return {
-        statusCode: 201,
-        headers,
-        body: {
-          scanId,
-          status: scan.status,
-          url: scan.url,
-          createdAt: scan.createdAt,
-        },
+        statusCode: 410,
+        body: { error: { code: "LEGACY_SCAN_DISABLED", message: "This scan endpoint is disabled for the external MVP. Use the bounded audit flow instead." } },
       };
     }
 
@@ -945,18 +916,10 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     }
 
     if (method === "POST" && webScansMatch) {
-      if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Not authenticated." } } };
-      const website = await getWebsiteById(webScansMatch[1], user._id!.toString());
-      if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
-
-      const scan = await createScan({
-        url: `https://${website.hostname}`,
-        websiteId: website._id!.toString(),
-        userId: user._id!.toString(),
-        requestIp: req.ip,
-        maxPages: 200,
-      });
-      return { statusCode: 201, body: toPublicScan(scan) };
+      return {
+        statusCode: 410,
+        body: { error: { code: "LEGACY_SCAN_DISABLED", message: "This scan endpoint is disabled for the external MVP. Start a bounded audit from the website dashboard." } },
+      };
     }
 
     // ----------------------------------------------------

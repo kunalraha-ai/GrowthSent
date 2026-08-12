@@ -15,14 +15,14 @@ interface SeoAuditViewProps {
 interface MetricRowData {
   id: string;
   category: "crawl" | "onpage" | "technical";
-  status: "pass" | "warn" | "fail";
+  status: "pass" | "warn" | "fail" | "not_evaluated";
   label: string;
   summary: string;
   detail: string;
   affectedCount?: number;
 }
 
-function buildAuditMetrics(scanResult: any, activeSite: string): MetricRowData[] {
+export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRowData[] {
   if (!scanResult) {
     return [];
   }
@@ -52,53 +52,29 @@ function buildAuditMetrics(scanResult: any, activeSite: string): MetricRowData[]
     const h1Arr = p.h1 || p.headings?.h1;
     return h1Arr && Array.isArray(h1Arr) && h1Arr.length === 1;
   }).length;
-  const pagesWithOg = pages.filter((p) => p.openGraphImage || p.ogImage).length;
   const pagesWithCanonical = pages.filter((p) => p.canonicalUrl || p.canonical).length;
 
   const missingTitleCount = totalPages - pagesWithTitle;
   const missingDescCount = totalPages - pagesWithDesc;
   const missingH1Count = totalPages - pagesWithH1;
-  const missingOgCount = totalPages - pagesWithOg;
   const missingCanonicalCount = totalPages - pagesWithCanonical;
-  const brokenLinks = issues.filter((i) =>
-    i.ruleId === "broken_internal_link" ||
-    i.category === "links" ||
-    i.title?.toLowerCase().includes("broken") ||
-    i.title?.toLowerCase().includes("404")
-  ).length;
 
   return [
     {
       id: "crawlability",
       category: "crawl",
       status: pages200 === totalPages ? "pass" : pages200 > 0 ? "warn" : "fail",
-      label: "Crawlability",
-      summary: `${pages200} / ${totalPages} discovered pages crawlable`,
-      detail: `${pages200} HTML pages returned 200 OK headers. ${totalPages - pages200} pages yielded non-200 responses.`,
-    },
-    {
-      id: "sitemap",
-      category: "crawl",
-      status: "pass",
-      label: "XML Sitemap",
-      summary: `Discovered sitemap for ${activeSite}`,
-      detail: "Sitemap index is well-formed and contains target crawl URLs.",
-    },
-    {
-      id: "robots",
-      category: "crawl",
-      status: "pass",
-      label: "Robots.txt Directives",
-      summary: "No blocking disallow rules detected",
-      detail: "Search crawlers allowed to index public site assets.",
+       label: "Successful Page Responses",
+       summary: `${pages200} / ${totalPages} attempted URLs returned HTTP 200`,
+       detail: `${pages200} attempted URLs returned HTTP 200. ${totalPages - pages200} yielded another status or could not be fetched.`,
     },
     {
       id: "canonical",
       category: "crawl",
       status: missingCanonicalCount === 0 ? "pass" : "warn",
       label: "Canonical URLs",
-      summary: `${pagesWithCanonical} / ${totalPages} specify self-referential canonical tags`,
-      detail: "Canonical headers prevent duplicate content penalties.",
+       summary: `${pagesWithCanonical} / ${totalPages} pages include a canonical URL`,
+       detail: "This audit records canonical tags and flags missing, malformed, or external canonicals. It does not infer that a tag is self-referential from its presence.",
       affectedCount: missingCanonicalCount > 0 ? missingCanonicalCount : undefined,
     },
     {
@@ -107,7 +83,7 @@ function buildAuditMetrics(scanResult: any, activeSite: string): MetricRowData[]
       status: missingTitleCount === 0 ? "pass" : "warn",
       label: "Page Title Tags",
       summary: `${pagesWithTitle} / ${totalPages} pages have valid title tags`,
-      detail: missingTitleCount > 0 ? `${missingTitleCount} pages missing title tags.` : "All scanned pages specify unique title tags.",
+       detail: missingTitleCount > 0 ? `${missingTitleCount} pages are missing title tags.` : "All scanned pages include a title tag. Duplicate-title findings, if any, are listed separately as issues.",
       affectedCount: missingTitleCount > 0 ? missingTitleCount : undefined,
     },
     {
@@ -127,32 +103,6 @@ function buildAuditMetrics(scanResult: any, activeSite: string): MetricRowData[]
       summary: missingH1Count === 0 ? `All ${totalPages} pages have valid H1 heading` : `${missingH1Count} pages missing or having multiple H1 tags`,
       detail: "Proper heading hierarchy requires exactly one primary H1 tag per page.",
       affectedCount: missingH1Count > 0 ? missingH1Count : undefined,
-    },
-    {
-      id: "og_meta",
-      category: "onpage",
-      status: missingOgCount === 0 ? "pass" : "warn",
-      label: "Open Graph Tags",
-      summary: `${pagesWithOg} / ${totalPages} pages specify og:image cards`,
-      detail: missingOgCount > 0 ? `${missingOgCount} pages missing og:image social cards.` : "Open Graph cards present.",
-      affectedCount: missingOgCount > 0 ? missingOgCount : undefined,
-    },
-    {
-      id: "https",
-      category: "technical",
-      status: "pass",
-      label: "HTTPS & Security",
-      summary: "Connection encrypted over TLS 1.3",
-      detail: "Requests served over HTTPS with valid SSL certificates.",
-    },
-    {
-      id: "broken_links",
-      category: "technical",
-      status: brokenLinks === 0 ? "pass" : "fail",
-      label: "Broken Internal Links",
-      summary: `${brokenLinks} internal broken links detected`,
-      detail: brokenLinks > 0 ? `${brokenLinks} internal links point to 404 destinations.` : "No broken 404 internal links found.",
-      affectedCount: brokenLinks > 0 ? brokenLinks : undefined,
     },
   ];
 }
@@ -200,7 +150,7 @@ export function SeoAuditView({
             No Audit Results for {activeSite}
           </h4>
           <p style={{ color: "#8c8d86", fontSize: "14px", maxWidth: "480px", margin: "0 auto 20px auto" }}>
-            Run your first technical SEO scan for {activeSite} to analyze crawlability, metadata, broken links, and heading structure.
+            Run your first bounded technical SEO audit for {activeSite} to analyze the page-response and metadata evidence it collects.
           </p>
           <button className="primary-btn" onClick={onRunScan}>
             Run Fresh Scan ↻
@@ -228,7 +178,7 @@ export function SeoAuditView({
             <div className="actions-list">
               {rawIssues.length === 0 ? (
                 <div style={{ padding: "16px 20px", color: "#a4ef51", fontSize: "14px", fontWeight: 600 }}>
-                  ✓ No high priority actions required for {activeSite}.
+                  No issues were returned by the checks collected in this audit. This is not a statement that every SEO check passed.
                 </div>
               ) : (
                 rawIssues.slice(0, 3).map((iss: any, idx: number) => (
@@ -304,7 +254,11 @@ export function SeoAuditView({
               <div className="card-header">
                 <h4 className="card-title">3. Technical Health</h4>
               </div>
-              <div className="compact-rows-list">
+              {technicalMetrics.length === 0 ? (
+                <p className="card-sub" style={{ padding: "0 20px 20px" }}>
+                  Transport/TLS, Open Graph, and complete sitemap validation are not evaluated by this bounded audit.
+                </p>
+              ) : <div className="compact-rows-list">
                 {technicalMetrics.map((m) => (
                   <div
                     key={m.id}
@@ -321,7 +275,7 @@ export function SeoAuditView({
                     </span>
                   </div>
                 ))}
-              </div>
+              </div>}
             </div>
           </div>
         </>

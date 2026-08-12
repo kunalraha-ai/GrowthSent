@@ -37,11 +37,24 @@ export async function dispatchBackgroundJob(job: BackgroundJobPayload): Promise<
 }
 
 /**
- * Worker-facing polling hook. It intentionally performs at most one audit and
- * one scan per invocation; a real durable worker/scheduler must invoke it.
+ * Worker-facing polling hook for the external MVP. It intentionally performs
+ * at most one canonical 25-page audit. Legacy scans remain readable for
+ * historical data, but this public scheduler must never start their 50/150/200
+ * page worker paths.
  */
-export async function processDurableCrawlWork(): Promise<{ auditClaimed: boolean; scanClaimed: boolean }> {
+export async function processDurableCrawlWork(): Promise<{
+  auditClaimed: boolean;
+  scanClaimed: boolean;
+  auditStatus?: string;
+  auditAttempt?: number;
+  auditQueueAgeMs?: number;
+}> {
   const audit = await AuditService.processNextCrawlJob();
-  const scan = await processNextQueuedScan();
-  return { auditClaimed: audit.claimed, scanClaimed: scan.claimed };
+  return {
+    auditClaimed: audit.claimed,
+    scanClaimed: false,
+    auditStatus: audit.status,
+    auditAttempt: audit.attempt,
+    auditQueueAgeMs: audit.queueAgeMs,
+  };
 }

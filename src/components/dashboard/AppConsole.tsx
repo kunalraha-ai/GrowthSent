@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Sidebar } from "./Sidebar";
 import { Logo } from "../Logo";
 import { OverviewView } from "./OverviewView";
@@ -100,7 +100,7 @@ function AddWebsiteModal({ onClose, onAdded }: { onClose: () => void; onAdded: (
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
           <h3 style={{ margin: 0, fontFamily: "'Google Sans', sans-serif", fontSize: "18px", fontWeight: 800, color: "#171817" }}>
-            Add Website to Monitor
+            Add Website to Audit
           </h3>
           <button onClick={onClose} className="close-btn" style={{ fontSize: "20px", color: "#171817", cursor: "pointer" }}>✕</button>
         </div>
@@ -145,7 +145,7 @@ function AddWebsiteModal({ onClose, onAdded }: { onClose: () => void; onAdded: (
               cursor: "pointer",
             }}
           >
-            {loading ? "Adding..." : "+ Add Website & Scan"}
+            {loading ? "Adding..." : "+ Add Website & Audit"}
           </button>
         </form>
       </div>
@@ -169,8 +169,20 @@ export function AppConsole({
   const [scanResult, setScanResult] = useState<any>(null);
   const [isGscConnected, setIsGscConnected] = useState(false);
   const [isGaConnected, setIsGaConnected] = useState(false);
+  const auditPollTimerRef = useRef<number | null>(null);
+  const auditPollInFlightRef = useRef(false);
 
   const [scanError, setScanError] = useState("");
+
+  const stopAuditPolling = () => {
+    if (auditPollTimerRef.current !== null) {
+      window.clearInterval(auditPollTimerRef.current);
+      auditPollTimerRef.current = null;
+    }
+    auditPollInFlightRef.current = false;
+  };
+
+  useEffect(() => () => stopAuditPolling(), []);
 
   useEffect(() => {
     async function loadWebsites() {
@@ -222,26 +234,38 @@ export function AppConsole({
   };
 
   const pollAudit = (jobId: string, initialStatus: AuditJobUiStatus = "queued") => {
+    stopAuditPolling();
     setIsScanning(true);
     setAuditStatus(initialStatus);
-    const interval = window.setInterval(async () => {
+    auditPollTimerRef.current = window.setInterval(async () => {
+      if (auditPollInFlightRef.current) return;
+      auditPollInFlightRef.current = true;
       try {
         const response = await fetch(`/api/v1/audit/${jobId}`);
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) {
+          stopAuditPolling();
+          setIsScanning(false);
+          setAuditStatus(null);
+          setScanError("Unable to check audit progress. Please try again later.");
+          return;
+        }
         const status = toAuditJobUiStatus(data.status);
         if (status) setAuditStatus(status);
         if (data.status === "completed" || data.status === "failed") {
-          window.clearInterval(interval);
+          stopAuditPolling();
           setIsScanning(false);
           setAuditStatus(null);
           if (data.status === "completed") setScanResult(data);
           else setScanError(data.error || "The audit could not be completed.");
         }
       } catch {
-        window.clearInterval(interval);
+        stopAuditPolling();
         setIsScanning(false);
         setAuditStatus(null);
         setScanError("Lost connection while checking audit progress.");
+      } finally {
+        auditPollInFlightRef.current = false;
       }
     }, 3000);
   };

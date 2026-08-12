@@ -1,5 +1,7 @@
 import { Collection, Db, Document, Filter } from "mongodb";
 import { connectToDataFederation } from "../db/data-federation.js";
+import { hasSameRegistrableDomain, normalizeComparableHostname } from "../domain/registrable.js";
+import { backlinkSharedCacheKey, getSharedBacklinkRows } from "./shared-protection.js";
 
 const CRAWL = "CC-MAIN-2026-30";
 const LINKS_COLLECTION = "links_prod_2026_30";
@@ -9,7 +11,8 @@ const MAX_PAGE = 100;
 const CACHE_TTL_MS = 60_000;
 const MAX_CACHE_ENTRIES = 100;
 
-export const BACKLINK_COVERAGE_LABEL = "Preview coverage: first 1,000 WAT files of CC-MAIN-2026-30, not a full-web backlink index.";
+export const BACKLINK_COVERAGE_LABEL = "Preview coverage — first 1,000 WAT files from CC-MAIN-2026-30. Returned rows are bounded external HTML link observations, not a full-web backlink index.";
+export const BACKLINK_RESULT_LABEL = "External link observations returned";
 
 export interface BacklinkRow {
   sourceUrl: string;
@@ -33,6 +36,8 @@ export interface BacklinkAnalyticsReport {
   coverage: {
     crawl: string;
     label: string;
+    resultLabel: string;
+    exactHostnameOnly: true;
   };
   overview: {
     totalBacklinks: number | null;
@@ -140,8 +145,9 @@ export function normalizeBacklinkDomain(value: string): string {
     throw new BacklinkAnalyticsError("INVALID_DOMAIN", "Enter a domain without credentials or a port.");
   }
 
-  let hostname = parsed.hostname.toLowerCase().replace(/\.+$/, "");
-  if (hostname.startsWith("www.")) hostname = hostname.slice(4);
+  // Keep lookup semantics exact-host. The raw Parquet data preserves hosts, so
+  // stripping www here silently queried a different hostname.
+  const hostname = normalizeComparableHostname(parsed.hostname);
   const labels = hostname.split(".");
   if (
     labels.length < 2 ||
@@ -150,6 +156,12 @@ export function normalizeBacklinkDomain(value: string): string {
     throw new BacklinkAnalyticsError("INVALID_DOMAIN", "Enter a valid public domain, such as github.com.");
   }
   return hostname;
+}
+
+/** Classifies a raw link observation without guessing public suffixes. */
+export function isExternalBacklinkObservation(sourceHost: string | null | undefined, targetHost: string): boolean {
+  if (!sourceHost) return false;
+  return !hasSameRegistrableDomain(sourceHost, targetHost);
 }
 
 export function normalizeBacklinkPagination(options: AnalyticsOptions): { page: number; pageSize: number } {
@@ -186,6 +198,7 @@ function isTimeout(error: unknown): boolean {
 async function fetchBacklinkRows(
   collection: Collection<LinkDocument>,
   filter: Filter<LinkDocument>,
+  targetHost: string,
   page: number,
   pageSize: number
 ): Promise<BacklinkRow[]> {
@@ -199,13 +212,19 @@ async function fetchBacklinkRows(
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .toArray();
-  return documents.map((document) => ({
-    sourceUrl: document.source_url || "",
-    sourceHost: document.source_host || null,
-    targetUrl: document.target_url || "",
-    anchor: document.anchor || null,
-    crawledAt: toIsoDate(document.crawled_at),
-  }));
+  return documents
+    // Preserve the exact target-host query and ten-row bound. Filtering the
+    // bounded sample locally is deliberately conservative: internal rows are
+    // never marketed as external backlinks, and no extra scan is started to
+    // find replacements.
+    .filter((document) => isExternalBacklinkObservation(document.source_host, targetHost))
+    .map((document) => ({
+      sourceUrl: document.source_url || "",
+      sourceHost: document.source_host || null,
+      targetUrl: document.target_url || "",
+      anchor: document.anchor || null,
+      crawledAt: toIsoDate(document.crawled_at),
+    }));
 }
 
 type BacklinkTimingOutcome = "started" | "completed" | "cache_hit" | "skipped" | "timed_out" | "failed";
@@ -266,7 +285,12 @@ function unavailableSummary(domain: string, page: number, pageSize: number): Bac
 
   return {
     domain,
-    coverage: { crawl: CRAWL, label: BACKLINK_COVERAGE_LABEL },
+    coverage: {
+      crawl: CRAWL,
+      label: BACKLINK_COVERAGE_LABEL,
+      resultLabel: BACKLINK_RESULT_LABEL,
+      exactHostnameOnly: true,
+    },
     overview: {
       totalBacklinks: null,
       uniqueReferringDomains: null,
@@ -327,7 +351,7 @@ export async function getBacklinkAnalytics(domainInput: string, options: Analyti
     throw new BacklinkAnalyticsError("DATA_FEDERATION_UNAVAILABLE", "Backlink preview data is temporarily unavailable.");
   }
   const links = db.collection<LinkDocument>(LINKS_COLLECTION);
-  const rowCacheKey = `rows:v3:${domain}:${page}:${pageSize}`;
+  const rowCacheKey = backlinkSharedCacheKey(domain, page, pageSize);
   let backlinks = cache.get<BacklinkRow[]>(rowCacheKey);
   let backlinksAvailable = Boolean(backlinks);
   const rowsStartedAt = new Date().toISOString();
@@ -346,9 +370,10 @@ export async function getBacklinkAnalytics(domainInput: string, options: Analyti
   } else {
     logBacklinkTiming({ section: "rows", domain, page, pageSize, startedAt: rowsStartedAt, elapsedMs: 0, outcome: "started" });
     try {
-      backlinks = await fetchBacklinkRows(links, filter, page, pageSize);
-      backlinksAvailable = true;
-      cache.set(rowCacheKey, backlinks, CACHE_TTL_MS);
+      const shared = await getSharedBacklinkRows(rowCacheKey, () => fetchBacklinkRows(links, filter, domain, page, pageSize));
+      backlinks = shared.rows || [];
+      backlinksAvailable = shared.rows !== null;
+      if (backlinksAvailable) cache.set(rowCacheKey, backlinks, CACHE_TTL_MS);
       logBacklinkTiming({
         section: "rows",
         domain,
@@ -356,7 +381,8 @@ export async function getBacklinkAnalytics(domainInput: string, options: Analyti
         pageSize,
         startedAt: rowsStartedAt,
         elapsedMs: Date.now() - rowsStartedMs,
-        outcome: "completed",
+        outcome: shared.outcome === "coalesced_pending" ? "skipped" : "completed",
+        timeoutReason: shared.outcome === "coalesced_pending" ? "identical_bounded_query_already_in_progress" : undefined,
         rows: backlinks.length,
       });
     } catch (error) {

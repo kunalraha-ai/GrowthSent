@@ -12,8 +12,10 @@
     "preview": "vite preview",
     "format": "oxfmt",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "node tests/run-all.mjs",
     "test:common-crawl-ingest": "python tests/common_crawl_wat_ingest.test.py",
+    "preflight:production": "tsx lib/cli/production-preflight.ts",
+    "smoke:production-function": "tsx --test tests/production-function-smoke.test.ts",
     "benchmark:common-crawl": "tsx lib/cli/common-crawl-benchmark.ts"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
     "mongoose": "^9.9.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "tldts": "7.0.16",
     "zod": "^4.4.3"
   },
   "devDependencies": {

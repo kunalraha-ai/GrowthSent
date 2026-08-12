@@ -2,6 +2,7 @@ import { fetchUrl, FetchResult } from "./fetcher.js";
 import { fetchAndParseRobotsTxt, isPathDisallowedByRobots, RobotsTxtResult } from "./robots.js";
 import { fetchAndParseSitemap, SitemapParseResult } from "./sitemap.js";
 import { parsePageHtml, ParsedPageData } from "./parser.js";
+import { isUrlWithinCrawlOriginScope } from "../domain/registrable.js";
 import type {
   CommonCrawlMetrics,
   CommonCrawlPageProvenance,
@@ -61,11 +62,10 @@ export async function runCrawl(
   const parsedStart = new URL(startUrl);
   const hostname = parsedStart.hostname.toLowerCase();
 
-  // 1. Fetch robots.txt and sitemap.xml concurrently
-  const [robots, sitemap] = await Promise.all([
-    fetchAndParseRobotsTxt(startUrl),
-    fetchAndParseSitemap(startUrl),
-  ]);
+  // Fetch robots first so declared sitemap locations can be honored safely.
+  // sitemap.ts enforces the audited site's www/apex scope before any fetch.
+  const robots = await fetchAndParseRobotsTxt(startUrl);
+  const sitemap = await fetchAndParseSitemap(startUrl, robots.sitemaps);
 
   // Queue & visited state
   const queue: Array<{ url: string; depth: number }> = [{ url: startUrl, depth: 0 }];
@@ -74,15 +74,10 @@ export async function runCrawl(
   const statusCodesCount: Record<string, number> = {};
   let totalBytesDownloaded = 0;
 
-  // Add sitemap URLs to crawl queue if within same hostname
+  // Sitemap URLs must stay within the narrow original www/apex crawl scope.
   for (const sitemapPageUrl of sitemap.urls) {
-    try {
-      const u = new URL(sitemapPageUrl);
-      if (u.hostname.toLowerCase() === hostname && queue.length < maxPages) {
-        queue.push({ url: sitemapPageUrl, depth: 1 });
-      }
-    } catch {
-      // Invalid URL ignored
+    if (isUrlWithinCrawlOriginScope(startUrl, sitemapPageUrl) && queue.length < maxPages) {
+      queue.push({ url: sitemapPageUrl, depth: 1 });
     }
   }
 
@@ -128,7 +123,11 @@ export async function runCrawl(
 
         if (fetchRes.statusCode === 200 && fetchRes.body && fetchRes.contentType.includes("html")) {
           parsedData = parsePageHtml(fetchRes.body, fetchRes.finalUrl);
-          discoveredLinks = parsedData.internalLinks || [];
+          // A redirect may safely retrieve the requested resource, but it may
+          // not turn a different public host into new recursive crawl scope.
+          discoveredLinks = (parsedData.internalLinks || []).filter((link) =>
+            isUrlWithinCrawlOriginScope(startUrl, link)
+          );
         }
 
         return {

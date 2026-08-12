@@ -76,6 +76,9 @@ export interface CrawlJobDocument {
   leaseExpiresAt?: Date;
   attempts?: number;
   nextAttemptAt?: Date;
+  /** External-MVP admission state; never exposed from API responses. */
+  admissionQueueSlot?: boolean;
+  admissionClaimKey?: string;
   /** Redacted provider measurements retained for completed or failed attempts. */
   instrumentation?: {
     provider: CrawlDataProviderName;

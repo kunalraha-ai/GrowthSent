@@ -1,4 +1,5 @@
 import { fetchUrl } from "./fetcher.js";
+import { isUrlWithinCrawlOriginScope } from "../domain/registrable.js";
 
 export interface SitemapParseResult {
   exists: boolean;
@@ -7,6 +8,11 @@ export interface SitemapParseResult {
   urls: string[];
   sitemapIndexUrls: string[];
   errors: string[];
+}
+
+/** Exposed for regression tests; fetchUrl still performs SSRF checks separately. */
+export function isSitemapUrlWithinAuditedScope(originUrl: string, sitemapUrl: string): boolean {
+  return isUrlWithinCrawlOriginScope(originUrl, sitemapUrl);
 }
 
 export async function fetchAndParseSitemap(
@@ -30,6 +36,10 @@ export async function fetchAndParseSitemap(
   let lastStatusCode = 0;
 
   for (const sitemapUrl of candidateUrls) {
+    if (!isSitemapUrlWithinAuditedScope(originUrl, sitemapUrl)) {
+      errors.push("A sitemap URL was outside the audited site scope.");
+      continue;
+    }
     const fetchRes = await fetchUrl(sitemapUrl, { timeoutMs: 6000 });
     lastStatusCode = fetchRes.statusCode;
 
@@ -55,12 +65,16 @@ export async function fetchAndParseSitemap(
 
   // Follow sub-sitemaps from sitemap index (up to 3 child sitemaps to stay lightweight)
   for (const childSitemap of sitemapIndexUrls.slice(0, 3)) {
+    if (!isSitemapUrlWithinAuditedScope(originUrl, childSitemap)) {
+      errors.push("A child sitemap was outside the audited site scope.");
+      continue;
+    }
     const fetchRes = await fetchUrl(childSitemap, { timeoutMs: 5000 });
     if (fetchRes.statusCode === 200 && fetchRes.body) {
       const locMatches = fetchRes.body.match(/<loc>\s*(https?:\/\/[^<]+)\s*<\/loc>/gi) || [];
       for (const match of locMatches) {
         const cleanLoc = match.replace(/<\/?loc>/gi, "").trim();
-        if (!cleanLoc.endsWith(".xml")) {
+        if (!cleanLoc.endsWith(".xml") && isSitemapUrlWithinAuditedScope(originUrl, cleanLoc)) {
           discoveredUrls.push(cleanLoc);
         }
       }

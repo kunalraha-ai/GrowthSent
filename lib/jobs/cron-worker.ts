@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { processDurableCrawlWork } from "./runner.js";
+import { recordWorkerInvocationFinished, recordWorkerInvocationStarted } from "./worker-health.js";
 
 export interface CronWorkerRequest {
   method: string;
@@ -9,6 +10,9 @@ export interface CronWorkerRequest {
 export interface DurableCrawlWorkResult {
   auditClaimed: boolean;
   scanClaimed: boolean;
+  auditStatus?: string;
+  auditAttempt?: number;
+  auditQueueAgeMs?: number;
 }
 
 export interface CronWorkerOptions {
@@ -21,7 +25,7 @@ export interface CronWorkerResponse {
   body: Record<string, unknown>;
 }
 
-function hasValidCronAuthorization(authorization: string | undefined, cronSecret: string | undefined): boolean {
+export function hasValidCronAuthorization(authorization: string | undefined, cronSecret: string | undefined): boolean {
   if (!cronSecret || !authorization) return false;
 
   const expected = Buffer.from(`Bearer ${cronSecret}`, "utf8");
@@ -47,9 +51,31 @@ export async function handleDurableCrawlCronRequest(
     return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Unauthorized." } } };
   }
 
+  const startedAtMs = Date.now();
   try {
+    await recordWorkerInvocationStarted().catch(() => {
+      console.error("[audit-worker] Unable to record worker start.");
+    });
     const processWork = options.processWork ?? processDurableCrawlWork;
     const result = await processWork();
+    await recordWorkerInvocationFinished({
+      startedAtMs,
+      outcome: "success",
+      auditClaimed: result.auditClaimed,
+      legacyScanClaimed: result.scanClaimed,
+      auditStatus: result.auditStatus,
+      auditAttempt: result.auditAttempt,
+      auditQueueAgeMs: result.auditQueueAgeMs,
+    }).catch(() => console.error("[audit-worker] Unable to record worker outcome."));
+    console.info("[audit-worker] bounded pass completed", {
+      jobType: result.auditClaimed ? "audit" : result.scanClaimed ? "legacy_scan" : "none",
+      auditClaimed: result.auditClaimed,
+      legacyScanClaimed: result.scanClaimed,
+      outcome: result.auditStatus || "none",
+      attempt: result.auditAttempt ?? null,
+      queueAgeMs: result.auditQueueAgeMs ?? null,
+      durationMs: Date.now() - startedAtMs,
+    });
     return {
       statusCode: 200,
       body: {
@@ -59,6 +85,7 @@ export async function handleDurableCrawlCronRequest(
       },
     };
   } catch (error) {
+    await recordWorkerInvocationFinished({ startedAtMs, outcome: "failure" }).catch(() => undefined);
     console.error("[audit-worker] Durable crawl worker invocation failed.", {
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
