@@ -1,18 +1,30 @@
+import { getMongoOperationPhase, type MongoOperationPhase } from "../db/mongo-diagnostics.js";
+
 type ProductionErrorContext = {
   route: string;
   method: string;
 };
 
 type ProductionErrorMetadata = {
-  route: "api_v1_websites" | "other_api_route";
+  route: "api_v1_audit" | "api_v1_backlinks" | "api_v1_websites" | "api_v1_internal_audit_worker" | "api_v1_auth" | "api_v1_integrations" | "api_v1_analytics" | "other_api_route";
   method: string;
   errorName: string;
   errorMessage?: string;
+  mongoCode?: string | number;
+  mongoCodeName?: string;
+  operationPhase?: MongoOperationPhase;
   stackFrames?: string[];
 };
 
 function safeRouteName(route: string): ProductionErrorMetadata["route"] {
-  return route === "/api/v1/websites" ? "api_v1_websites" : "other_api_route";
+  if (/^\/api\/v1\/audit(?:\/|$)/.test(route)) return "api_v1_audit";
+  if (route === "/api/v1/backlinks") return "api_v1_backlinks";
+  if (/^\/api\/v1\/websites\/[a-f0-9]{24}\/analytics(?:\/|$)/.test(route)) return "api_v1_analytics";
+  if (/^\/api\/v1\/websites(?:\/|$)/.test(route)) return "api_v1_websites";
+  if (/^\/api\/v1\/internal\/audit-worker(?:\/|$)/.test(route)) return "api_v1_internal_audit_worker";
+  if (/^\/api\/v1\/auth(?:\/|$)/.test(route)) return "api_v1_auth";
+  if (/^\/api\/v1\/integrations(?:\/|$)/.test(route)) return "api_v1_integrations";
+  return "other_api_route";
 }
 
 function safeHttpMethod(method: string): string {
@@ -27,6 +39,38 @@ function safeReferenceErrorMessage(message: string): string {
   if (temporalDeadZone) return `Cannot access '${temporalDeadZone[1]}' before initialization`;
 
   return "ReferenceError message withheld";
+}
+
+function safeMongoCode(value: unknown): string | number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value)) return value;
+  return undefined;
+}
+
+function safeMongoCodeName(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : undefined;
+}
+
+function safeMongoErrorMessage(message: string, code: string | number | undefined, codeName: string | undefined): string {
+  if (code === 11000 || codeName === "DuplicateKey" || /duplicate key|E11000/i.test(message)) {
+    return "MongoDB duplicate-key constraint conflict.";
+  }
+  if (codeName === "WriteConflict" || /write conflict/i.test(message)) {
+    return "MongoDB write conflict.";
+  }
+  if (codeName === "TransactionNotSupported" || /transaction numbers are only allowed|transactions are not supported|replica set/i.test(message)) {
+    return "MongoDB transactions are unavailable on this deployment.";
+  }
+  if (codeName === "IndexNotFound" || /index not found/i.test(message)) {
+    return "MongoDB required index is unavailable.";
+  }
+  if (codeName === "Unauthorized" || /not authorized|authentication failed/i.test(message)) {
+    return "MongoDB authorization failed.";
+  }
+  if (codeName === "MaxTimeMSExpired" || /timed out|maxTimeMS/i.test(message)) {
+    return "MongoDB operation timed out.";
+  }
+  return "MongoDB server error message withheld.";
 }
 
 /**
@@ -66,6 +110,22 @@ export function buildProductionErrorMetadata(
   if (error instanceof ReferenceError) {
     metadata.errorMessage = safeReferenceErrorMessage(error.message);
     metadata.stackFrames = safeOwnStackFrames(error.stack);
+  }
+
+  if (metadata.errorName === "MongoServerError") {
+    const mongoError = error as { code?: unknown; codeName?: unknown; message?: unknown; stack?: unknown };
+    const mongoCode = safeMongoCode(mongoError.code);
+    const mongoCodeName = safeMongoCodeName(mongoError.codeName);
+    if (mongoCode !== undefined) metadata.mongoCode = mongoCode;
+    if (mongoCodeName) metadata.mongoCodeName = mongoCodeName;
+    metadata.errorMessage = safeMongoErrorMessage(
+      typeof mongoError.message === "string" ? mongoError.message : "",
+      mongoCode,
+      mongoCodeName
+    );
+    const operationPhase = getMongoOperationPhase(error);
+    if (operationPhase) metadata.operationPhase = operationPhase;
+    metadata.stackFrames = safeOwnStackFrames(typeof mongoError.stack === "string" ? mongoError.stack : undefined);
   }
 
   return metadata;

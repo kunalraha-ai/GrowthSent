@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { ClientSession, Db, MongoClient } from "mongodb";
 import type { CrawlJobDocument, ScanStatus } from "../db/types.js";
+import { withMongoOperationPhase } from "../db/mongo-diagnostics.js";
 import { registrableDomain } from "../domain/registrable.js";
 
 const ADMISSION_COLLECTION = "crawlAdmission";
@@ -189,12 +190,12 @@ export async function admitAndInsertCrawlJob(
   const targetKey = createCrawlAdmissionTargetKey(job.url);
   const claimKey = activeClaimDocumentId(actorKey, targetKey);
 
-  return client.withSession(async (session) => session.withTransaction(async () => {
+  return withMongoOperationPhase("audit_admission_transaction", () => client.withSession(async (session) => session.withTransaction(async () => {
     const claims = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
     const jobs = db.collection<CrawlJobDocument>("crawlJobs");
 
     try {
-      await claims.insertOne({
+      await withMongoOperationPhase("audit_admission_active_claim_insert", () => claims.insertOne({
         _id: claimKey,
         kind: "active",
         jobId: job.jobId,
@@ -202,12 +203,16 @@ export async function admitAndInsertCrawlJob(
         createdAt: now,
         updatedAt: now,
         expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
-      }, { session });
+      }, { session }));
     } catch (error) {
       if (!isDuplicateKey(error)) throw error;
-      const existing = await claims.findOne({ _id: claimKey }, { session, projection: { jobId: 1 } });
+      const existing = await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
+        claims.findOne({ _id: claimKey }, { session, projection: { jobId: 1 } })
+      );
       const existingJob = existing?.jobId
-        ? await jobs.findOne({ jobId: existing.jobId }, { session, projection: { jobId: 1, status: 1 } })
+        ? await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
+            jobs.findOne({ jobId: existing.jobId }, { session, projection: { jobId: 1, status: 1 } })
+          )
         : null;
       if (existingJob && isActiveCrawlStatus(existingJob.status)) {
         if (actorKind === "authenticated") return { reusedJobId: existingJob.jobId, reusedStatus: existingJob.status, queueSlotClaimed: false };
@@ -216,24 +221,28 @@ export async function admitAndInsertCrawlJob(
 
       // Recover a claim left by an interrupted admission transaction or an old
       // terminal job before attempting the bounded request again.
-      await claims.deleteOne({ _id: claimKey }, { session });
-      await claims.insertOne({
-        _id: claimKey,
-        kind: "active",
-        jobId: job.jobId,
-        actorKind,
-        createdAt: now,
-        updatedAt: now,
-        expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
-      }, { session });
+      await withMongoOperationPhase("audit_admission_active_claim_recovery", async () => {
+        await claims.deleteOne({ _id: claimKey }, { session });
+        await claims.insertOne({
+          _id: claimKey,
+          kind: "active",
+          jobId: job.jobId,
+          actorKind,
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
+        }, { session });
+      });
     }
 
-    await claimQuota(db, session, actorKey, actorKind, now);
-    await claimTargetCooldown(db, session, targetKey, now);
-    await claimQueueSlot(db, session, now);
-    await jobs.insertOne({ ...job, admissionQueueSlot: true, admissionClaimKey: claimKey }, { session });
+    await withMongoOperationPhase("audit_admission_quota_update", () => claimQuota(db, session, actorKey, actorKind, now));
+    await withMongoOperationPhase("audit_admission_target_cooldown_update", () => claimTargetCooldown(db, session, targetKey, now));
+    await withMongoOperationPhase("audit_admission_queue_update", () => claimQueueSlot(db, session, now));
+    await withMongoOperationPhase("audit_admission_job_enqueue", () =>
+      jobs.insertOne({ ...job, admissionQueueSlot: true, admissionClaimKey: claimKey }, { session })
+    );
     return { queueSlotClaimed: true, activeClaimKey: claimKey };
-  }));
+  })));
 }
 
 /** Releases durable admission state only after a terminal job transition. */

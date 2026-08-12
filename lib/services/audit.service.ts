@@ -2,6 +2,7 @@ import { ObjectId } from "bson";
 import type { ClientSession, Db, Filter } from "mongodb";
 import { randomBytes } from "node:crypto";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { withMongoOperationPhase } from "../db/mongo-diagnostics.js";
 import { validateUrlForScan } from "../security/ssrf.js";
 import { createOpaqueAccessToken, hashOpaqueAccessToken, verifyOpaqueAccessToken } from "../security/access-token.js";
 import { createCommonCrawlRequesterKey } from "../security/common-crawl-requester.js";
@@ -148,7 +149,7 @@ export class AuditService {
       throw new Error(ssrf.reason || "Invalid URL for scan.");
     }
 
-    const { db, client } = await connectToDatabase();
+    const { db, client } = await withMongoOperationPhase("audit_database_connect", () => connectToDatabase());
     const websiteObjectId = websiteId ? safeObjectId(websiteId) : undefined;
 
     // Relationship creation is authorized here as well as at the route. This
@@ -156,10 +157,12 @@ export class AuditService {
     // website by supplying its ObjectId.
     if (websiteObjectId) {
       if (!clerkUserId) throw new Error("Authentication is required to audit a saved website.");
-      const website = await db.collection("websites").findOne({
-        _id: websiteObjectId,
-        userId: safeObjectId(clerkUserId),
-      });
+      const website = await withMongoOperationPhase("audit_website_ownership_query", () =>
+        db.collection("websites").findOne({
+          _id: websiteObjectId,
+          userId: safeObjectId(clerkUserId),
+        })
+      );
       if (!website) throw new Error("Website not found.");
     }
 
@@ -187,7 +190,9 @@ export class AuditService {
       createdAt: now,
     };
 
-    const admission = await admitAndInsertCrawlJob(client, db, jobDoc, requestIp);
+    const admission = await withMongoOperationPhase("audit_admission_transaction", () =>
+      admitAndInsertCrawlJob(client, db, jobDoc, requestIp)
+    );
     if (admission.reusedJobId) {
       return { jobId: admission.reusedJobId, status: admission.reusedStatus || "queued", reused: true };
     }

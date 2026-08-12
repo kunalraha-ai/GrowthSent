@@ -39,6 +39,7 @@ import {
   completeGithubLogin,
 } from "../auth/social.js";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
+import { withMongoOperationPhase } from "../db/mongo-diagnostics.js";
 import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
 import { BacklinkProtectionError, enforceBacklinkRequestQuota } from "../backlinks/shared-protection.js";
 import { logProductionApiHandlerError } from "./production-error-log.js";
@@ -263,7 +264,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
     const authStartedMs = Date.now();
     let user;
     try {
-      user = sessionToken ? await validateSession(sessionToken) : null;
+      user = sessionToken ? await withMongoOperationPhase("session_validation", () => validateSession(sessionToken)) : null;
       if (isWebsiteCollectionRequest) {
         logWebsiteRouteTiming("auth", authStartedAt, authStartedMs, "completed", {
           sessionCookiePresent: Boolean(sessionToken),
@@ -549,7 +550,9 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         if (!user) {
           return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
         }
-        const website = await getWebsiteById(websiteId, user._id!.toString());
+        const website = await withMongoOperationPhase("audit_website_ownership_query", () =>
+          getWebsiteById(websiteId, user._id!.toString())
+        );
         if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
       }
       let job;

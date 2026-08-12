@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { parseBoundedRequestBody } from "../lib/api/request-body.js";
 import { initializeDatabaseIndexes } from "../lib/db/indexes.js";
+import { withMongoOperationPhase } from "../lib/db/mongo-diagnostics.js";
 import { resolveTrustedClientIp } from "../lib/api/client-ip.js";
 import { logProductionApiHandlerError } from "../lib/api/production-error-log.js";
 
@@ -38,7 +39,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // This direct Vercel function is normally bypassed by the filesystem route,
     // but keep the operator-only index gate consistent if rewrites are changed.
     if (process.env.PROVISION_MONGODB_INDEXES === "true") {
-      await ensureIndexes();
+      await withMongoOperationPhase("database_index_provision", () => ensureIndexes());
     }
 
     const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);

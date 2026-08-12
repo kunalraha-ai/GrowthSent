@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleApiRequest } from "../../lib/api/router.js";
 import { initializeDatabaseIndexes } from "../../lib/db/indexes.js";
+import { withMongoOperationPhase } from "../../lib/db/mongo-diagnostics.js";
 import { parseBoundedRequestBody } from "../../lib/api/request-body.js";
 import { resolveTrustedClientIp } from "../../lib/api/client-ip.js";
 import { logProductionApiHandlerError } from "../../lib/api/production-error-log.js";
@@ -39,7 +40,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     // Index provisioning is a deliberate operator action, never a side effect
     // of normal request traffic. Unique definitions remain duplicate-audited.
     if (process.env.PROVISION_MONGODB_INDEXES === "true") {
-      await ensureIndexes();
+      await withMongoOperationPhase("database_index_provision", () => ensureIndexes());
     }
 
     const urlObj = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);

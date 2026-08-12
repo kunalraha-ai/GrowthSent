@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { connectToDatabase } from "../db/mongodb.js";
+import { withMongoOperationPhase } from "../db/mongo-diagnostics.js";
 import type { BacklinkRow } from "./service.js";
 
 const COLLECTION = "backlinkQueryProtection";
@@ -45,7 +46,7 @@ export function backlinkSharedCacheKey(domain: string, page: number, pageSize: n
  * during the first insert as a false quota denial.
  */
 export async function enforceBacklinkRequestQuota(userId: string): Promise<void> {
-  const { db } = await connectToDatabase();
+  const { db } = await withMongoOperationPhase("backlink_protection_database_connect", () => connectToDatabase());
   const now = new Date();
   const window = Math.floor(now.getTime() / QUOTA_WINDOW_MS);
   const id = `quota:${userId}:${window}`;
@@ -66,10 +67,10 @@ export async function enforceBacklinkRequestQuota(userId: string): Promise<void>
 
   let result;
   try {
-    result = await increment(true);
+    result = await withMongoOperationPhase("backlink_quota_update", () => increment(true));
   } catch (error) {
     if (!duplicateKey(error)) throw error;
-    result = await increment(false);
+    result = await withMongoOperationPhase("backlink_quota_update", () => increment(false));
   }
   if (result.matchedCount === 0 && result.upsertedCount === 0) {
     throw new BacklinkProtectionError("BACKLINK_RATE_LIMIT", "Too many backlink preview requests. Please wait a minute and try again.");
@@ -90,16 +91,18 @@ export async function getSharedBacklinkRows(
   cacheKey: string,
   load: () => Promise<BacklinkRow[]>
 ): Promise<SharedBacklinkRowsResult> {
-  const { db } = await connectToDatabase();
+  const { db } = await withMongoOperationPhase("backlink_protection_database_connect", () => connectToDatabase());
   const collection = db.collection<ProtectionDocument>(COLLECTION);
   const now = new Date();
-  const ready = await collection.findOne({ _id: cacheKey, kind: "cache", state: "ready", expiresAt: { $gt: now } });
+  const ready = await withMongoOperationPhase("backlink_cache_read", () =>
+    collection.findOne({ _id: cacheKey, kind: "cache", state: "ready", expiresAt: { $gt: now } })
+  );
   if (ready?.rows) return { rows: ready.rows, outcome: "cache_hit" };
 
   const leaseId = randomUUID();
   let claimed = false;
   try {
-    const result = await collection.findOneAndUpdate(
+    const result = await withMongoOperationPhase("backlink_cache_lease_claim", () => collection.findOneAndUpdate(
       {
         _id: cacheKey,
         $or: [
@@ -120,7 +123,7 @@ export async function getSharedBacklinkRows(
         $unset: { rows: "" },
       },
       { upsert: true, returnDocument: "after" }
-    );
+    ));
     claimed = result?.leaseId === leaseId;
   } catch (error) {
     if (!duplicateKey(error)) throw error;
@@ -128,7 +131,9 @@ export async function getSharedBacklinkRows(
 
   if (!claimed) {
     await new Promise<void>((resolve) => setTimeout(resolve, COALESCED_WAIT_MS));
-    const completed = await collection.findOne({ _id: cacheKey, kind: "cache", state: "ready", expiresAt: { $gt: new Date() } });
+    const completed = await withMongoOperationPhase("backlink_cache_read", () =>
+      collection.findOne({ _id: cacheKey, kind: "cache", state: "ready", expiresAt: { $gt: new Date() } })
+    );
     return completed?.rows
       ? { rows: completed.rows, outcome: "cache_hit" }
       : { rows: null, outcome: "coalesced_pending" };
@@ -136,7 +141,7 @@ export async function getSharedBacklinkRows(
 
   try {
     const rows = await load();
-    await collection.updateOne(
+    await withMongoOperationPhase("backlink_cache_publish", () => collection.updateOne(
       { _id: cacheKey, leaseId },
       {
         $set: {
@@ -147,10 +152,10 @@ export async function getSharedBacklinkRows(
         },
         $unset: { leaseId: "", leaseExpiresAt: "" },
       }
-    );
+    ));
     return { rows, outcome: "loaded" };
   } catch (error) {
-    await collection.deleteOne({ _id: cacheKey, leaseId }).catch(() => undefined);
+    await withMongoOperationPhase("backlink_cache_release", () => collection.deleteOne({ _id: cacheKey, leaseId })).catch(() => undefined);
     throw error;
   }
 }
