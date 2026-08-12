@@ -1,4 +1,4 @@
-import { fetchUrl, FetchResult } from "./fetcher.js";
+import { fetchUrl, FetchResult, type FetchFailureCategory } from "./fetcher.js";
 import { fetchAndParseRobotsTxt, isPathDisallowedByRobots, RobotsTxtResult } from "./robots.js";
 import { fetchAndParseSitemap, SitemapParseResult } from "./sitemap.js";
 import { parsePageHtml, ParsedPageData } from "./parser.js";
@@ -17,6 +17,8 @@ export interface CrawledPageResult {
   responseTimeMs: number;
   contentType: string;
   pageSizeBytes: number;
+  /** Safe fetch failure classification; the raw transport error is never exposed. */
+  fetchFailureCategory?: FetchFailureCategory;
   error?: string;
   parsedData?: ParsedPageData;
   hasRobotsTxtDisallow: boolean;
@@ -47,6 +49,33 @@ export interface CrawlExecutionResult {
   capabilities?: CrawlProviderCapabilities;
   /** Redacted Common Crawl measurements, retained through the normal scan record. */
   commonCrawlMetrics?: CommonCrawlMetrics;
+}
+
+export interface RootPageEvaluation {
+  evaluable: boolean;
+  statusCode?: number;
+  failureCategory?: FetchFailureCategory | "missing_root_result" | "non_html_response" | "unexpected_http_status";
+}
+
+/**
+ * A technical audit can only score the site when the requested root page was
+ * actually retrieved as HTML. This is deliberately stricter than a generic
+ * HTTP success: a response body that was rejected or could not be parsed is
+ * not evidence for metadata or indexability conclusions.
+ */
+export function evaluateRootPage(crawl: CrawlExecutionResult): RootPageEvaluation {
+  const root = crawl.pages.find((page) => page.url === crawl.startUrl);
+  if (!root) return { evaluable: false, failureCategory: "missing_root_result" };
+  if (root.fetchFailureCategory) {
+    return { evaluable: false, statusCode: root.statusCode, failureCategory: root.fetchFailureCategory };
+  }
+  if (root.statusCode !== 200) {
+    return { evaluable: false, statusCode: root.statusCode, failureCategory: "unexpected_http_status" };
+  }
+  if (!root.contentType.toLowerCase().includes("html") || !root.parsedData) {
+    return { evaluable: false, statusCode: root.statusCode, failureCategory: "non_html_response" };
+  }
+  return { evaluable: true, statusCode: root.statusCode };
 }
 
 export async function runCrawl(
@@ -138,6 +167,7 @@ export async function runCrawl(
             responseTimeMs: fetchRes.responseTimeMs,
             contentType: fetchRes.contentType,
             pageSizeBytes: fetchRes.pageSizeBytes,
+            fetchFailureCategory: fetchRes.failureCategory,
             error: fetchRes.error,
             parsedData,
             hasRobotsTxtDisallow: false,

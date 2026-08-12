@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Readable } from "node:stream";
-import { fetchUrl, readBodyWithLimit } from "../lib/crawler/fetcher";
+import { createPinnedLookup, fetchUrl, readBodyWithLimit } from "../lib/crawler/fetcher";
 import { parsePageHtml } from "../lib/crawler/parser";
-import type { CrawlExecutionResult } from "../lib/crawler/crawler";
+import { evaluateRootPage, type CrawlExecutionResult } from "../lib/crawler/crawler";
 import { analyzeCrawlResults } from "../lib/seo/engine";
 import { isBlockedIp, validateUrlForScan } from "../lib/security/ssrf";
 
@@ -41,6 +41,44 @@ test("fetchUrl rejects a private target before opening a request", async () => {
 
   assert.equal(result.statusCode, 0);
   assert.equal(result.error, "URL was blocked by the crawler safety policy.");
+  assert.equal(result.failureCategory, "blocked_by_safety_policy");
+});
+
+test("the pinned DNS lookup supplies a real address to Node automatic family selection", async () => {
+  const lookup = createPinnedLookup({ address: "93.184.216.34", family: 4 });
+  const addresses = await new Promise<unknown>((resolve, reject) => {
+    lookup("example.com", { all: true }, (error, address) => {
+      if (error) reject(error);
+      else resolve(address);
+    });
+  });
+
+  assert.deepEqual(addresses, [{ address: "93.184.216.34", family: 4 }]);
+});
+
+test("a failed root fetch is not usable as technical SEO evidence", () => {
+  const crawl: CrawlExecutionResult = {
+    startUrl: "https://example.com/",
+    hostname: "example.com",
+    durationMs: 2,
+    totalPagesCrawled: 1,
+    bytesDownloaded: 0,
+    statusCodesCount: { "0": 1 },
+    robots: { exists: false, accessible: false, statusCode: 0, sitemaps: [], disallowedPaths: [], allowedPaths: [], rawText: "" },
+    sitemap: { exists: false, accessible: false, statusCode: 0, urls: [], sitemapIndexUrls: [], errors: [] },
+    pages: [{
+      url: "https://example.com/",
+      normalizedUrl: "https://example.com/",
+      statusCode: 0,
+      responseTimeMs: 2,
+      contentType: "",
+      pageSizeBytes: 0,
+      fetchFailureCategory: "network",
+      hasRobotsTxtDisallow: false,
+    }],
+  };
+
+  assert.deepEqual(evaluateRootPage(crawl), { evaluable: false, statusCode: 0, failureCategory: "network" });
 });
 
 test("response buffering stops once the configured byte limit is crossed", async () => {

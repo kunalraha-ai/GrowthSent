@@ -20,7 +20,7 @@ import {
 } from "../crawler/common-crawl-admission.js";
 import { commonCrawlMetricsFromError } from "../crawler/providers/common-crawl.js";
 import { admitAndInsertCrawlJob, releaseCrawlAdmission } from "../jobs/crawl-admission.js";
-import type { CrawlExecutionResult } from "../crawler/crawler.js";
+import { evaluateRootPage, type CrawlExecutionResult, type RootPageEvaluation } from "../crawler/crawler.js";
 import { analyzeCrawlResults } from "../seo/engine.js";
 import {
   CrawlJobDocument,
@@ -54,6 +54,12 @@ interface ClaimedCrawlJob extends CrawlJobDocument {
 class LeaseLostError extends Error {
   constructor() {
     super("The crawl lease is no longer held by this worker.");
+  }
+}
+
+class RootPageNotEvaluableError extends Error {
+  constructor(readonly failureCategory: NonNullable<RootPageEvaluation["failureCategory"]>) {
+    super("The requested root page could not be fetched or evaluated.");
   }
 }
 
@@ -238,7 +244,11 @@ export class AuditService {
       pagesCrawled: job.pagesCrawled,
       // Never return persisted errors: historical rows can contain raw
       // target-controlled URLs or internal driver/provider details.
-      error: job.status === "failed" ? "Crawl could not be completed." : undefined,
+      error: job.status === "failed"
+        ? job.failureCategory
+          ? "Crawl failed: the root page could not be evaluated."
+          : "Crawl could not be completed."
+        : undefined,
     };
   }
 
@@ -414,6 +424,9 @@ export class AuditService {
     };
     if (retry) setFields.nextAttemptAt = nextRetryAt(job.attempts);
     else setFields.completedAt = new Date();
+    if (error instanceof RootPageNotEvaluableError) {
+      setFields.failureCategory = error.failureCategory;
+    }
 
     const commonCrawl = commonCrawlMetricsFromError(error);
     if (commonCrawl) {
@@ -433,7 +446,12 @@ export class AuditService {
       { _id: job._id, leaseId: job.leaseId },
       {
         $set: setFields,
-        $unset: { leaseId: "", leaseExpiresAt: "", ...(retry ? { completedAt: "" } : {}) },
+        $unset: {
+          leaseId: "",
+          leaseExpiresAt: "",
+          ...(retry ? { completedAt: "" } : {}),
+          ...(error instanceof RootPageNotEvaluableError ? {} : { failureCategory: "" }),
+        },
       }
     );
     if (!retry && updated.matchedCount === 1) {
@@ -637,7 +655,7 @@ export class AuditService {
                 totalJobDurationMs: Math.max(0, Date.now() - jobStartedAt),
               },
             },
-            $unset: { leaseId: "", leaseExpiresAt: "", nextAttemptAt: "", error: "" },
+            $unset: { leaseId: "", leaseExpiresAt: "", nextAttemptAt: "", error: "", failureCategory: "" },
           },
           { session }
         );
@@ -721,6 +739,24 @@ export class AuditService {
         });
       }
 
+      const rootEvaluation = evaluateRootPage(crawlResult);
+      console.info("[AuditService] Crawl fetch summary.", {
+        provider: crawlProvider,
+        attemptedPages: crawlResult.pages.length,
+        successfulHtmlPages: crawlResult.pages.filter(
+          (page) => page.statusCode === 200 && !page.fetchFailureCategory && Boolean(page.parsedData)
+        ).length,
+        rootStatusCode: rootEvaluation.statusCode ?? null,
+        rootFailureCategory: rootEvaluation.failureCategory ?? null,
+        robotsHttpStatus: crawlResult.robots.statusCode,
+        sitemapHttpStatus: crawlResult.sitemap.statusCode,
+        sitemapMissingConfirmed: crawlResult.sitemap.missingConfirmed === true,
+        durationMs: crawlResult.durationMs,
+      });
+      if (crawlProvider === "live" && !rootEvaluation.evaluable) {
+        throw new RootPageNotEvaluableError(rootEvaluation.failureCategory || "missing_root_result");
+      }
+
       const analysing = await db.collection<CrawlJobDocument>("crawlJobs").updateOne(
         { _id: job._id, leaseId: job.leaseId, leaseExpiresAt: { $gt: new Date() } },
         { $set: { status: "analysing", progressPercent: 70, pagesCrawled: crawlResult.pages.length } }
@@ -769,6 +805,7 @@ export class AuditService {
         responseTimeMs: page.responseTimeMs,
         contentType: page.contentType,
         pageSizeBytes: page.pageSizeBytes,
+        fetchFailureCategory: page.fetchFailureCategory,
         title: page.parsedData?.title,
         metaDescription: page.parsedData?.metaDescription,
         headings: page.parsedData?.headings || { h1: [], h2Count: 0, h3Count: 0 },

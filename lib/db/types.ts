@@ -1,5 +1,6 @@
 import { ObjectId } from "mongodb";
 import type { CommonCrawlMetrics, CommonCrawlPageProvenance, CrawlDataProviderName } from "../crawler/types.js";
+import type { FetchFailureCategory } from "../crawler/fetcher.js";
 
 export type Severity = "critical" | "high" | "medium" | "low" | "info";
 export type IssueCategory =
@@ -70,6 +71,8 @@ export interface CrawlJobDocument {
   progressPercent: number;
   pagesCrawled: number;
   error?: string;
+  /** Safe, redacted reason for the most recent failed crawl attempt. */
+  failureCategory?: string;
   scanId?: ObjectId;
   /** Durable-worker lease fields. They are never trusted without an atomic claim. */
   leaseId?: string;
@@ -170,6 +173,8 @@ export interface PageDocument {
   responseTimeMs: number;
   contentType?: string;
   pageSizeBytes: number;
+  /** Safe transport/result classification. Raw transport errors are not persisted here. */
+  fetchFailureCategory?: FetchFailureCategory;
   title?: string;
   metaDescription?: string;
   headings: {

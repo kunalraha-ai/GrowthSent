@@ -1,5 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { TableSkeleton } from "./SkeletonLoaders";
+import { isSuccessfulAuditPage } from "./audit-evidence";
+
+export function pageIndexingLabel(page: any): string {
+  if (!isSuccessfulAuditPage(page)) return "Could not evaluate";
+  return page.isNoindex ? "Noindex" : "Indexable";
+}
 
 interface PagesViewProps {
   activeSite?: string;
@@ -66,10 +72,10 @@ export function PagesView({ activeSite, isScanning = false, scanResult }: PagesV
                 {visiblePages.map((page) => (
                   <tr key={page._id?.toString?.() || page.normalizedUrl || page.url}>
                     <td><a href={page.url} target="_blank" rel="noreferrer" className="url-link-text">{page.url}</a></td>
-                    <td><span className={page.statusCode >= 400 ? "badge-status fail" : "badge-status pass"}>{page.statusCode}</span></td>
+                    <td><span className={isSuccessfulAuditPage(page) ? "badge-status pass" : "badge-status fail"}>{page.statusCode || "Not fetched"}</span></td>
                     <td>{page.title || "No title"}</td>
                     <td>{page.responseTimeMs ?? 0} ms</td>
-                    <td>{page.isNoindex ? "Noindex" : "Indexable"}</td>
+                    <td>{pageIndexingLabel(page)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -5,6 +5,8 @@ export interface SitemapParseResult {
   exists: boolean;
   accessible: boolean;
   statusCode: number;
+  /** True only when every default sitemap location returned an actual HTTP 404. */
+  missingConfirmed?: boolean;
   urls: string[];
   sitemapIndexUrls: string[];
   errors: string[];
@@ -34,6 +36,7 @@ export async function fetchAndParseSitemap(
   const errors: string[] = [];
   let foundAny = false;
   let lastStatusCode = 0;
+  const candidateStatusCodes: number[] = [];
 
   for (const sitemapUrl of candidateUrls) {
     if (!isSitemapUrlWithinAuditedScope(originUrl, sitemapUrl)) {
@@ -42,6 +45,7 @@ export async function fetchAndParseSitemap(
     }
     const fetchRes = await fetchUrl(sitemapUrl, { timeoutMs: 6000 });
     lastStatusCode = fetchRes.statusCode;
+    candidateStatusCodes.push(fetchRes.statusCode);
 
     if (fetchRes.statusCode !== 200 || !fetchRes.body) {
       continue;
@@ -89,6 +93,13 @@ export async function fetchAndParseSitemap(
     exists: foundAny,
     accessible: foundAny,
     statusCode: lastStatusCode,
+    // A fetch failure, policy rejection, redirect, or malformed response is
+    // not evidence that a sitemap is absent. Only the two standard locations
+    // are eligible for this conclusion; a robots-declared location can be
+    // unavailable without disproving other sitemap locations.
+    missingConfirmed: customSitemapUrls.length === 0
+      && candidateStatusCodes.length > 0
+      && candidateStatusCodes.every((statusCode) => statusCode === 404),
     urls: Array.from(new Set(discoveredUrls)),
     sitemapIndexUrls: Array.from(new Set(sitemapIndexUrls)),
     errors,

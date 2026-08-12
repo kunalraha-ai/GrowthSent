@@ -84,6 +84,14 @@ function testSeoEngine() {
   assert.ok(analysis.scoring.score < 100, "Score should drop when issues are present");
   assert.strictEqual(analysis.scoring.scoreVersion, "1.0.0");
 
+  const uncertainDiscovery = analyzeCrawlResults({
+    ...mockCrawl,
+    robots: { ...mockCrawl.robots, exists: false, accessible: false, statusCode: 0 },
+    sitemap: { ...mockCrawl.sitemap, exists: false, accessible: false, statusCode: 0, missingConfirmed: false },
+  });
+  assert.equal(uncertainDiscovery.issues.some((issue) => issue.ruleId === "robots-txt-missing"), false);
+  assert.equal(uncertainDiscovery.issues.some((issue) => issue.ruleId === "sitemap-missing"), false);
+
   console.log(`✔ SEO Engine Tests Passed! Calculated Score: ${analysis.scoring.score}% (${analysis.issues.length} issues detected)`);
 }
 

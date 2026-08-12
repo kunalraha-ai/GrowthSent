@@ -20,8 +20,19 @@ export interface FetchResult {
   body: string;
   pageSizeBytes: number;
   redirectChain: string[];
+  /** Safe, non-target-specific classification retained for audit diagnostics. */
+  failureCategory?: FetchFailureCategory;
   error?: string;
 }
+
+export type FetchFailureCategory =
+  | "blocked_by_safety_policy"
+  | "invalid_redirect"
+  | "response_body_unavailable"
+  | "response_size_limit"
+  | "timeout"
+  | "network"
+  | "redirect_limit";
 
 export interface BoundedBodyResult {
   body?: Buffer;
@@ -143,6 +154,20 @@ async function readHttpResponse(response: IncomingMessage, maxSizeBytes: number)
   }
 }
 
+export function createPinnedLookup(resolvedAddress: ResolvedAddress): LookupFunction {
+  return (_requestedHostname, options, callback) => {
+    // Node 20+ may request every address for automatic family selection.
+    // This request is intentionally pinned to exactly one address that passed
+    // SSRF validation, so return that address in the callback shape Node
+    // requested instead of letting it see an undefined candidate.
+    if (options.all) {
+      callback(null, [{ address: resolvedAddress.address, family: resolvedAddress.family }]);
+      return;
+    }
+    callback(null, resolvedAddress.address, resolvedAddress.family);
+  };
+}
+
 function requestPinnedUrl(
   url: string,
   hostname: string,
@@ -151,9 +176,7 @@ function requestPinnedUrl(
   signal: AbortSignal
 ): Promise<IncomingMessage> {
   const parsed = new URL(url);
-  const lookup: LookupFunction = (_requestedHostname, _options, callback) => {
-    callback(null, resolvedAddress.address, resolvedAddress.family);
-  };
+  const lookup = createPinnedLookup(resolvedAddress);
 
   const requestOptions: ClientRequestArgs = {
     protocol: parsed.protocol,
@@ -210,6 +233,7 @@ export async function fetchUrl(
         body: "",
         pageSizeBytes: 0,
         redirectChain,
+        failureCategory: "blocked_by_safety_policy",
         error: "URL was blocked by the crawler safety policy.",
       };
     }
@@ -247,6 +271,7 @@ export async function fetchUrl(
             body: "",
             pageSizeBytes: 0,
             redirectChain,
+            failureCategory: "invalid_redirect",
             error: "Redirect status returned without a Location header.",
           };
         }
@@ -263,6 +288,7 @@ export async function fetchUrl(
               body: "",
               pageSizeBytes: 0,
               redirectChain,
+              failureCategory: "invalid_redirect",
               error: "Redirect URL contains credentials.",
             };
           }
@@ -277,6 +303,7 @@ export async function fetchUrl(
             body: "",
             pageSizeBytes: 0,
             redirectChain,
+            failureCategory: "invalid_redirect",
             error: "Redirect returned an invalid Location header.",
           };
         }
@@ -297,6 +324,7 @@ export async function fetchUrl(
           body: "",
           pageSizeBytes: 0,
           redirectChain,
+          failureCategory: "response_body_unavailable",
           error: bodyResult.error,
         };
       }
@@ -311,6 +339,7 @@ export async function fetchUrl(
           body: "",
           pageSizeBytes: bodyResult.pageSizeBytes,
           redirectChain,
+          failureCategory: "response_size_limit",
           error: `Response size exceeds limit of ${maxSizeBytes} bytes.`,
         };
       }
@@ -337,6 +366,7 @@ export async function fetchUrl(
         body: "",
         pageSizeBytes: 0,
         redirectChain,
+        failureCategory: wasAborted ? "timeout" : "network",
         error: wasAborted ? "Request timed out." : "Network request failed.",
       };
     } finally {
@@ -353,6 +383,7 @@ export async function fetchUrl(
     body: "",
     pageSizeBytes: 0,
     redirectChain,
+    failureCategory: "redirect_limit",
     error: `Exceeded maximum redirect limit of ${maxRedirects}.`,
   };
 }

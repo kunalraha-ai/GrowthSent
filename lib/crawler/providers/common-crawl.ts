@@ -753,6 +753,7 @@ function emptySitemapResult() {
     exists: false,
     accessible: false,
     statusCode: 0,
+    missingConfirmed: false,
     urls: [],
     sitemapIndexUrls: [],
     errors: [],

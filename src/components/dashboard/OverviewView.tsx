@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
 import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
+import { isAuditResultEvaluable } from "./audit-evidence";
 
 interface OverviewViewProps {
   activeSite: string;
@@ -32,6 +33,7 @@ export function OverviewView({
   const scan = scanResult?.scan;
   const issues = scanResult?.issues || [];
   const summary = scan?.summaryMetrics;
+  const auditIsEvaluable = isAuditResultEvaluable(scanResult);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -59,13 +61,17 @@ export function OverviewView({
       ) : (
         <>
           <div className="metrics-grid" style={{ marginTop: "20px" }}>
-            <div className="metric-card"><p className="metric-label">SEO Health Score</p><b className="metric-val">{scan.seoScore ?? 0}%</b><span className="metric-sub text-muted">{scan.crawlStats?.totalPagesCrawled ?? 0} pages analyzed</span></div>
+            <div className="metric-card"><p className="metric-label">SEO Health Score</p><b className="metric-val">{auditIsEvaluable ? `${scan.seoScore ?? 0}%` : "—"}</b><span className="metric-sub text-muted">{auditIsEvaluable ? `${scan.crawlStats?.totalPagesCrawled ?? 0} pages analyzed` : "Could not evaluate the root page"}</span></div>
             <div className="metric-card"><p className="metric-label">Active Issues</p><b className="metric-val warn-text">{issues.length}</b><span className="metric-sub text-muted">From the latest audit</span></div>
             <div className="metric-card"><p className="metric-label">Critical Issues</p><b className="metric-val">{summary?.criticalIssues ?? 0}</b><span className="metric-sub text-muted">Needs immediate attention</span></div>
             <div className="metric-card"><p className="metric-label">Search Console</p><b className="metric-val">{isGscConnected ? "Connected" : "—"}</b><span className="metric-sub text-muted">{isGscConnected ? "Live data available" : "Not connected"}</span></div>
           </div>
           <div className="overview-two-col" style={{ marginTop: "24px" }}>
-            <div className="console-section-card"><div className="card-header flex-between"><h4 className="card-title">Needs Your Attention</h4><button className="text-btn" onClick={() => onNavigateTab("issues")}>View all issues →</button></div>{issues.length ? <div className="attention-list">{issues.slice(0, 5).map((issue) => <div key={issue._id?.toString?.() || `${issue.ruleId}-${issue.affectedUrl}`} className={`attention-item ${issue.severity}`}><div className="item-badge-wrap"><SeverityBadge level={issue.severity || "medium"} /></div><div className="item-content"><strong>{issue.title}</strong><p>{issue.affectedUrl}</p></div></div>)}</div> : <p className="card-sub" style={{ padding: "20px" }}>No issues were returned by this audit.</p>}</div>
+            {auditIsEvaluable ? (
+              <div className="console-section-card"><div className="card-header flex-between"><h4 className="card-title">Needs Your Attention</h4><button className="text-btn" onClick={() => onNavigateTab("issues")}>View all issues →</button></div>{issues.length ? <div className="attention-list">{issues.slice(0, 5).map((issue) => <div key={issue._id?.toString?.() || `${issue.ruleId}-${issue.affectedUrl}`} className={`attention-item ${issue.severity}`}><div className="item-badge-wrap"><SeverityBadge level={issue.severity || "medium"} /></div><div className="item-content"><strong>{issue.title}</strong><p>{issue.affectedUrl}</p></div></div>)}</div> : <p className="card-sub" style={{ padding: "20px" }}>No issues were returned by this audit.</p>}</div>
+            ) : (
+              <div className="console-section-card"><div className="card-header"><h4 className="card-title">Crawl Could Not Be Evaluated</h4></div><p className="card-sub" style={{ padding: "20px" }}>The root page was not retrieved as a successful HTML response. No SEO score or pass result is available.</p></div>
+            )}
             <div className="console-section-card" style={{ display: "flex", flexDirection: "column" }}>
               <div className="card-header"><h4 className="card-title">Search Performance</h4></div>
               <div style={{ padding: "36px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", flex: 1, minHeight: "220px" }}>

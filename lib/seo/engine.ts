@@ -14,7 +14,10 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
   const supportsResponseTiming = crawl.capabilities?.supportsResponseTiming !== false;
 
   // Site-wide checks
-  if (supportsSiteDiscovery && !crawl.robots.exists) {
+  // Do not turn a transport failure, safety rejection, or unsupported
+  // response into a claim that the site has no robots.txt or sitemap. Those
+  // findings require a confirmed HTTP-level absence.
+  if (supportsSiteDiscovery && crawl.robots.statusCode === 404) {
     const rule = SEO_RULES["robots-txt-missing"];
     issues.push({
       ruleId: rule.ruleId,
@@ -28,7 +31,7 @@ export function analyzeCrawlResults(crawl: CrawlExecutionResult): AnalysisExecut
     });
   }
 
-  if (supportsSiteDiscovery && !crawl.sitemap.exists) {
+  if (supportsSiteDiscovery && crawl.sitemap.missingConfirmed === true) {
     const rule = SEO_RULES["sitemap-missing"];
     issues.push({
       ruleId: rule.ruleId,

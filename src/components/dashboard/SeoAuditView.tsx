@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
 import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
+import { isAuditResultEvaluable, isSuccessfulAuditPage } from "./audit-evidence";
 
 interface SeoAuditViewProps {
   activeSite: string;
@@ -28,8 +29,19 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
   }
 
   const pages: any[] = scanResult.pages || [];
-  const issues: any[] = scanResult.issues || [];
   const totalPages = scanResult.scan?.crawlStats?.totalPagesCrawled || pages.length || 0;
+
+  if (!isAuditResultEvaluable(scanResult)) {
+    return [{
+      id: "root_page_unavailable",
+      category: "crawl",
+      status: "fail",
+      label: "Root Page Could Not Be Evaluated",
+      summary: `No SEO result is available for ${activeSite}`,
+      detail: "The requested root page was not retrieved as a successful HTML response. GrowthSent did not infer indexability, metadata, robots, sitemap, or an SEO Health Score from this failed crawl.",
+      affectedCount: 1,
+    }];
+  }
 
   if (totalPages === 0) {
     return [
@@ -45,19 +57,20 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
     ];
   }
 
-  const pages200 = pages.filter((p) => p.statusCode === 200).length;
-  const pagesWithTitle = pages.filter((p) => p.title && p.title.trim().length > 0).length;
-  const pagesWithDesc = pages.filter((p) => p.metaDescription && p.metaDescription.trim().length > 0).length;
-  const pagesWithH1 = pages.filter((p) => {
+  const evaluatedPages = pages.filter(isSuccessfulAuditPage);
+  const pages200 = evaluatedPages.length;
+  const pagesWithTitle = evaluatedPages.filter((p) => p.title && p.title.trim().length > 0).length;
+  const pagesWithDesc = evaluatedPages.filter((p) => p.metaDescription && p.metaDescription.trim().length > 0).length;
+  const pagesWithH1 = evaluatedPages.filter((p) => {
     const h1Arr = p.h1 || p.headings?.h1;
     return h1Arr && Array.isArray(h1Arr) && h1Arr.length === 1;
   }).length;
-  const pagesWithCanonical = pages.filter((p) => p.canonicalUrl || p.canonical).length;
+  const pagesWithCanonical = evaluatedPages.filter((p) => p.canonicalUrl || p.canonical).length;
 
-  const missingTitleCount = totalPages - pagesWithTitle;
-  const missingDescCount = totalPages - pagesWithDesc;
-  const missingH1Count = totalPages - pagesWithH1;
-  const missingCanonicalCount = totalPages - pagesWithCanonical;
+  const missingTitleCount = pages200 - pagesWithTitle;
+  const missingDescCount = pages200 - pagesWithDesc;
+  const missingH1Count = pages200 - pagesWithH1;
+  const missingCanonicalCount = pages200 - pagesWithCanonical;
 
   return [
     {
@@ -73,7 +86,7 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
       category: "crawl",
       status: missingCanonicalCount === 0 ? "pass" : "warn",
       label: "Canonical URLs",
-       summary: `${pagesWithCanonical} / ${totalPages} pages include a canonical URL`,
+        summary: `${pagesWithCanonical} / ${pages200} successfully fetched pages include a canonical URL`,
        detail: "This audit records canonical tags and flags missing, malformed, or external canonicals. It does not infer that a tag is self-referential from its presence.",
       affectedCount: missingCanonicalCount > 0 ? missingCanonicalCount : undefined,
     },
@@ -82,7 +95,7 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
       category: "onpage",
       status: missingTitleCount === 0 ? "pass" : "warn",
       label: "Page Title Tags",
-      summary: `${pagesWithTitle} / ${totalPages} pages have valid title tags`,
+        summary: `${pagesWithTitle} / ${pages200} successfully fetched pages have valid title tags`,
        detail: missingTitleCount > 0 ? `${missingTitleCount} pages are missing title tags.` : "All scanned pages include a title tag. Duplicate-title findings, if any, are listed separately as issues.",
       affectedCount: missingTitleCount > 0 ? missingTitleCount : undefined,
     },
@@ -91,7 +104,7 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
       category: "onpage",
       status: missingDescCount === 0 ? "pass" : "warn",
       label: "Meta Descriptions",
-      summary: `${pagesWithDesc} / ${totalPages} pages have meta descriptions`,
+        summary: `${pagesWithDesc} / ${pages200} successfully fetched pages have meta descriptions`,
       detail: missingDescCount > 0 ? `${missingDescCount} pages lack meta descriptions.` : "All scanned pages include meta descriptions.",
       affectedCount: missingDescCount > 0 ? missingDescCount : undefined,
     },
@@ -100,7 +113,7 @@ export function buildAuditMetrics(scanResult: any, activeSite: string): MetricRo
       category: "onpage",
       status: missingH1Count === 0 ? "pass" : "warn",
       label: "Heading Structure (H1)",
-      summary: missingH1Count === 0 ? `All ${totalPages} pages have valid H1 heading` : `${missingH1Count} pages missing or having multiple H1 tags`,
+      summary: missingH1Count === 0 ? `All ${pages200} successfully fetched pages have a valid H1 heading` : `${missingH1Count} successfully fetched pages are missing or have multiple H1 tags`,
       detail: "Proper heading hierarchy requires exactly one primary H1 tag per page.",
       affectedCount: missingH1Count > 0 ? missingH1Count : undefined,
     },
