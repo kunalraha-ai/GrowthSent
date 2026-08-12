@@ -20,6 +20,7 @@
     "benchmark:common-crawl": "tsx lib/cli/common-crawl-benchmark.ts"
   },
   "dependencies": {
+    "@sentry/react": "^10.70.0",
     "bcryptjs": "^3.0.3",
     "bson": "7.3.1",
     "cheerio": "^1.2.0",
