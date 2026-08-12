@@ -9,6 +9,7 @@ const ACTIVE_STATUSES: ScanStatus[] = ["queued", "crawling", "analysing"];
 const WINDOW_MS = 60 * 60 * 1000;
 const TARGET_COOLDOWN_MS = 60 * 1000;
 const ACTIVE_CLAIM_MS = 60 * 60 * 1000;
+const ADMISSION_TRANSACTION_MAX_ATTEMPTS = 3;
 
 export const EXTERNAL_MVP_CRAWL_ADMISSION = {
   authenticatedPerHour: 8,
@@ -49,6 +50,39 @@ function isDuplicateKey(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === 11000;
 }
 
+/**
+ * Signals an optimistic compare-and-set race. Throwing this ends the current
+ * transaction; it is never handled from inside a transaction callback.
+ */
+class AdmissionTransactionContentionError extends Error {
+  constructor() {
+    super("Crawl admission transaction conflicted with another request.");
+    this.name = "AdmissionTransactionContentionError";
+  }
+}
+
+function canRetryAdmissionTransaction(error: unknown): boolean {
+  return isDuplicateKey(error) || error instanceof AdmissionTransactionContentionError;
+}
+
+/**
+ * A duplicate key can make MongoDB abort a transaction immediately. Retry the
+ * entire transaction with a fresh session instead of issuing another command
+ * against the aborted session.
+ */
+export async function runAdmissionTransactionWithRetry<T>(operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < ADMISSION_TRANSACTION_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!canRetryAdmissionTransaction(error) || attempt === ADMISSION_TRANSACTION_MAX_ATTEMPTS - 1) throw error;
+    }
+  }
+  throw lastError;
+}
+
 function admissionSecret(): string | undefined {
   return process.env.CRAWL_ADMISSION_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
 }
@@ -82,6 +116,77 @@ function activeClaimDocumentId(actorKey: string, targetKey: string): string {
   return `active:${actorKey}:${targetKey}`;
 }
 
+function activeClaimDocument(
+  claimKey: string,
+  job: CrawlJobDocument,
+  actorKind: "authenticated" | "anonymous",
+  now: Date
+): AdmissionDocument {
+  return {
+    _id: claimKey,
+    kind: "active",
+    jobId: job.jobId,
+    actorKind,
+    createdAt: now,
+    updatedAt: now,
+    expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
+  };
+}
+
+async function claimActiveJob(
+  db: Db,
+  session: ClientSession,
+  claimKey: string,
+  job: CrawlJobDocument,
+  actorKind: "authenticated" | "anonymous",
+  now: Date
+): Promise<CrawlAdmissionResult | null> {
+  const claims = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
+  const jobs = db.collection<CrawlJobDocument>("crawlJobs");
+  const existing = await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
+    claims.findOne({ _id: claimKey }, { session, projection: { jobId: 1, updatedAt: 1 } })
+  );
+  if (!existing) {
+    // A concurrent first insert may cause E11000. It is deliberately allowed
+    // to abort this callback so the retry wrapper starts a fresh transaction.
+    await withMongoOperationPhase("audit_admission_active_claim_insert", () =>
+      claims.insertOne(activeClaimDocument(claimKey, job, actorKind, now), { session })
+    );
+    return null;
+  }
+
+  const existingJob = existing.jobId
+    ? await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
+        jobs.findOne({ jobId: existing.jobId }, { session, projection: { jobId: 1, status: 1 } })
+      )
+    : null;
+  if (existingJob && isActiveCrawlStatus(existingJob.status)) {
+    if (actorKind === "authenticated") {
+      return { reusedJobId: existingJob.jobId, reusedStatus: existingJob.status, queueSlotClaimed: false };
+    }
+    throw new CrawlAdmissionError("CRAWL_DUPLICATE", "An audit for this website is already queued or running.");
+  }
+
+  // A stale claim is replaced with compare-and-set semantics. A race here
+  // aborts and retries the whole transaction rather than continuing on a
+  // session whose transaction may no longer be active.
+  const replaced = await withMongoOperationPhase("audit_admission_active_claim_recovery", () => claims.updateOne(
+    { _id: claimKey, updatedAt: existing.updatedAt },
+    {
+      $set: {
+        kind: "active",
+        jobId: job.jobId,
+        actorKind,
+        updatedAt: now,
+        expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
+      },
+    },
+    { session }
+  ));
+  if (replaced.matchedCount !== 1) throw new AdmissionTransactionContentionError();
+  return null;
+}
+
 async function claimQuota(
   db: Db,
   session: ClientSession,
@@ -93,84 +198,88 @@ async function claimQuota(
     ? EXTERNAL_MVP_CRAWL_ADMISSION.authenticatedPerHour
     : EXTERNAL_MVP_CRAWL_ADMISSION.anonymousPerHour;
   const collection = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
-  const increment = async (upsert: boolean) => collection.updateOne(
-      { _id: quotaDocumentId(actorKey, now), count: { $lt: limit } },
-      {
-        $inc: { count: 1 },
-        $set: { updatedAt: now },
-        $setOnInsert: { kind: "quota", actorKind, createdAt: now, expiresAt: new Date(now.getTime() + 2 * WINDOW_MS) },
-      },
-      { upsert, session }
-    );
-  try {
-    let result;
-    try {
-      result = await increment(true);
-    } catch (error) {
-      if (!isDuplicateKey(error)) throw error;
-      result = await increment(false);
-    }
-    if (result.matchedCount === 0 && result.upsertedCount === 0) {
-      throw new CrawlAdmissionError("CRAWL_QUOTA_EXCEEDED", "Audit request limit reached. Please try again later.");
-    }
-  } catch (error) {
-    if (isDuplicateKey(error)) {
-      throw new CrawlAdmissionError("CRAWL_QUOTA_EXCEEDED", "Audit request limit reached. Please try again later.");
-    }
-    throw error;
+  const id = quotaDocumentId(actorKey, now);
+  const existing = await withMongoOperationPhase("audit_admission_quota_lookup", () =>
+    collection.findOne({ _id: id }, { session, projection: { count: 1, updatedAt: 1 } })
+  );
+  if (!existing) {
+    await withMongoOperationPhase("audit_admission_quota_update", () => collection.insertOne({
+      _id: id,
+      kind: "quota",
+      count: 1,
+      actorKind,
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(now.getTime() + 2 * WINDOW_MS),
+    }, { session }));
+    return;
   }
+
+  const count = existing.count || 0;
+  if (count >= limit) throw new CrawlAdmissionError("CRAWL_QUOTA_EXCEEDED", "Audit request limit reached. Please try again later.");
+  const updated = await withMongoOperationPhase("audit_admission_quota_update", () => collection.updateOne(
+    { _id: id, updatedAt: existing.updatedAt },
+    { $inc: { count: 1 }, $set: { updatedAt: now } },
+    { session }
+  ));
+  if (updated.matchedCount !== 1) throw new AdmissionTransactionContentionError();
 }
 
 async function claimTargetCooldown(db: Db, session: ClientSession, targetKey: string, now: Date): Promise<void> {
   const collection = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
-  try {
-    const result = await collection.updateOne(
-      { _id: `target:${targetKey}`, expiresAt: { $lte: now } },
-      {
-        $set: { kind: "target", updatedAt: now, expiresAt: new Date(now.getTime() + TARGET_COOLDOWN_MS) },
-        $setOnInsert: { createdAt: now },
-      },
-      { upsert: true, session }
-    );
-    if (result.matchedCount === 0 && result.upsertedCount === 0) {
-      throw new CrawlAdmissionError("CRAWL_TARGET_COOLDOWN", "This website was audited recently. Please wait a minute before requesting another audit.");
-    }
-  } catch (error) {
-    if (isDuplicateKey(error)) {
-      throw new CrawlAdmissionError("CRAWL_TARGET_COOLDOWN", "This website was audited recently. Please wait a minute before requesting another audit.");
-    }
-    throw error;
+  const id = `target:${targetKey}`;
+  const existing = await withMongoOperationPhase("audit_admission_target_cooldown_lookup", () =>
+    collection.findOne({ _id: id }, { session, projection: { expiresAt: 1, updatedAt: 1 } })
+  );
+  if (!existing) {
+    await withMongoOperationPhase("audit_admission_target_cooldown_update", () => collection.insertOne({
+      _id: id,
+      kind: "target",
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: new Date(now.getTime() + TARGET_COOLDOWN_MS),
+    }, { session }));
+    return;
   }
+
+  if (existing.expiresAt && existing.expiresAt > now) {
+    throw new CrawlAdmissionError("CRAWL_TARGET_COOLDOWN", "This website was audited recently. Please wait a minute before requesting another audit.");
+  }
+  const updated = await withMongoOperationPhase("audit_admission_target_cooldown_update", () => collection.updateOne(
+    { _id: id, updatedAt: existing.updatedAt },
+    { $set: { kind: "target", updatedAt: now, expiresAt: new Date(now.getTime() + TARGET_COOLDOWN_MS) } },
+    { session }
+  ));
+  if (updated.matchedCount !== 1) throw new AdmissionTransactionContentionError();
 }
 
 async function claimQueueSlot(db: Db, session: ClientSession, now: Date): Promise<void> {
   const collection = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
-  const increment = async (upsert: boolean) => collection.updateOne(
-    { _id: "queue:external-mvp", activeCount: { $lt: EXTERNAL_MVP_CRAWL_ADMISSION.queueCap } },
-    {
-      $inc: { activeCount: 1 },
-      $set: { updatedAt: now },
-      $setOnInsert: { kind: "queue", createdAt: now },
-    },
-    { upsert, session }
+  const id = "queue:external-mvp";
+  const existing = await withMongoOperationPhase("audit_admission_queue_lookup", () =>
+    collection.findOne({ _id: id }, { session, projection: { activeCount: 1, updatedAt: 1 } })
   );
-  try {
-    let result;
-    try {
-      result = await increment(true);
-    } catch (error) {
-      if (!isDuplicateKey(error)) throw error;
-      result = await increment(false);
-    }
-    if (result.matchedCount === 0 && result.upsertedCount === 0) {
-      throw new CrawlAdmissionError("CRAWL_QUEUE_FULL", "The audit queue is temporarily full. Please try again shortly.");
-    }
-  } catch (error) {
-    if (isDuplicateKey(error)) {
-      throw new CrawlAdmissionError("CRAWL_QUEUE_FULL", "The audit queue is temporarily full. Please try again shortly.");
-    }
-    throw error;
+  if (!existing) {
+    await withMongoOperationPhase("audit_admission_queue_update", () => collection.insertOne({
+      _id: id,
+      kind: "queue",
+      activeCount: 1,
+      createdAt: now,
+      updatedAt: now,
+    }, { session }));
+    return;
   }
+
+  const activeCount = existing.activeCount || 0;
+  if (activeCount >= EXTERNAL_MVP_CRAWL_ADMISSION.queueCap) {
+    throw new CrawlAdmissionError("CRAWL_QUEUE_FULL", "The audit queue is temporarily full. Please try again shortly.");
+  }
+  const updated = await withMongoOperationPhase("audit_admission_queue_update", () => collection.updateOne(
+    { _id: id, updatedAt: existing.updatedAt },
+    { $inc: { activeCount: 1 }, $set: { updatedAt: now } },
+    { session }
+  ));
+  if (updated.matchedCount !== 1) throw new AdmissionTransactionContentionError();
 }
 
 /**
@@ -190,59 +299,23 @@ export async function admitAndInsertCrawlJob(
   const targetKey = createCrawlAdmissionTargetKey(job.url);
   const claimKey = activeClaimDocumentId(actorKey, targetKey);
 
-  return withMongoOperationPhase("audit_admission_transaction", () => client.withSession(async (session) => session.withTransaction(async () => {
-    const claims = db.collection<AdmissionDocument>(ADMISSION_COLLECTION);
-    const jobs = db.collection<CrawlJobDocument>("crawlJobs");
+  return withMongoOperationPhase("audit_admission_transaction", () => runAdmissionTransactionWithRetry(() =>
+    client.withSession((session) => session.withTransaction(async () => {
+      const existingAdmission = await claimActiveJob(db, session, claimKey, job, actorKind, now);
+      if (existingAdmission) return existingAdmission;
 
-    try {
-      await withMongoOperationPhase("audit_admission_active_claim_insert", () => claims.insertOne({
-        _id: claimKey,
-        kind: "active",
-        jobId: job.jobId,
-        actorKind,
-        createdAt: now,
-        updatedAt: now,
-        expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
-      }, { session }));
-    } catch (error) {
-      if (!isDuplicateKey(error)) throw error;
-      const existing = await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
-        claims.findOne({ _id: claimKey }, { session, projection: { jobId: 1 } })
+      await claimQuota(db, session, actorKey, actorKind, now);
+      await claimTargetCooldown(db, session, targetKey, now);
+      await claimQueueSlot(db, session, now);
+      await withMongoOperationPhase("audit_admission_job_enqueue", () =>
+        db.collection<CrawlJobDocument>("crawlJobs").insertOne(
+          { ...job, admissionQueueSlot: true, admissionClaimKey: claimKey },
+          { session }
+        )
       );
-      const existingJob = existing?.jobId
-        ? await withMongoOperationPhase("audit_admission_active_claim_lookup", () =>
-            jobs.findOne({ jobId: existing.jobId }, { session, projection: { jobId: 1, status: 1 } })
-          )
-        : null;
-      if (existingJob && isActiveCrawlStatus(existingJob.status)) {
-        if (actorKind === "authenticated") return { reusedJobId: existingJob.jobId, reusedStatus: existingJob.status, queueSlotClaimed: false };
-        throw new CrawlAdmissionError("CRAWL_DUPLICATE", "An audit for this website is already queued or running.");
-      }
-
-      // Recover a claim left by an interrupted admission transaction or an old
-      // terminal job before attempting the bounded request again.
-      await withMongoOperationPhase("audit_admission_active_claim_recovery", async () => {
-        await claims.deleteOne({ _id: claimKey }, { session });
-        await claims.insertOne({
-          _id: claimKey,
-          kind: "active",
-          jobId: job.jobId,
-          actorKind,
-          createdAt: now,
-          updatedAt: now,
-          expiresAt: new Date(now.getTime() + ACTIVE_CLAIM_MS),
-        }, { session });
-      });
-    }
-
-    await withMongoOperationPhase("audit_admission_quota_update", () => claimQuota(db, session, actorKey, actorKind, now));
-    await withMongoOperationPhase("audit_admission_target_cooldown_update", () => claimTargetCooldown(db, session, targetKey, now));
-    await withMongoOperationPhase("audit_admission_queue_update", () => claimQueueSlot(db, session, now));
-    await withMongoOperationPhase("audit_admission_job_enqueue", () =>
-      jobs.insertOne({ ...job, admissionQueueSlot: true, admissionClaimKey: claimKey }, { session })
-    );
-    return { queueSlotClaimed: true, activeClaimKey: claimKey };
-  })));
+      return { queueSlotClaimed: true, activeClaimKey: claimKey };
+    }))
+  ));
 }
 
 /** Releases durable admission state only after a terminal job transition. */

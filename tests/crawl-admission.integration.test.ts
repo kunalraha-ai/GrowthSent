@@ -32,7 +32,7 @@ function job(nonce: string, suffix: string, userId?: string): CrawlJobDocument {
   };
 }
 
-test("Mongo admission atomically dedupes, cools down targets, quotas actors, and caps the queue", { skip: !enabled }, async () => {
+test("Mongo admission atomically dedupes concurrent audits, retries transactions, cools down targets, quotas actors, and caps the queue without NoSuchTransaction", { skip: !enabled }, async () => {
   assertIsolatedMongoIntegrationEnvironment();
   const { client, db } = await connectToDatabase();
   const nonce = randomBytes(8).toString("hex");
