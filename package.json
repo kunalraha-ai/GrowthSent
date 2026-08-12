@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "format": "oxfmt",
     "typecheck": "tsc --noEmit",
+    "typecheck:vercel": "tsc -p tsconfig.vercel.json",
     "test": "node tests/run-all.mjs",
     "test:common-crawl-ingest": "python tests/common_crawl_wat_ingest.test.py",
     "preflight:production": "tsx lib/cli/production-preflight.ts",
@@ -20,6 +21,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "bson": "7.3.1",
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

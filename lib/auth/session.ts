@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import * as mongodbDriver from "mongodb";
+import { ObjectId } from "bson";
 import { connectToDatabase } from "../db/mongodb.js";
 import { SessionDocument, UserDocument } from "../db/types.js";
 
@@ -17,7 +17,7 @@ export async function createSession(userId: string): Promise<{ rawToken: string;
   const expiresAt = new Date(Date.now() + SESSION_DURATION_MS);
 
   const sessionDoc: SessionDocument = {
-    userId: new mongodbDriver.ObjectId(userId),
+    userId: new ObjectId(userId),
     tokenHash,
     expiresAt,
     createdAt: new Date(),

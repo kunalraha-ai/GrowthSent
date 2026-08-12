@@ -1,5 +1,5 @@
-import * as mongodbDriver from "mongodb";
-import type { ClientSession, Db, Filter, ObjectId } from "mongodb";
+import { ObjectId } from "bson";
+import type { ClientSession, Db, Filter } from "mongodb";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { PageDocument, IssueDocument, ScanDocument, ScanStatus } from "../db/types.js";
 import { validateUrlForScan } from "../security/ssrf.js";
@@ -206,7 +206,7 @@ export async function createScan(options: CreateScanOptions): Promise<CreatedSca
 async function claimScan(scanId: ObjectId): Promise<ClaimedScan | null> {
   const { db } = await connectToDatabase();
   const now = new Date();
-  const leaseId = new mongodbDriver.ObjectId().toHexString();
+  const leaseId = new ObjectId().toHexString();
   const leaseExpiresAt = new Date(now.getTime() + LEASE_DURATION_MS);
 
   const claimed = await db.collection<ScanDocument>("scans").findOneAndUpdate(

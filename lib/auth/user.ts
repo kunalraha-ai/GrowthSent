@@ -1,6 +1,5 @@
 import bcrypt from "bcryptjs";
-import * as mongodbDriver from "mongodb";
-import type { ObjectId } from "mongodb";
+import type { ObjectId } from "bson";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { UserDocument } from "../db/types.js";
 import { deleteScansAndChildrenInTransaction, deleteWebsiteDataInTransaction } from "../websites/service.js";
@@ -88,8 +87,8 @@ export async function deleteUserAccount(userId: string): Promise<boolean> {
           .toArray();
         if (websites.length === 0) break;
         for (const website of websites) {
-          if (website._id instanceof mongodbDriver.ObjectId) {
-            await deleteWebsiteDataInTransaction(db, website._id, objId, session);
+          if (website._id) {
+            await deleteWebsiteDataInTransaction(db, safeObjectId(website._id), objId, session);
           }
         }
       }

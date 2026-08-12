@@ -1,5 +1,6 @@
+import { ObjectId } from "bson";
 import * as mongodbDriver from "mongodb";
-import type { Db, MongoClient as MongoClientType, ObjectId } from "mongodb";
+import type { Db, MongoClient as MongoClientType } from "mongodb";
 
 const MongoClient = mongodbDriver.MongoClient;
 
@@ -58,9 +59,12 @@ export async function connectToDatabase(): Promise<{ client: MongoClientType; db
 
 /** Converts an API identifier to an ObjectId without inventing a replacement. */
 export function safeObjectId(id: string | ObjectId): ObjectId {
-  if (id instanceof mongodbDriver.ObjectId) return id;
-  if (!mongodbDriver.ObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
+  // BSON is the driver's public ObjectId implementation.  Test the primitive
+  // case rather than using instanceof so an ObjectId returned by the driver's
+  // CommonJS entrypoint remains valid when this server module is emitted as ESM.
+  if (typeof id !== "string") return id;
+  if (!ObjectId.isValid(id) || id.length !== 24 || !/^[a-fA-F0-9]{24}$/.test(id)) {
     throw new Error("Invalid database identifier.");
   }
-  return new mongodbDriver.ObjectId(id);
+  return new ObjectId(id);
 }
