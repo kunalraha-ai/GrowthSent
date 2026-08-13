@@ -18,6 +18,10 @@ export interface GscQueryPageRow extends GscMetrics {
   page: string;
 }
 
+export interface GscDailyRow extends GscMetrics {
+  date: string;
+}
+
 export type GscComparisonRow<T extends GscMetrics> = T & {
   previous: GscMetrics | null;
   change: GscMetrics | null;
@@ -35,6 +39,13 @@ export interface SearchIntelligenceReport {
     previous: GscMetrics;
     change: GscMetrics;
   };
+  availability: {
+    overview: boolean;
+    previousOverview: boolean;
+    trend: boolean;
+  };
+  /** Date-level rows returned by GSC for the current period; never manufactured. */
+  dailySeries: GscDailyRow[];
   quickWins: Array<GscComparisonRow<GscQueryRow>>;
   contentDecay: Array<GscComparisonRow<GscPageRow>>;
   ctrOpportunities: Array<GscComparisonRow<GscQueryRow>>;
@@ -131,8 +142,8 @@ export function buildSearchIntelligenceReport(input: {
   siteUrl: string;
   currentPeriod: SearchIntelligenceReport["periods"]["current"];
   previousPeriod: SearchIntelligenceReport["periods"]["previous"];
-  currentDaily: GscMetrics[];
-  previousDaily: GscMetrics[];
+  currentDaily: GscDailyRow[];
+  previousDaily: GscDailyRow[];
   currentQueries: GscQueryRow[];
   previousQueries: GscQueryRow[];
   currentPages: GscPageRow[];
@@ -199,6 +210,12 @@ export function buildSearchIntelligenceReport(input: {
       previous: overviewPrevious,
       change: metricChange(overviewCurrent, overviewPrevious),
     },
+    availability: {
+      overview: input.currentDaily.length > 0,
+      previousOverview: input.previousDaily.length > 0,
+      trend: input.currentDaily.length > 1,
+    },
+    dailySeries: [...input.currentDaily].sort((left, right) => left.date.localeCompare(right.date)),
     quickWins,
     contentDecay,
     ctrOpportunities,

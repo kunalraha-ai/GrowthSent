@@ -5,6 +5,7 @@ import { IntegrationDocument, WebsiteDocument } from "../db/types.js";
 import {
   buildSearchIntelligenceReport,
   type GscMetrics,
+  type GscDailyRow,
   type GscPageRow,
   type GscQueryPageRow,
   type GscQueryRow,
@@ -695,8 +696,8 @@ export async function fetchSearchIntelligenceReport(
       siteUrl,
       currentPeriod: ranges.current,
       previousPeriod: ranges.previous,
-      currentDaily: currentDaily.map(toMetrics),
-      previousDaily: previousDaily.map(toMetrics),
+      currentDaily: currentDaily.map((row): GscDailyRow => ({ date: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.date),
+      previousDaily: previousDaily.map((row): GscDailyRow => ({ date: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.date),
       currentQueries: currentQueries.map((row): GscQueryRow => ({ query: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.query),
       previousQueries: previousQueries.map((row): GscQueryRow => ({ query: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.query),
       currentPages: currentPages.map((row): GscPageRow => ({ page: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.page),

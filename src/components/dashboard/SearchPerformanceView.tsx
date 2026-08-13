@@ -12,6 +12,10 @@ interface Metrics {
   position: number;
 }
 
+interface DailyRow extends Metrics {
+  date: string;
+}
+
 interface QueryRow extends Metrics {
   query: string;
 }
@@ -25,7 +29,7 @@ type ComparisonRow<T extends Metrics> = T & {
   change: Metrics | null;
 };
 
-interface SearchIntelligenceReport {
+export interface SearchIntelligenceReport {
   siteUrl: string;
   fetchedAt: string;
   periods: {
@@ -33,6 +37,8 @@ interface SearchIntelligenceReport {
     previous: { startDate: string; endDate: string; days: number };
   };
   overview: { current: Metrics; previous: Metrics; change: Metrics };
+  availability: { overview: boolean; previousOverview: boolean; trend: boolean };
+  dailySeries: DailyRow[];
   quickWins: Array<ComparisonRow<QueryRow>>;
   contentDecay: Array<ComparisonRow<PageRow>>;
   ctrOpportunities: Array<ComparisonRow<QueryRow>>;
@@ -102,18 +108,32 @@ function metricDelta(value: number, type: "number" | "percent" | "position" = "n
 }
 
 function Delta({ value, type = "number" }: { value: number | null; type?: "number" | "percent" | "position" }) {
-  if (value === null) return <span className="search-intelligence-delta muted">No prior reported row</span>;
+  if (value === null) return <span className="search-intelligence-delta muted">Unavailable</span>;
   const positiveIsGood = type === "position" ? value < 0 : value > 0;
   const className = value === 0 ? "muted" : positiveIsGood ? "positive" : "negative";
   return <span className={`search-intelligence-delta ${className}`}>{metricDelta(value, type)}</span>;
 }
 
-function MetricCard({ label, value, delta, type = "number" }: { label: string; value: string; delta: number; type?: "number" | "percent" | "position" }) {
+function MetricCard({
+  label,
+  value,
+  delta,
+  available,
+  type = "number",
+}: {
+  label: string;
+  value: string;
+  delta: number | null;
+  available: boolean;
+  type?: "number" | "percent" | "position";
+}) {
   return (
     <div className="metric-card search-intelligence-metric-card">
       <p className="metric-label">{label}</p>
-      <b className="metric-val">{value}</b>
-      <span className="metric-sub text-muted"><Delta value={delta} type={type} /> vs previous period</span>
+      <b className="metric-val">{available ? value : "—"}</b>
+      <span className="metric-sub text-muted">
+        {available ? <><Delta value={delta} type={type} /> vs previous period</> : "No date-level GSC data reported"}
+      </span>
     </div>
   );
 }
@@ -132,11 +152,7 @@ function LoadingState() {
       </div>
       <div className="console-section-card search-intelligence-section" aria-busy="true">
         <div className="card-header"><h4 className="card-title">Loading search intelligence</h4></div>
-        <div className="search-intelligence-skeleton-lines">
-          <span className="skeleton-line" />
-          <span className="skeleton-line" />
-          <span className="skeleton-line" />
-        </div>
+        <div className="search-intelligence-skeleton-lines"><span className="skeleton-line" /><span className="skeleton-line" /><span className="skeleton-line" /></div>
       </div>
     </>
   );
@@ -153,7 +169,7 @@ function EmptySection({ title, children }: { title: string; children: React.Reac
 }
 
 function QueryRowsTable({ rows, emptyText }: { rows: Array<ComparisonRow<QueryRow>>; emptyText: string }) {
-  if (!rows.length) return <EmptySection title="No matching query observations">{emptyText}</EmptySection>;
+  if (!rows.length) return <EmptySection title="No reported query rows">{emptyText}</EmptySection>;
   return (
     <div className="table-wrapper">
       <table className="data-table search-intelligence-table">
@@ -171,7 +187,7 @@ function QueryRowsTable({ rows, emptyText }: { rows: Array<ComparisonRow<QueryRo
 }
 
 function PageRowsTable({ rows, emptyText }: { rows: Array<ComparisonRow<PageRow>>; emptyText: string }) {
-  if (!rows.length) return <EmptySection title="No matching page observations">{emptyText}</EmptySection>;
+  if (!rows.length) return <EmptySection title="No reported page rows">{emptyText}</EmptySection>;
   return (
     <div className="table-wrapper">
       <table className="data-table search-intelligence-table">
@@ -221,12 +237,133 @@ function ExplorerTable({
       {type === "query"
         ? <QueryRowsTable rows={visibleRows as Array<ComparisonRow<QueryRow>>} emptyText="Search Console did not return query rows matching this filter." />
         : <PageRowsTable rows={visibleRows as Array<ComparisonRow<PageRow>>} emptyText="Search Console did not return page rows matching this filter." />}
-      {filteredRows.length > EXPLORER_PAGE_SIZE && (
-        <div className="search-intelligence-pagination">
-          <span>Page {page} of {totalPages}</span>
-          <div><button className="secondary-btn" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button><button className="secondary-btn" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>Next</button></div>
-        </div>
-      )}
+      {filteredRows.length > EXPLORER_PAGE_SIZE && <div className="search-intelligence-pagination"><span>Page {page} of {totalPages}</span><div><button className="secondary-btn" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button><button className="secondary-btn" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>Next</button></div></div>}
+    </div>
+  );
+}
+
+function TrendCard({ dailySeries, available }: { dailySeries: DailyRow[]; available: boolean }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const chart = useMemo(() => {
+    const width = 720;
+    const height = 190;
+    const margin = { top: 18, right: 14, bottom: 34, left: 14 };
+    const plotWidth = width - margin.left - margin.right;
+    const plotHeight = height - margin.top - margin.bottom;
+    const maxClicks = Math.max(...dailySeries.map((row) => row.clicks), 1);
+    const maxImpressions = Math.max(...dailySeries.map((row) => row.impressions), 1);
+    const point = (value: number, maxValue: number, index: number) => ({
+      x: margin.left + (index / Math.max(dailySeries.length - 1, 1)) * plotWidth,
+      y: margin.top + (1 - value / maxValue) * plotHeight,
+    });
+    const path = (metric: "clicks" | "impressions", maxValue: number) => dailySeries.map((row, index) => {
+      const { x, y } = point(row[metric], maxValue, index);
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    }).join(" ");
+    const labels = [0, Math.floor((dailySeries.length - 1) / 2), dailySeries.length - 1]
+      .filter((index, position, values) => values.indexOf(index) === position)
+      .map((index) => ({ index, ...point(0, 1, index) }));
+    return { width, height, margin, plotWidth, plotHeight, clicksPath: path("clicks", maxClicks), impressionsPath: path("impressions", maxImpressions), labels, point };
+  }, [dailySeries]);
+
+  if (!available) {
+    return <EmptySection title="Trend unavailable">Search Console did not return enough date-level rows for a trend visualization.</EmptySection>;
+  }
+
+  const activeRow = hoveredIndex === null ? null : dailySeries[hoveredIndex];
+  return (
+    <div className="search-intelligence-trend-body">
+      <div className="search-intelligence-trend-legend"><span><i className="clicks" />Clicks</span><span><i className="impressions" />Impressions</span><small>Each line is scaled to its own reported range.</small></div>
+      <div className="search-intelligence-chart-wrap">
+        <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Daily clicks and impressions from Google Search Console" className="search-intelligence-chart">
+          <line x1={chart.margin.left} y1={chart.margin.top + chart.plotHeight} x2={chart.width - chart.margin.right} y2={chart.margin.top + chart.plotHeight} stroke="#deded7" />
+          <line x1={chart.margin.left} y1={chart.margin.top + chart.plotHeight / 2} x2={chart.width - chart.margin.right} y2={chart.margin.top + chart.plotHeight / 2} stroke="#eeeeea" strokeDasharray="4 4" />
+          <path d={chart.impressionsPath} fill="none" stroke="#262823" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={chart.clicksPath} fill="none" stroke="#78bb24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          {dailySeries.map((row, index) => {
+            const clicksPoint = chart.point(row.clicks, Math.max(...dailySeries.map((item) => item.clicks), 1), index);
+            return <circle key={row.date} cx={clicksPoint.x} cy={clicksPoint.y} r={hoveredIndex === index ? 4.5 : 2.5} fill="#a4ef51" stroke="#1b1c19" strokeWidth="1.2" onMouseEnter={() => setHoveredIndex(index)} onMouseLeave={() => setHoveredIndex(null)} />;
+          })}
+          {chart.labels.map(({ index, x }) => <text key={dailySeries[index].date} x={x} y={chart.height - 10} textAnchor="middle" fill="#777870" fontSize="10">{dailySeries[index].date}</text>)}
+        </svg>
+        {activeRow && <div className="search-intelligence-chart-tooltip"><strong>{activeRow.date}</strong><span>{formatNumber(activeRow.clicks)} clicks</span><span>{formatNumber(activeRow.impressions)} impressions</span></div>}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisSummaryCard({
+  title,
+  count,
+  noun,
+  plural,
+  description,
+  detail,
+  onOpen,
+}: {
+  title: string;
+  count: number;
+  noun: string;
+  plural: string;
+  description: string;
+  detail: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button type="button" className="console-section-card search-intelligence-summary-card" onClick={onOpen}>
+      <span className="search-intelligence-summary-title">{title}</span>
+      <strong>{count} {count === 1 ? noun : plural}</strong>
+      <span>{count === 0 ? description : detail}</span>
+      <em>View details →</em>
+    </button>
+  );
+}
+
+function ChangeList({ rows, emptyText }: { rows: SearchIntelligenceReport["winners"]; emptyText: string }) {
+  if (!rows.length) return <EmptySection title="0 comparable rows">{emptyText}</EmptySection>;
+  return <div className="search-intelligence-change-list">{rows.map(({ kind, label, row }) => <div key={`${kind}-${label}`} className="search-intelligence-change-row"><div><span className="search-intelligence-kind">{kind}</span><strong title={label}>{kind === "page" ? formatPageLabel(label) : label}</strong></div><div><Delta value={row.change?.clicks ?? null} /><span> clicks</span></div></div>)}</div>;
+}
+
+function DataCoverage({ report }: { report: SearchIntelligenceReport }) {
+  return (
+    <details className="search-intelligence-coverage">
+      <summary>Data coverage &amp; methodology</summary>
+      <div>
+        <p>All figures are direct Google Search Console clicks, impressions, CTR, and average-position data. Overview values use date-level rows for the selected period and the comparable prior period.</p>
+        <p>Search Console was asked for up to {report.reportedRowLimits.queries} query rows and {report.reportedRowLimits.pages} page rows for each period. Potential cannibalization is inferred from up to {report.reportedRowLimits.queryPageCombinations} current query–page rows and is not proof of a problem.</p>
+        <p>Search volume, keyword difficulty, traffic estimates, authority, and unreported rows are not inferred.</p>
+      </div>
+    </details>
+  );
+}
+
+export function SearchIntelligenceOverviewDashboard({ report, onOpenTab }: { report: SearchIntelligenceReport; onOpenTab: (tab: IntelligenceTab) => void }) {
+  const topQueries = report.keywords.slice(0, 5);
+  const topPages = report.pages.slice(0, 5);
+  return (
+    <div className="search-intelligence-overview-dashboard">
+      <div className="console-section-card search-intelligence-section search-intelligence-trend-card">
+        <div className="card-header"><div><h4 className="card-title">Search trend</h4><p className="card-sub">Daily clicks and impressions reported by Google Search Console for the selected period.</p></div></div>
+        <TrendCard dailySeries={report.dailySeries} available={report.availability.trend} />
+      </div>
+
+      <div className="search-intelligence-summary-grid">
+        <AnalysisSummaryCard title="Quick wins" count={report.quickWins.length} noun="opportunity" plural="opportunities" description="No reported queries meet the current position and impression criteria." detail={`Highest: ${report.quickWins[0]?.query || "reported query"}`} onOpen={() => onOpenTab("quick-wins")} />
+        <AnalysisSummaryCard title="Content decay" count={report.contentDecay.length} noun="candidate" plural="candidates" description="No reported pages declined in clicks against a comparable prior row." detail={`Largest decline: ${formatPageLabel(report.contentDecay[0]?.page || "")}`} onOpen={() => onOpenTab("content-decay")} />
+        <AnalysisSummaryCard title="CTR opportunities" count={report.ctrOpportunities.length} noun="opportunity" plural="opportunities" description="No reported queries meet the current CTR and visibility criteria." detail={`Highest visibility: ${report.ctrOpportunities[0]?.query || "reported query"}`} onOpen={() => onOpenTab("ctr")} />
+        <AnalysisSummaryCard title="Potential cannibalization" count={report.potentialCannibalization.length} noun="query" plural="queries" description="No reported query has multiple qualifying pages in the bounded query–page data." detail={`Example: ${report.potentialCannibalization[0]?.query || "reported query"}`} onOpen={() => onOpenTab("cannibalization")} />
+      </div>
+
+      <div className="overview-two-col search-intelligence-overview-row">
+        <div className="console-section-card search-intelligence-section"><div className="card-header flex-between"><div><h4 className="card-title">Top queries</h4><p className="card-sub">Query-level GSC observations.</p></div><button className="text-btn" onClick={() => onOpenTab("keywords")}>Explore →</button></div><QueryRowsTable rows={topQueries} emptyText="Search Console returned no query rows for this period." /></div>
+        <div className="console-section-card search-intelligence-section"><div className="card-header flex-between"><div><h4 className="card-title">Top pages</h4><p className="card-sub">Page-level GSC observations.</p></div><button className="text-btn" onClick={() => onOpenTab("pages")}>Explore →</button></div><PageRowsTable rows={topPages} emptyText="Search Console returned no page rows for this period." /></div>
+      </div>
+
+      <div className="console-section-card search-intelligence-section">
+        <div className="card-header"><h4 className="card-title">Winners &amp; losers</h4><p className="card-sub">Largest click changes among query and page rows reported in both periods.</p></div>
+        <div className="overview-two-col search-intelligence-winners-grid"><div><h5>Winners</h5><ChangeList rows={report.winners.slice(0, 4)} emptyText="No reported query or page rows gained clicks in both periods." /></div><div><h5>Losers</h5><ChangeList rows={report.losers.slice(0, 4)} emptyText="No reported query or page rows lost clicks in both periods." /></div></div>
+        <button className="text-btn search-intelligence-view-details" onClick={() => onOpenTab("winners-losers")}>View all comparable changes →</button>
+      </div>
     </div>
   );
 }
@@ -287,59 +424,39 @@ export function SearchPerformanceView({ isGscConnected, websiteId }: SearchPerfo
     return (
       <div className="search-performance-view">
         <div className="console-title flex-between"><div><p className="kicker">Google Search Console</p><h3 className="title-text">Search Intelligence</h3></div><span className="status-pill warn">Disconnected</span></div>
-        <div className="console-section-card search-intelligence-connect-card">
-          <h4 className="card-title">Use your verified Search Console data</h4>
-          <p className="card-sub">Connect the Google account with access to this site’s Search Console property. GrowthSent uses the encrypted server-side connection to retrieve clicks, impressions, CTR, and average position.</p>
-          {error && <p role="alert" className="search-intelligence-error">{error}</p>}
-          <button className="primary-btn" onClick={connectGsc} disabled={isConnecting || !websiteId}>{isConnecting ? "Opening Google..." : "Connect Google Search Console"}</button>
-        </div>
+        <div className="console-section-card search-intelligence-connect-card"><h4 className="card-title">Use your verified Search Console data</h4><p className="card-sub">Connect the Google account with access to this site’s Search Console property. GrowthSent uses the encrypted server-side connection to retrieve clicks, impressions, CTR, and average position.</p>{error && <p role="alert" className="search-intelligence-error">{error}</p>}<button className="primary-btn" onClick={connectGsc} disabled={isConnecting || !websiteId}>{isConnecting ? "Opening Google..." : "Connect Google Search Console"}</button></div>
       </div>
     );
   }
 
-  const noData = Boolean(report && report.overview.current.impressions === 0 && report.keywords.length === 0 && report.pages.length === 0);
-
   const renderTab = () => {
     if (!report) return null;
-    if (activeTab === "overview") return (
-      <div className="search-intelligence-overview-grid">
-        <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">What this view measures</h4></div><div className="search-intelligence-copy"><p>All figures come directly from Google Search Console. The overview compares complete date rows; query and page analysis uses the reported rows returned by Search Console.</p><p>GrowthSent does not estimate search volume, keyword difficulty, traffic, authority, or rankings beyond Search Console’s average position.</p></div></div>
-        <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Coverage of this report</h4></div><div className="search-intelligence-copy"><p>Up to {report.reportedRowLimits.queries} query rows and {report.reportedRowLimits.pages} page rows are requested for each period. Potential cannibalization is inferred from up to {report.reportedRowLimits.queryPageCombinations} current query–page rows.</p><p>Rows not returned by Search Console are shown as unavailable, not as zero.</p></div></div>
-      </div>
-    );
+    if (activeTab === "overview") return <SearchIntelligenceOverviewDashboard report={report} onOpenTab={setActiveTab} />;
     if (activeTab === "quick-wins") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Potential quick wins</h4><p className="card-sub">Query-level observations with at least 50 impressions and an average position from 4.0 to 20.0.</p></div><QueryRowsTable rows={report.quickWins} emptyText="No reported queries meet the current quick-win criteria." /></div>;
     if (activeTab === "content-decay") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Content decay candidates</h4><p className="card-sub">Page-level rows with fewer clicks than the prior period, where both periods were reported.</p></div><PageRowsTable rows={report.contentDecay} emptyText="No reported pages meet the current content-decay criteria." /></div>;
     if (activeTab === "ctr") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">CTR opportunities</h4><p className="card-sub">Query-level rows with at least 100 impressions, position 10 or better, and CTR under 3%.</p></div><QueryRowsTable rows={report.ctrOpportunities} emptyText="No reported queries meet the current CTR opportunity criteria." /></div>;
-    if (activeTab === "cannibalization") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Potential cannibalization</h4><p className="card-sub">Inferred when multiple URLs received impressions for the same query in the bounded GSC query–page rows. It is not proof of a cannibalization problem.</p></div>{report.potentialCannibalization.length ? <div className="search-intelligence-cannibalization-list">{report.potentialCannibalization.map((group) => <div key={group.query} className="search-intelligence-cannibalization-row"><div><strong title={group.query}>{group.query}</strong><span>{formatNumber(group.totalImpressions)} impressions across {group.pageCount} reported pages</span></div><ul>{group.pages.map((page) => <li key={page.page} title={page.page}>{formatPageLabel(page.page)} <small>{formatNumber(page.impressions)} imp.</small></li>)}</ul></div>)}</div> : <EmptySection title="No potential cannibalization observations">No query with multiple reported pages met the minimum impression threshold.</EmptySection>}</div>;
-    if (activeTab === "winners-losers") return <div className="overview-two-col"><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Winners</h4><p className="card-sub">Largest positive click changes among rows reported in both periods.</p></div><ChangeList rows={report.winners} emptyText="No comparable gains were returned." /></div><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Losers</h4><p className="card-sub">Largest negative click changes among rows reported in both periods.</p></div><ChangeList rows={report.losers} emptyText="No comparable declines were returned." /></div></div>;
+    if (activeTab === "cannibalization") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Potential cannibalization</h4><p className="card-sub">Inferred when multiple URLs received impressions for the same query in bounded GSC query–page rows. It is not proof of a problem.</p></div>{report.potentialCannibalization.length ? <div className="search-intelligence-cannibalization-list">{report.potentialCannibalization.map((group) => <div key={group.query} className="search-intelligence-cannibalization-row"><div><strong title={group.query}>{group.query}</strong><span>{formatNumber(group.totalImpressions)} impressions across {group.pageCount} reported pages</span></div><ul>{group.pages.map((page) => <li key={page.page} title={page.page}>{formatPageLabel(page.page)} <small>{formatNumber(page.impressions)} imp.</small></li>)}</ul></div>)}</div> : <EmptySection title="0 potential cannibalization queries">No query with multiple qualifying pages was found in the bounded query–page data.</EmptySection>}</div>;
+    if (activeTab === "winners-losers") return <div className="overview-two-col"><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Winners</h4><p className="card-sub">Largest positive click changes among comparable rows.</p></div><ChangeList rows={report.winners} emptyText="No comparable gains were returned." /></div><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Losers</h4><p className="card-sub">Largest negative click changes among comparable rows.</p></div><ChangeList rows={report.losers} emptyText="No comparable declines were returned." /></div></div>;
     if (activeTab === "keywords") return <ExplorerTable title="Keyword explorer" placeholder="Filter reported queries" rows={report.keywords} type="query" />;
     return <ExplorerTable title="Page explorer" placeholder="Filter reported pages" rows={report.pages} type="page" />;
   };
 
   return (
     <div className="search-performance-view search-intelligence-view">
-      <div className="console-title search-intelligence-title-row">
-        <div><p className="kicker">Google Search Console</p><h3 className="title-text">Search Intelligence</h3>{report?.siteUrl && <p className="card-sub">Property: {report.siteUrl}</p>}</div>
-        <div className="search-intelligence-controls"><label><span className="sr-only">Period</span><select className="filter-select" value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={28}>Last 28 days</option><option value={90}>Last 90 days</option></select></label><button className="secondary-btn" onClick={() => void fetchReport()} disabled={isLoading}>{isLoading ? "Refreshing..." : "Refresh"}</button></div>
-      </div>
-
+      <div className="console-title search-intelligence-title-row"><div><p className="kicker">Google Search Console</p><h3 className="title-text">Search Intelligence</h3>{report?.siteUrl && <p className="card-sub">Property: {report.siteUrl}</p>}</div><div className="search-intelligence-controls"><label><span className="sr-only">Period</span><select className="filter-select" value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={28}>Last 28 days</option><option value={90}>Last 90 days</option></select></label><button className="secondary-btn" onClick={() => void fetchReport()} disabled={isLoading}>{isLoading ? "Refreshing..." : "Refresh"}</button></div></div>
       {error && <div role="alert" className="search-intelligence-error search-intelligence-error-banner"><span>{error}</span><button className="secondary-btn" onClick={() => void fetchReport()} disabled={isLoading}>Retry</button></div>}
-      {isLoading && !report ? <LoadingState /> : noData ? <div className="console-section-card search-intelligence-section"><EmptySection title="No Search Console data for this period">No clicks, impressions, queries, or pages were returned for this property. Try a longer period once enough GSC data is available.</EmptySection></div> : report && <>
+      {isLoading && !report ? <LoadingState /> : report && <>
         <div className="search-intelligence-period">Current: {report.periods.current.startDate} to {report.periods.current.endDate} · Compared with: {report.periods.previous.startDate} to {report.periods.previous.endDate}</div>
         <div className="metrics-grid search-intelligence-metrics-grid">
-          <MetricCard label="Clicks" value={formatNumber(report.overview.current.clicks)} delta={report.overview.change.clicks} />
-          <MetricCard label="Impressions" value={formatNumber(report.overview.current.impressions)} delta={report.overview.change.impressions} />
-          <MetricCard label="Average CTR" value={formatPercent(report.overview.current.ctr)} delta={report.overview.change.ctr} type="percent" />
-          <MetricCard label="Average position" value={formatPosition(report.overview.current.position)} delta={report.overview.change.position} type="position" />
+          <MetricCard label="Clicks" value={formatNumber(report.overview.current.clicks)} delta={report.availability.previousOverview ? report.overview.change.clicks : null} available={report.availability.overview} />
+          <MetricCard label="Impressions" value={formatNumber(report.overview.current.impressions)} delta={report.availability.previousOverview ? report.overview.change.impressions : null} available={report.availability.overview} />
+          <MetricCard label="Average CTR" value={formatPercent(report.overview.current.ctr)} delta={report.availability.previousOverview ? report.overview.change.ctr : null} available={report.availability.overview} type="percent" />
+          <MetricCard label="Average position" value={formatPosition(report.overview.current.position)} delta={report.availability.previousOverview ? report.overview.change.position : null} available={report.availability.overview} type="position" />
         </div>
         <div className="search-intelligence-tabs" role="tablist" aria-label="Search intelligence sections">{TAB_ITEMS.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}</div>
         {renderTab()}
+        <DataCoverage report={report} />
       </>}
     </div>
   );
-}
-
-function ChangeList({ rows, emptyText }: { rows: SearchIntelligenceReport["winners"]; emptyText: string }) {
-  if (!rows.length) return <EmptySection title="No comparable rows">{emptyText}</EmptySection>;
-  return <div className="search-intelligence-change-list">{rows.map(({ kind, label, row }) => <div key={`${kind}-${label}`} className="search-intelligence-change-row"><div><span className="search-intelligence-kind">{kind}</span><strong title={label}>{kind === "page" ? formatPageLabel(label) : label}</strong></div><div><Delta value={row.change?.clicks ?? null} /><span> clicks</span></div></div>)}</div>;
 }

@@ -2435,6 +2435,213 @@ a {
 
 .search-intelligence-empty-section { padding: 38px 20px; }
 
+.search-intelligence-overview-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.search-intelligence-trend-card .card-header {
+  align-items: flex-start;
+}
+
+.search-intelligence-trend-body {
+  padding: 16px 20px 18px;
+}
+
+.search-intelligence-trend-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 8px;
+  color: #5a5c55;
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+}
+
+.search-intelligence-trend-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+}
+
+.search-intelligence-trend-legend i {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 99px;
+}
+
+.search-intelligence-trend-legend i.clicks { background: #78bb24; }
+.search-intelligence-trend-legend i.impressions { background: #262823; }
+.search-intelligence-trend-legend small { color: #777870; font-size: 11px; }
+
+.search-intelligence-chart-wrap {
+  position: relative;
+  min-height: 180px;
+}
+
+.search-intelligence-chart {
+  display: block;
+  width: 100%;
+  height: 190px;
+  overflow: visible;
+}
+
+.search-intelligence-chart circle { cursor: crosshair; }
+
+.search-intelligence-chart-tooltip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  padding: 8px 10px;
+  border: 1px solid #3b3d36;
+  border-radius: 7px;
+  background: #20211e;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  color: #ffffff;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 10px;
+}
+
+.search-intelligence-chart-tooltip strong { color: #b5ec72; }
+
+.search-intelligence-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.search-intelligence-summary-card {
+  min-height: 164px;
+  padding: 16px;
+  border: 1px solid #e1e1dc;
+  background: #ffffff;
+  color: #171817;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-intelligence-summary-card:hover,
+.search-intelligence-summary-card:focus-visible {
+  border-color: #9bbd7c;
+  box-shadow: 0 4px 14px rgba(43, 74, 20, 0.08);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.search-intelligence-summary-card > span,
+.search-intelligence-summary-card > strong,
+.search-intelligence-summary-card > em {
+  display: block;
+}
+
+.search-intelligence-summary-title {
+  margin-bottom: 12px;
+  color: #686a63;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+}
+
+.search-intelligence-summary-card > strong {
+  margin-bottom: 7px;
+  color: #20211e;
+  font-family: 'Google Sans', 'Product Sans', 'Roboto', sans-serif;
+  font-size: 22px;
+  letter-spacing: -0.4px;
+}
+
+.search-intelligence-summary-card > span:not(.search-intelligence-summary-title) {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 34px;
+  color: #656760;
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.search-intelligence-summary-card em {
+  margin-top: 10px;
+  color: #4d8b11;
+  font-family: 'Roboto', sans-serif;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.search-intelligence-overview-row {
+  margin-top: 0;
+}
+
+.search-intelligence-winners-grid {
+  margin: 0;
+  gap: 0;
+}
+
+.search-intelligence-winners-grid > div + div {
+  border-left: 1px solid #eaeae5;
+}
+
+.search-intelligence-winners-grid h5 {
+  margin: 0;
+  padding: 12px 20px;
+  border-bottom: 1px solid #eaeae5;
+  color: #62645c;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.45px;
+  text-transform: uppercase;
+}
+
+.search-intelligence-view-details {
+  margin: 12px 20px 16px;
+}
+
+.search-intelligence-coverage {
+  margin-top: 16px;
+  border: 1px solid #deded7;
+  border-radius: 9px;
+  background: #f4f4ef;
+  color: #565850;
+  font-family: 'Roboto', sans-serif;
+  font-size: 12px;
+}
+
+.search-intelligence-coverage summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  color: #41433d;
+  font-family: 'Roboto Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.search-intelligence-coverage > div {
+  padding: 0 14px 12px;
+}
+
+.search-intelligence-coverage p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.search-intelligence-coverage p:last-child { margin-bottom: 0; }
+
 .benefits-explain-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -3304,6 +3511,15 @@ a {
     grid-template-columns: 1fr;
   }
 
+  .search-intelligence-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .search-intelligence-winners-grid > div + div {
+    border-top: 1px solid #eaeae5;
+    border-left: 0;
+  }
+
   .search-intelligence-filter {
     max-width: none;
   }
@@ -3355,6 +3571,20 @@ a {
   .search-intelligence-pagination {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .search-intelligence-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-intelligence-trend-body {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .search-intelligence-chart-tooltip {
+    top: 0;
+    right: 0;
   }
 }
 
