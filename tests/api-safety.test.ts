@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import test from "node:test";
 import { Readable } from "node:stream";
-import { AuditInputSchema, AnalyticsCollectSchema, handleApiRequest } from "../lib/api/router";
+import { AuditInputSchema, AnalyticsCollectSchema, handleApiRequest, normalizeSearchIntelligenceDays } from "../lib/api/router";
 import { normalizeAnalyticsRangeDays } from "../lib/analytics/aggregator";
 import { parseBoundedRequestBody } from "../lib/api/request-body";
 import { createOpaqueAccessToken, hashOpaqueAccessToken, verifyOpaqueAccessToken } from "../lib/security/access-token";
@@ -107,6 +107,14 @@ test("analytics date ranges are bounded before querying MongoDB", () => {
   assert.equal(normalizeAnalyticsRangeDays(3650), 90);
 });
 
+test("Search Intelligence period comparisons stay within the bounded GSC request range", () => {
+  assert.equal(normalizeSearchIntelligenceDays(undefined), 28);
+  assert.equal(normalizeSearchIntelligenceDays("not-a-number"), 28);
+  assert.equal(normalizeSearchIntelligenceDays("3"), 7);
+  assert.equal(normalizeSearchIntelligenceDays("28"), 28);
+  assert.equal(normalizeSearchIntelligenceDays("365"), 90);
+});
+
 test("backlink analytics requires an authenticated application session", async () => {
   const response = await handleApiRequest({
     method: "GET",
@@ -115,6 +123,19 @@ test("backlink analytics requires an authenticated application session", async (
     body: null,
     headers: {},
     ip: "203.0.113.252",
+  });
+  assert.equal(response.statusCode, 401);
+  assert.equal(response.body.error.code, "UNAUTHORIZED");
+});
+
+test("Search Intelligence requires an authenticated application session", async () => {
+  const response = await handleApiRequest({
+    method: "GET",
+    path: "/api/v1/search-intelligence",
+    query: { websiteId: "0123456789abcdef01234567", days: "28" },
+    body: null,
+    headers: {},
+    ip: "203.0.113.253",
   });
   assert.equal(response.statusCode, 401);
   assert.equal(response.body.error.code, "UNAUTHORIZED");

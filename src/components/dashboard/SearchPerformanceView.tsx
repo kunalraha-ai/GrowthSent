@@ -3,239 +3,267 @@ import React, { useEffect, useMemo, useState } from "react";
 interface SearchPerformanceViewProps {
   isGscConnected: boolean;
   websiteId: string | null;
-  onNavigateTab: (tab: string) => void;
 }
 
-interface GscReportData {
-  connected: boolean;
+interface Metrics {
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+interface QueryRow extends Metrics {
+  query: string;
+}
+
+interface PageRow extends Metrics {
+  page: string;
+}
+
+type ComparisonRow<T extends Metrics> = T & {
+  previous: Metrics | null;
+  change: Metrics | null;
+};
+
+interface SearchIntelligenceReport {
   siteUrl: string;
-  lastSynced: string;
-  dateRange: {
-    startDate: string;
-    endDate: string;
-    days: number;
+  fetchedAt: string;
+  periods: {
+    current: { startDate: string; endDate: string; days: number };
+    previous: { startDate: string; endDate: string; days: number };
   };
-  summary: {
+  overview: { current: Metrics; previous: Metrics; change: Metrics };
+  quickWins: Array<ComparisonRow<QueryRow>>;
+  contentDecay: Array<ComparisonRow<PageRow>>;
+  ctrOpportunities: Array<ComparisonRow<QueryRow>>;
+  potentialCannibalization: Array<{
+    query: string;
+    pageCount: number;
     totalClicks: number;
     totalImpressions: number;
-    avgCtr: number;
-    avgPosition: number;
-  };
-  dailySeries: Array<{
-    date: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
+    pages: PageRow[];
   }>;
-  topQueries: Array<{
-    query: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
-  }>;
-  topPages: Array<{
-    page: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
-  }>;
-  countries: Array<{
-    country: string;
-    countryCode: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
-  }>;
-  devices: Array<{
-    device: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
-  }>;
-  searchAppearance: Array<{
-    appearance: string;
-    clicks: number;
-    impressions: number;
-    ctr: number;
-    position: number;
-  }>;
-  sitemaps: Array<{
-    path: string;
-    lastDownloaded: string;
-    isPending: boolean;
-    isWarnings: boolean;
-    hasErrors: boolean;
-    type: string;
-    submitted: number;
-    indexed: number;
-  }>;
-  opportunities: Array<{
-    id: string;
-    type: "low_ctr" | "striking_distance" | "zero_clicks" | "top_performing";
-    title: string;
-    description: string;
-    queryOrPage: string;
-    metrics: { clicks: number; impressions: number; ctr: number; position: number };
-  }>;
-  indexingOverview?: {
-    indexedPages: number;
-    notIndexed: number;
-    errors: number;
-    excluded: number;
-  };
-  coverageIssues?: Array<{
-    title: string;
-    severity: string;
-    affectedUrl: string;
-    description: string;
-  }>;
+  winners: Array<{ kind: "query" | "page"; label: string; row: ComparisonRow<QueryRow | PageRow> }>;
+  losers: Array<{ kind: "query" | "page"; label: string; row: ComparisonRow<QueryRow | PageRow> }>;
+  keywords: Array<ComparisonRow<QueryRow>>;
+  pages: Array<ComparisonRow<PageRow>>;
+  reportedRowLimits: { queries: number; pages: number; queryPageCombinations: number };
 }
 
-type ActiveChartMetric = "clicks" | "impressions" | "ctr" | "position";
+type IntelligenceTab =
+  | "overview"
+  | "quick-wins"
+  | "content-decay"
+  | "ctr"
+  | "cannibalization"
+  | "winners-losers"
+  | "keywords"
+  | "pages";
 
-export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab }: SearchPerformanceViewProps) {
-  const [report, setReport] = useState<GscReportData | null>(null);
+const TAB_ITEMS: Array<{ id: IntelligenceTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "quick-wins", label: "Quick wins" },
+  { id: "content-decay", label: "Content decay" },
+  { id: "ctr", label: "CTR opportunities" },
+  { id: "cannibalization", label: "Potential cannibalization" },
+  { id: "winners-losers", label: "Winners & losers" },
+  { id: "keywords", label: "Keyword explorer" },
+  { id: "pages", label: "Page explorer" },
+];
+
+const EXPLORER_PAGE_SIZE = 12;
+
+function formatNumber(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatPosition(value: number): string {
+  return value > 0 ? value.toFixed(1) : "—";
+}
+
+function formatPageLabel(page: string): string {
+  try {
+    const url = new URL(page);
+    return `${url.pathname || "/"}${url.search}`;
+  } catch {
+    return page;
+  }
+}
+
+function metricDelta(value: number, type: "number" | "percent" | "position" = "number"): string {
+  const prefix = value > 0 ? "+" : "";
+  if (type === "percent") return `${prefix}${(value * 100).toFixed(1)} pp`;
+  if (type === "position") return `${prefix}${value.toFixed(1)}`;
+  return `${prefix}${formatNumber(value)}`;
+}
+
+function Delta({ value, type = "number" }: { value: number | null; type?: "number" | "percent" | "position" }) {
+  if (value === null) return <span className="search-intelligence-delta muted">No prior reported row</span>;
+  const positiveIsGood = type === "position" ? value < 0 : value > 0;
+  const className = value === 0 ? "muted" : positiveIsGood ? "positive" : "negative";
+  return <span className={`search-intelligence-delta ${className}`}>{metricDelta(value, type)}</span>;
+}
+
+function MetricCard({ label, value, delta, type = "number" }: { label: string; value: string; delta: number; type?: "number" | "percent" | "position" }) {
+  return (
+    <div className="metric-card search-intelligence-metric-card">
+      <p className="metric-label">{label}</p>
+      <b className="metric-val">{value}</b>
+      <span className="metric-sub text-muted"><Delta value={delta} type={type} /> vs previous period</span>
+    </div>
+  );
+}
+
+function LoadingState() {
+  return (
+    <>
+      <div className="metrics-grid search-intelligence-loading-grid" aria-label="Loading Search Console data">
+        {["Clicks", "Impressions", "CTR", "Average position"].map((label) => (
+          <div className="metric-card skeleton-card" key={label} aria-busy="true">
+            <span className="metric-label">{label}</span>
+            <span className="skeleton-line" style={{ width: "52%", height: "26px", marginTop: "8px" }} />
+            <span className="skeleton-line" style={{ width: "68%", height: "12px", marginTop: "12px" }} />
+          </div>
+        ))}
+      </div>
+      <div className="console-section-card search-intelligence-section" aria-busy="true">
+        <div className="card-header"><h4 className="card-title">Loading search intelligence</h4></div>
+        <div className="search-intelligence-skeleton-lines">
+          <span className="skeleton-line" />
+          <span className="skeleton-line" />
+          <span className="skeleton-line" />
+        </div>
+      </div>
+    </>
+  );
+}
+
+function EmptySection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="gsc-empty-state search-intelligence-empty-section">
+      <div className="empty-icon-circle" aria-hidden="true">—</div>
+      <h5>{title}</h5>
+      <p>{children}</p>
+    </div>
+  );
+}
+
+function QueryRowsTable({ rows, emptyText }: { rows: Array<ComparisonRow<QueryRow>>; emptyText: string }) {
+  if (!rows.length) return <EmptySection title="No matching query observations">{emptyText}</EmptySection>;
+  return (
+    <div className="table-wrapper">
+      <table className="data-table search-intelligence-table">
+        <thead><tr><th>Query</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th><th>Click change</th></tr></thead>
+        <tbody>{rows.map((row) => (
+          <tr key={row.query}>
+            <td className="search-intelligence-label" title={row.query}>{row.query}</td>
+            <td>{formatNumber(row.clicks)}</td><td>{formatNumber(row.impressions)}</td><td>{formatPercent(row.ctr)}</td><td>{formatPosition(row.position)}</td>
+            <td><Delta value={row.change?.clicks ?? null} /></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function PageRowsTable({ rows, emptyText }: { rows: Array<ComparisonRow<PageRow>>; emptyText: string }) {
+  if (!rows.length) return <EmptySection title="No matching page observations">{emptyText}</EmptySection>;
+  return (
+    <div className="table-wrapper">
+      <table className="data-table search-intelligence-table">
+        <thead><tr><th>Page</th><th>Clicks</th><th>Impressions</th><th>CTR</th><th>Position</th><th>Click change</th></tr></thead>
+        <tbody>{rows.map((row) => (
+          <tr key={row.page}>
+            <td className="search-intelligence-label" title={row.page}>{formatPageLabel(row.page)}</td>
+            <td>{formatNumber(row.clicks)}</td><td>{formatNumber(row.impressions)}</td><td>{formatPercent(row.ctr)}</td><td>{formatPosition(row.position)}</td>
+            <td><Delta value={row.change?.clicks ?? null} /></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function ExplorerTable({
+  title,
+  placeholder,
+  rows,
+  type,
+}: {
+  title: string;
+  placeholder: string;
+  rows: Array<ComparisonRow<QueryRow>> | Array<ComparisonRow<PageRow>>;
+  type: "query" | "page";
+}) {
+  const [term, setTerm] = useState("");
+  const [page, setPage] = useState(1);
+  const filteredRows = useMemo(() => {
+    const normalized = term.trim().toLowerCase();
+    if (!normalized) return rows;
+    return rows.filter((row) => (type === "query" ? (row as ComparisonRow<QueryRow>).query : (row as ComparisonRow<PageRow>).page).toLowerCase().includes(normalized));
+  }, [rows, term, type]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / EXPLORER_PAGE_SIZE));
+  const visibleRows = filteredRows.slice((page - 1) * EXPLORER_PAGE_SIZE, page * EXPLORER_PAGE_SIZE);
+
+  useEffect(() => setPage(1), [term, rows]);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+
+  return (
+    <div className="console-section-card search-intelligence-section">
+      <div className="card-header search-intelligence-card-header">
+        <div><h4 className="card-title">{title}</h4><p className="card-sub">Reported Search Console {type}-level rows only.</p></div>
+        <input className="form-input search-intelligence-filter" value={term} onChange={(event) => setTerm(event.target.value)} placeholder={placeholder} aria-label={placeholder} />
+      </div>
+      {type === "query"
+        ? <QueryRowsTable rows={visibleRows as Array<ComparisonRow<QueryRow>>} emptyText="Search Console did not return query rows matching this filter." />
+        : <PageRowsTable rows={visibleRows as Array<ComparisonRow<PageRow>>} emptyText="Search Console did not return page rows matching this filter." />}
+      {filteredRows.length > EXPLORER_PAGE_SIZE && (
+        <div className="search-intelligence-pagination">
+          <span>Page {page} of {totalPages}</span>
+          <div><button className="secondary-btn" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</button><button className="secondary-btn" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>Next</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SearchPerformanceView({ isGscConnected, websiteId }: SearchPerformanceViewProps) {
+  const [report, setReport] = useState<SearchIntelligenceReport | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [days, setDays] = useState<number>(28);
-  const [selectedChartMetric, setSelectedChartMetric] = useState<ActiveChartMetric>("clicks");
+  const [days, setDays] = useState(28);
+  const [activeTab, setActiveTab] = useState<IntelligenceTab>("overview");
+  const [isConnecting, setIsConnecting] = useState(false);
 
-  // Query table search & pagination
-  const [querySearch, setQuerySearch] = useState("");
-  const [queryPage, setQueryPage] = useState(1);
-  const itemsPerPage = 10;
-
-  // Page table search & pagination
-  const [pageSearch, setPageSearch] = useState("");
-  const [pageNumber, setPageNumber] = useState(1);
-
-  // Hover state for interactive SVG chart
-  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
-
-  const fetchReport = async () => {
+  const fetchReport = async (signal?: AbortSignal) => {
     if (!isGscConnected || !websiteId) {
       setReport(null);
       return;
     }
     setIsLoading(true);
     setError("");
+    setReport(null);
     try {
-      const response = await fetch(`/api/v1/gsc-full-report?websiteId=${websiteId}&days=${days}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error?.message || "Unable to load Search Console report.");
-      setReport(data);
+      const response = await fetch(`/api/v1/search-intelligence?websiteId=${encodeURIComponent(websiteId)}&days=${days}`, { signal });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error?.message || "Unable to load Search Console data.");
+      if (!signal?.aborted) setReport(data as SearchIntelligenceReport);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to load Search Console data.");
+      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : "Unable to load Search Console data.");
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchReport();
+    const controller = new AbortController();
+    void fetchReport(controller.signal);
+    return () => controller.abort();
   }, [isGscConnected, websiteId, days]);
-
-  // Filtered queries
-  const filteredQueries = useMemo(() => {
-    if (!report?.topQueries) return [];
-    if (!querySearch.trim()) return report.topQueries;
-    const term = querySearch.toLowerCase();
-    return report.topQueries.filter((q) => q.query.toLowerCase().includes(term));
-  }, [report?.topQueries, querySearch]);
-
-  const paginatedQueries = useMemo(() => {
-    const start = (queryPage - 1) * itemsPerPage;
-    return filteredQueries.slice(start, start + itemsPerPage);
-  }, [filteredQueries, queryPage]);
-
-  const totalQueryPages = Math.ceil(filteredQueries.length / itemsPerPage) || 1;
-
-  // Filtered pages
-  const filteredPages = useMemo(() => {
-    if (!report?.topPages) return [];
-    if (!pageSearch.trim()) return report.topPages;
-    const term = pageSearch.toLowerCase();
-    return report.topPages.filter((p) => p.page.toLowerCase().includes(term));
-  }, [report?.topPages, pageSearch]);
-
-  const paginatedPages = useMemo(() => {
-    const start = (pageNumber - 1) * itemsPerPage;
-    return filteredPages.slice(start, start + itemsPerPage);
-  }, [filteredPages, pageNumber]);
-
-  const totalPagePages = Math.ceil(filteredPages.length / itemsPerPage) || 1;
-
-  // Layout constants for SVG chart (kept outside useMemo so they're always available)
-  const svgWidth = 840;
-  const svgHeight = 260;
-  const marginLeft = 50;
-  const marginRight = 20;
-  const marginBottom = 220;
-
-  // Memoize all SVG Chart computations for 60 FPS performance and strict hook ordering
-  const chartData = useMemo(() => {
-    const series = report?.dailySeries || [];
-    if (series.length === 0) return { points: [] as { x: number; y: number; date: string; rawVal: number }[], yTicks: [] as { y: number; val: number }[], xDateTicks: [] as { x: number; y: number; date: string; rawVal: number }[], svgPathD: "", areaPathD: "" };
-
-    const marginTop = 30;
-    const plotWidth = svgWidth - marginLeft - marginRight;
-    const plotHeight = marginBottom - marginTop;
-
-    const metricValues = series.map((d) => {
-      if (selectedChartMetric === "clicks") return d.clicks;
-      if (selectedChartMetric === "impressions") return d.impressions;
-      if (selectedChartMetric === "ctr") return d.ctr * 100;
-      return d.position;
-    });
-
-    const maxVal = Math.max(...metricValues, 3);
-    const minVal = selectedChartMetric === "position" ? Math.min(...metricValues, 1) : 0;
-    const valRange = maxVal - minVal || 1;
-
-    const yTicks = [0, 1, 2, 3].map((step) => {
-      const ratio = step / 3;
-      const y = marginBottom - ratio * plotHeight;
-      const val = selectedChartMetric === "position"
-        ? maxVal - ratio * valRange
-        : minVal + ratio * valRange;
-      return { y, val };
-    });
-
-    const points = series.map((d, idx) => {
-      const x = marginLeft + (idx / Math.max(series.length - 1, 1)) * plotWidth;
-      const rawVal = selectedChartMetric === "clicks" ? d.clicks : selectedChartMetric === "impressions" ? d.impressions : selectedChartMetric === "ctr" ? d.ctr * 100 : d.position;
-      const normalized = selectedChartMetric === "position" ? (maxVal - rawVal) / valRange : (rawVal - minVal) / valRange;
-      const y = marginBottom - normalized * plotHeight;
-      return { x, y, date: d.date, rawVal };
-    });
-
-    const svgPathD = points.length > 0
-      ? points.reduce((acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`), "")
-      : "";
-
-    const areaPathD = points.length > 0
-      ? `${svgPathD} L ${points[points.length - 1].x} ${marginBottom} L ${points[0].x} ${marginBottom} Z`
-      : "";
-
-    const count = Math.min(series.length, 5);
-    const xDateTicks: { x: number; y: number; date: string; rawVal: number }[] = [];
-    for (let i = 0; i < count; i++) {
-      const idx = Math.round((i / (count - 1)) * (series.length - 1));
-      const pt = points[idx];
-      if (pt) xDateTicks.push(pt);
-    }
-
-    return { points, yTicks, xDateTicks, svgPathD, areaPathD };
-  }, [report?.dailySeries, selectedChartMetric]);
-
-  const { points, yTicks, xDateTicks, svgPathD, areaPathD } = chartData;
-
-  const [isConnecting, setIsConnecting] = useState(false);
 
   const connectGsc = async () => {
     if (!websiteId) {
@@ -245,11 +273,9 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
     setError("");
     setIsConnecting(true);
     try {
-      const response = await fetch(
-        `/api/v1/integrations/google/start?websiteId=${websiteId}&provider=google_search_console`
-      );
-      const data = await response.json();
-      if (!response.ok || !data.authorizationUrl) throw new Error(data.error?.message || "Unable to start Google OAuth.");
+      const response = await fetch(`/api/v1/integrations/google/start?websiteId=${encodeURIComponent(websiteId)}&provider=google_search_console`);
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.authorizationUrl) throw new Error(data?.error?.message || "Unable to start Google OAuth.");
       window.location.assign(data.authorizationUrl);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to start Google OAuth.");
@@ -257,548 +283,63 @@ export function SearchPerformanceView({ isGscConnected, websiteId, onNavigateTab
     }
   };
 
-  // Render Not Connected State matching Google Search Console integration card
   if (!isGscConnected) {
     return (
       <div className="search-performance-view">
-        <div className="console-title flex-between">
-          <h3 className="title-text">Google Search Console</h3>
-          <span className="status-pill warn">Disconnected</span>
-        </div>
-
-        <div className="console-section-card" style={{ marginTop: "24px", padding: "24px" }}>
-          <h4 className="card-title">Search visibility data</h4>
-          <p className="card-sub" style={{ marginTop: "8px", maxWidth: "680px" }}>
-            Connect the Google account that has access to this website’s Search Console property. GrowthSent stores the returned tokens encrypted and uses them only to retrieve your search performance data.
-          </p>
-          {error && <p role="alert" style={{ color: "#b42318", marginTop: "16px" }}>{error}</p>}
-
-          <div style={{ marginTop: "24px", display: "flex", gap: "12px", alignItems: "center" }}>
-            <button className="primary-btn" onClick={connectGsc} disabled={isConnecting || !websiteId}>
-              {isConnecting ? "Opening Google..." : "Connect Google Search Console →"}
-            </button>
-          </div>
+        <div className="console-title flex-between"><div><p className="kicker">Google Search Console</p><h3 className="title-text">Search Intelligence</h3></div><span className="status-pill warn">Disconnected</span></div>
+        <div className="console-section-card search-intelligence-connect-card">
+          <h4 className="card-title">Use your verified Search Console data</h4>
+          <p className="card-sub">Connect the Google account with access to this site’s Search Console property. GrowthSent uses the encrypted server-side connection to retrieve clicks, impressions, CTR, and average position.</p>
+          {error && <p role="alert" className="search-intelligence-error">{error}</p>}
+          <button className="primary-btn" onClick={connectGsc} disabled={isConnecting || !websiteId}>{isConnecting ? "Opening Google..." : "Connect Google Search Console"}</button>
         </div>
       </div>
     );
   }
 
-  const series = report?.dailySeries || [];
-  const summary = report?.summary || { totalClicks: 0, totalImpressions: 0, avgCtr: 0, avgPosition: 0 };
+  const noData = Boolean(report && report.overview.current.impressions === 0 && report.keywords.length === 0 && report.pages.length === 0);
 
-  const formatMetricVal = (val: number, type: ActiveChartMetric) => {
-    if (type === "clicks" || type === "impressions") return Math.round(val).toLocaleString();
-    if (type === "ctr") return `${val.toFixed(1)}%`;
-    return `#${val.toFixed(1)}`;
+  const renderTab = () => {
+    if (!report) return null;
+    if (activeTab === "overview") return (
+      <div className="search-intelligence-overview-grid">
+        <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">What this view measures</h4></div><div className="search-intelligence-copy"><p>All figures come directly from Google Search Console. The overview compares complete date rows; query and page analysis uses the reported rows returned by Search Console.</p><p>GrowthSent does not estimate search volume, keyword difficulty, traffic, authority, or rankings beyond Search Console’s average position.</p></div></div>
+        <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Coverage of this report</h4></div><div className="search-intelligence-copy"><p>Up to {report.reportedRowLimits.queries} query rows and {report.reportedRowLimits.pages} page rows are requested for each period. Potential cannibalization is inferred from up to {report.reportedRowLimits.queryPageCombinations} current query–page rows.</p><p>Rows not returned by Search Console are shown as unavailable, not as zero.</p></div></div>
+      </div>
+    );
+    if (activeTab === "quick-wins") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Potential quick wins</h4><p className="card-sub">Query-level observations with at least 50 impressions and an average position from 4.0 to 20.0.</p></div><QueryRowsTable rows={report.quickWins} emptyText="No reported queries meet the current quick-win criteria." /></div>;
+    if (activeTab === "content-decay") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Content decay candidates</h4><p className="card-sub">Page-level rows with fewer clicks than the prior period, where both periods were reported.</p></div><PageRowsTable rows={report.contentDecay} emptyText="No reported pages meet the current content-decay criteria." /></div>;
+    if (activeTab === "ctr") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">CTR opportunities</h4><p className="card-sub">Query-level rows with at least 100 impressions, position 10 or better, and CTR under 3%.</p></div><QueryRowsTable rows={report.ctrOpportunities} emptyText="No reported queries meet the current CTR opportunity criteria." /></div>;
+    if (activeTab === "cannibalization") return <div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Potential cannibalization</h4><p className="card-sub">Inferred when multiple URLs received impressions for the same query in the bounded GSC query–page rows. It is not proof of a cannibalization problem.</p></div>{report.potentialCannibalization.length ? <div className="search-intelligence-cannibalization-list">{report.potentialCannibalization.map((group) => <div key={group.query} className="search-intelligence-cannibalization-row"><div><strong title={group.query}>{group.query}</strong><span>{formatNumber(group.totalImpressions)} impressions across {group.pageCount} reported pages</span></div><ul>{group.pages.map((page) => <li key={page.page} title={page.page}>{formatPageLabel(page.page)} <small>{formatNumber(page.impressions)} imp.</small></li>)}</ul></div>)}</div> : <EmptySection title="No potential cannibalization observations">No query with multiple reported pages met the minimum impression threshold.</EmptySection>}</div>;
+    if (activeTab === "winners-losers") return <div className="overview-two-col"><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Winners</h4><p className="card-sub">Largest positive click changes among rows reported in both periods.</p></div><ChangeList rows={report.winners} emptyText="No comparable gains were returned." /></div><div className="console-section-card search-intelligence-section"><div className="card-header"><h4 className="card-title">Losers</h4><p className="card-sub">Largest negative click changes among rows reported in both periods.</p></div><ChangeList rows={report.losers} emptyText="No comparable declines were returned." /></div></div>;
+    if (activeTab === "keywords") return <ExplorerTable title="Keyword explorer" placeholder="Filter reported queries" rows={report.keywords} type="query" />;
+    return <ExplorerTable title="Page explorer" placeholder="Filter reported pages" rows={report.pages} type="page" />;
   };
 
   return (
-    <div className="search-performance-view">
-      {/* Header Controls matching Overview style (NO CONNECTED BUTTON) */}
-      <div className="console-title flex-between">
-        <div>
-          <h3 className="title-text">Search Performance</h3>
-          {report?.siteUrl && <small className="text-muted" style={{ fontSize: "12px" }}>Property: {report.siteUrl}</small>}
-        </div>
-
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          {/* Date Selector Pills */}
-          <div style={{ background: "#e5e7eb", padding: "3px", borderRadius: "8px", display: "flex", gap: "2px" }}>
-            {[
-              { label: "7 Days", val: 7 },
-              { label: "28 Days", val: 28 },
-              { label: "90 Days", val: 90 },
-              { label: "12 Months", val: 365 },
-            ].map((item) => (
-              <button
-                key={item.val}
-                onClick={() => setDays(item.val)}
-                style={{
-                  background: days === item.val ? "#171817" : "transparent",
-                  color: days === item.val ? "#ffffff" : "#4b5563",
-                  border: "none",
-                  padding: "5px 12px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: days === item.val ? 700 : 500,
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Refresh Button */}
-          <button
-            onClick={fetchReport}
-            disabled={isLoading}
-            className="secondary-btn"
-            style={{ padding: "6px 14px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}
-          >
-            <span style={{ display: "inline-block", animation: isLoading ? "spin 1s linear infinite" : "none" }}>↻</span>
-            {isLoading ? "Syncing..." : "Refresh"}
-          </button>
-        </div>
+    <div className="search-performance-view search-intelligence-view">
+      <div className="console-title search-intelligence-title-row">
+        <div><p className="kicker">Google Search Console</p><h3 className="title-text">Search Intelligence</h3>{report?.siteUrl && <p className="card-sub">Property: {report.siteUrl}</p>}</div>
+        <div className="search-intelligence-controls"><label><span className="sr-only">Period</span><select className="filter-select" value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={28}>Last 28 days</option><option value={90}>Last 90 days</option></select></label><button className="secondary-btn" onClick={() => void fetchReport()} disabled={isLoading}>{isLoading ? "Refreshing..." : "Refresh"}</button></div>
       </div>
 
-      {error && (
-        <div role="alert" style={{ marginTop: "16px", padding: "12px 16px", borderRadius: "8px", color: "#b42318", background: "#fef3f2", border: "1px solid #fecdca", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>{error}</span>
-          <button onClick={fetchReport} className="secondary-btn" style={{ fontSize: "12px", padding: "3px 8px" }}>Retry</button>
+      {error && <div role="alert" className="search-intelligence-error search-intelligence-error-banner"><span>{error}</span><button className="secondary-btn" onClick={() => void fetchReport()} disabled={isLoading}>Retry</button></div>}
+      {isLoading && !report ? <LoadingState /> : noData ? <div className="console-section-card search-intelligence-section"><EmptySection title="No Search Console data for this period">No clicks, impressions, queries, or pages were returned for this property. Try a longer period once enough GSC data is available.</EmptySection></div> : report && <>
+        <div className="search-intelligence-period">Current: {report.periods.current.startDate} to {report.periods.current.endDate} · Compared with: {report.periods.previous.startDate} to {report.periods.previous.endDate}</div>
+        <div className="metrics-grid search-intelligence-metrics-grid">
+          <MetricCard label="Clicks" value={formatNumber(report.overview.current.clicks)} delta={report.overview.change.clicks} />
+          <MetricCard label="Impressions" value={formatNumber(report.overview.current.impressions)} delta={report.overview.change.impressions} />
+          <MetricCard label="Average CTR" value={formatPercent(report.overview.current.ctr)} delta={report.overview.change.ctr} type="percent" />
+          <MetricCard label="Average position" value={formatPosition(report.overview.current.position)} delta={report.overview.change.position} type="position" />
         </div>
-      )}
-
-      {/* KPI Cards (4 metrics matching Overview style) */}
-      <div className="metrics-grid" style={{ marginTop: "20px" }}>
-        <div className="metric-card">
-          <p className="metric-label">Total Clicks</p>
-          <b className="metric-val">{isLoading ? "..." : summary.totalClicks.toLocaleString()}</b>
-          <span className="metric-sub text-muted">Last {days} days</span>
-        </div>
-
-        <div className="metric-card">
-          <p className="metric-label">Total Impressions</p>
-          <b className="metric-val">{isLoading ? "..." : summary.totalImpressions.toLocaleString()}</b>
-          <span className="metric-sub text-muted">Search visibility</span>
-        </div>
-
-        <div className="metric-card">
-          <p className="metric-label">Average CTR</p>
-          <b className="metric-val">{isLoading ? "..." : `${(summary.avgCtr * 100).toFixed(1)}%`}</b>
-          <span className="metric-sub text-muted">Click-through rate</span>
-        </div>
-
-        <div className="metric-card">
-          <p className="metric-label">Average Position</p>
-          <b className="metric-val">{isLoading ? "..." : summary.avgPosition ? summary.avgPosition.toFixed(1) : "—"}</b>
-          <span className="metric-sub text-muted">Average search rank</span>
-        </div>
-      </div>
-
-      {/* Performance Chart Card with Grid Lines & Axis Numbers (GSC style) */}
-      <div className="console-section-card" style={{ marginTop: "24px" }}>
-        <div className="card-header flex-between">
-          <h4 className="card-title">Performance Over Time</h4>
-
-          {/* Metric Selector Tabs */}
-          <div style={{ display: "flex", gap: "4px", background: "#f3f4f1", padding: "3px", borderRadius: "8px", border: "1px solid #e5e7eb" }}>
-            {[
-              { key: "clicks", label: "Clicks" },
-              { key: "impressions", label: "Impressions" },
-              { key: "ctr", label: "CTR" },
-              { key: "position", label: "Avg Position" },
-            ].map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setSelectedChartMetric(m.key as ActiveChartMetric)}
-                style={{
-                  background: selectedChartMetric === m.key ? "#a4ef51" : "transparent",
-                  color: selectedChartMetric === m.key ? "#0e0f0e" : "#4b5563",
-                  border: "none",
-                  padding: "5px 12px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: selectedChartMetric === m.key ? 800 : 500,
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* GSC-Style SVG Chart Container */}
-        <div style={{ padding: "20px" }}>
-          {isLoading ? (
-            <p className="card-sub" style={{ textAlign: "center", padding: "40px" }}>Loading timeline data...</p>
-          ) : series.length === 0 ? (
-            <p className="card-sub" style={{ textAlign: "center", padding: "40px" }}>No timeline data returned for the selected range.</p>
-          ) : (
-            <div style={{ position: "relative", width: "100%", overflowX: "auto" }}>
-              <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: "100%", height: "260px", overflow: "visible" }}>
-                <defs>
-                  <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#a4ef51" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#a4ef51" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-
-                {/* Metric Title Label at Top-Left of Chart Grid */}
-                <text x={marginLeft} y="18" fill="#6b7280" fontSize="12" fontWeight="700" textAnchor="start">
-                  {selectedChartMetric === "clicks" ? "Clicks" : selectedChartMetric === "impressions" ? "Impressions" : selectedChartMetric === "ctr" ? "CTR" : "Average position"}
-                </text>
-
-                {/* Horizontal Grid Lines & Y-Axis Number Labels */}
-                {yTicks.map((t, idx) => (
-                  <g key={idx}>
-                    <line
-                      x1={marginLeft}
-                      y1={t.y}
-                      x2={svgWidth - marginRight}
-                      y2={t.y}
-                      stroke="#e5e7eb"
-                      strokeWidth="1"
-                      strokeDasharray={idx === 0 ? "none" : "3 3"}
-                    />
-                    <text x={marginLeft - 8} y={t.y + 4} textAnchor="end" fontSize="11" fill="#9ca3af" fontWeight="600">
-                      {selectedChartMetric === "ctr" ? `${t.val.toFixed(1)}%` : selectedChartMetric === "position" ? t.val.toFixed(1) : Math.round(t.val).toLocaleString()}
-                    </text>
-                  </g>
-                ))}
-
-                {/* Area Fill */}
-                <path d={areaPathD} fill="url(#chartGradient)" />
-
-                {/* Main Line */}
-                <path d={svgPathD} fill="none" stroke="#171817" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-
-                {/* Interactive Data Points */}
-                {points.map((pt, idx) => (
-                  <circle
-                    key={pt.date}
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={hoveredPointIndex === idx ? "6" : "3.5"}
-                    fill="#a4ef51"
-                    stroke="#171817"
-                    strokeWidth="2"
-                    style={{ cursor: "pointer", transition: "r 0.15s ease" }}
-                    onMouseEnter={() => setHoveredPointIndex(idx)}
-                    onMouseLeave={() => setHoveredPointIndex(null)}
-                  />
-                ))}
-
-                {/* X-Axis Date Ticks at Bottom */}
-                {xDateTicks.map((tick) => (
-                  <text key={tick.date} x={tick.x} y={marginBottom + 20} textAnchor="middle" fontSize="11" fill="#6b7280" fontWeight="500">
-                    {tick.date}
-                  </text>
-                ))}
-              </svg>
-
-              {/* Hover Tooltip Overlay */}
-              {hoveredPointIndex !== null && points[hoveredPointIndex] && (
-                <div style={{
-                  position: "absolute",
-                  top: "10px",
-                  right: "10px",
-                  background: "#171817",
-                  color: "#ffffff",
-                  padding: "6px 12px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                }}>
-                  <span style={{ color: "#9ca3af" }}>{points[hoveredPointIndex].date}: </span>
-                  <strong style={{ color: "#a4ef51" }}>{formatMetricVal(points[hoveredPointIndex].rawVal, selectedChartMetric)}</strong>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* SEO Opportunities */}
-      <div className="console-section-card" style={{ marginTop: "24px" }}>
-        <div className="card-header">
-          <h4 className="card-title">SEO Opportunities (Search Console Signals)</h4>
-          <p className="card-sub" style={{ marginTop: "4px" }}>Generated dynamically from your real Search Console queries and rank metrics.</p>
-        </div>
-
-        <div style={{ padding: "20px" }}>
-          {report?.opportunities && report.opportunities.length > 0 ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px" }}>
-              {report.opportunities.map((opp) => (
-                <div key={opp.id} style={{ background: "#f8f9f8", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "16px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <span style={{
-                      fontSize: "11px",
-                      fontWeight: 800,
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      textTransform: "uppercase",
-                      background: opp.type === "low_ctr" ? "#fef3c7" : opp.type === "striking_distance" ? "#e0f2fe" : "#f3e8ff",
-                      color: opp.type === "low_ctr" ? "#b45309" : opp.type === "striking_distance" ? "#0369a1" : "#6b21a8",
-                    }}>
-                      {opp.type.replace("_", " ")}
-                    </span>
-                    <small className="text-muted" style={{ fontSize: "12px" }}>Pos #{opp.metrics.position.toFixed(1)}</small>
-                  </div>
-                  <h5 style={{ margin: "0 0 6px 0", fontSize: "14px", fontWeight: 700 }}>{opp.title}</h5>
-                  <p className="card-sub" style={{ margin: 0, fontSize: "13px", lineHeight: "1.5" }}>{opp.description}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="card-sub">No immediate keyword opportunities detected for the selected date range.</p>
-          )}
-        </div>
-      </div>
-
-      {/* Two Column Section: Top Queries & Top Pages */}
-      <div className="overview-two-col" style={{ marginTop: "24px" }}>
-
-        {/* Top Queries Table */}
-        <div className="console-section-card">
-          <div className="card-header flex-between">
-            <h4 className="card-title">Top Queries</h4>
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Search queries..."
-              value={querySearch}
-              onChange={(e) => { setQuerySearch(e.target.value); setQueryPage(1); }}
-              style={{ width: "160px", padding: "4px 10px", fontSize: "12px" }}
-            />
-          </div>
-
-          {isLoading ? (
-            <p className="card-sub" style={{ padding: "20px" }}>Loading query performance...</p>
-          ) : filteredQueries.length === 0 ? (
-            <p className="card-sub" style={{ padding: "20px" }}>No queries found matching &quot;{querySearch}&quot;.</p>
-          ) : (
-            <div>
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Query</th>
-                      <th style={{ textAlign: "right" }}>Clicks</th>
-                      <th style={{ textAlign: "right" }}>Imp.</th>
-                      <th style={{ textAlign: "right" }}>CTR</th>
-                      <th style={{ textAlign: "right" }}>Pos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedQueries.map((q) => (
-                      <tr key={q.query}>
-                        <td style={{ fontWeight: 600 }}>{q.query}</td>
-                        <td style={{ textAlign: "right", fontWeight: 700 }}>{q.clicks}</td>
-                        <td style={{ textAlign: "right" }}>{q.impressions}</td>
-                        <td style={{ textAlign: "right" }}>{(q.ctr * 100).toFixed(1)}%</td>
-                        <td style={{ textAlign: "right", color: "#6b7280" }}>{q.position.toFixed(1)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {totalQueryPages > 1 && (
-                <div className="flex-between" style={{ padding: "12px 16px", borderTop: "1px solid #e5e7eb", fontSize: "12px" }}>
-                  <span className="text-muted">Page {queryPage} of {totalQueryPages}</span>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button
-                      disabled={queryPage <= 1}
-                      onClick={() => setQueryPage((p) => Math.max(1, p - 1))}
-                      className="secondary-btn"
-                      style={{ fontSize: "12px", padding: "3px 8px" }}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      disabled={queryPage >= totalQueryPages}
-                      onClick={() => setQueryPage((p) => Math.min(totalQueryPages, p + 1))}
-                      className="secondary-btn"
-                      style={{ fontSize: "12px", padding: "3px 8px" }}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Top Pages Table */}
-        <div className="console-section-card">
-          <div className="card-header flex-between">
-            <h4 className="card-title">Top Pages</h4>
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Search pages..."
-              value={pageSearch}
-              onChange={(e) => { setPageSearch(e.target.value); setPageNumber(1); }}
-              style={{ width: "160px", padding: "4px 10px", fontSize: "12px" }}
-            />
-          </div>
-
-          {isLoading ? (
-            <p className="card-sub" style={{ padding: "20px" }}>Loading page performance...</p>
-          ) : filteredPages.length === 0 ? (
-            <p className="card-sub" style={{ padding: "20px" }}>No pages found matching &quot;{pageSearch}&quot;.</p>
-          ) : (
-            <div>
-              <div style={{ overflowX: "auto" }}>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>URL Path</th>
-                      <th style={{ textAlign: "right" }}>Clicks</th>
-                      <th style={{ textAlign: "right" }}>Imp.</th>
-                      <th style={{ textAlign: "right" }}>CTR</th>
-                      <th style={{ textAlign: "right" }}>Pos</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {paginatedPages.map((p) => {
-                      let cleanPath = p.page;
-                      try { cleanPath = new URL(p.page).pathname; } catch { cleanPath = p.page; }
-                      return (
-                        <tr key={p.page}>
-                          <td style={{ fontWeight: 600 }} title={p.page}>{cleanPath || "/"}</td>
-                          <td style={{ textAlign: "right", fontWeight: 700 }}>{p.clicks}</td>
-                          <td style={{ textAlign: "right" }}>{p.impressions}</td>
-                          <td style={{ textAlign: "right" }}>{(p.ctr * 100).toFixed(1)}%</td>
-                          <td style={{ textAlign: "right", color: "#6b7280" }}>{p.position.toFixed(1)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              {totalPagePages > 1 && (
-                <div className="flex-between" style={{ padding: "12px 16px", borderTop: "1px solid #e5e7eb", fontSize: "12px" }}>
-                  <span className="text-muted">Page {pageNumber} of {totalPagePages}</span>
-                  <div style={{ display: "flex", gap: "6px" }}>
-                    <button
-                      disabled={pageNumber <= 1}
-                      onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                      className="secondary-btn"
-                      style={{ fontSize: "12px", padding: "3px 8px" }}
-                    >
-                      Prev
-                    </button>
-                    <button
-                      disabled={pageNumber >= totalPagePages}
-                      onClick={() => setPageNumber((p) => Math.min(totalPagePages, p + 1))}
-                      className="secondary-btn"
-                      style={{ fontSize: "12px", padding: "3px 8px" }}
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* Breakdowns Section: Countries & Devices */}
-      <div className="overview-two-col" style={{ marginTop: "24px" }}>
-
-        {/* Top Countries */}
-        <div className="console-section-card">
-          <div className="card-header"><h4 className="card-title">Top Countries</h4></div>
-          <div style={{ padding: "20px" }}>
-            {report?.countries && report.countries.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {report.countries.slice(0, 5).map((c) => {
-                  const maxClicks = Math.max(...report.countries.map((x) => x.clicks), 1);
-                  const pct = Math.round((c.clicks / maxClicks) * 100);
-                  return (
-                    <div key={c.countryCode}>
-                      <div className="flex-between" style={{ fontSize: "13px", marginBottom: "4px" }}>
-                        <span style={{ fontWeight: 600 }}>{c.country} ({c.countryCode.toUpperCase()})</span>
-                        <span style={{ fontWeight: 700 }}>{c.clicks} clicks</span>
-                      </div>
-                      <div style={{ height: "6px", background: "#f3f4f1", borderRadius: "3px", overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: "#a4ef51", borderRadius: "3px" }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="card-sub">No country breakdown returned by Search Console.</p>
-            )}
-          </div>
-        </div>
-
-        {/* Devices */}
-        <div className="console-section-card">
-          <div className="card-header"><h4 className="card-title">Devices Breakdown</h4></div>
-          <div style={{ padding: "20px" }}>
-            {report?.devices && report.devices.length > 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
-                {["DESKTOP", "MOBILE", "TABLET"].map((devType) => {
-                  const devData = report.devices.find((d) => d.device.toUpperCase() === devType) || { clicks: 0, impressions: 0 };
-                  const totalDevClicks = report.devices.reduce((acc, d) => acc + d.clicks, 0) || 1;
-                  const share = Math.round((devData.clicks / totalDevClicks) * 100);
-                  return (
-                    <div key={devType} style={{ background: "#f8f9f8", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "14px", textAlign: "center" }}>
-                      <small className="text-muted" style={{ fontSize: "11px", fontWeight: 700 }}>{devType}</small>
-                      <div style={{ fontSize: "20px", fontWeight: 800, margin: "4px 0" }}>{share}%</div>
-                      <span className="text-muted" style={{ fontSize: "12px" }}>{devData.clicks} clicks</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="card-sub">No device breakdown returned by Search Console.</p>
-            )}
-          </div>
-        </div>
-
-      </div>
-
-      {/* Sitemaps Inspection Section */}
-      <div className="console-section-card" style={{ marginTop: "24px" }}>
-        <div className="card-header"><h4 className="card-title">Sitemaps</h4></div>
-        <div style={{ padding: "20px" }}>
-          {report?.sitemaps && report.sitemaps.length > 0 ? (
-            <div style={{ overflowX: "auto" }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Sitemap Path</th>
-                    <th>Last Downloaded</th>
-                    <th style={{ textAlign: "center" }}>Status</th>
-                    <th style={{ textAlign: "right" }}>Submitted</th>
-                    <th style={{ textAlign: "right" }}>Indexed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.sitemaps.map((s) => (
-                    <tr key={s.path}>
-                      <td style={{ fontWeight: 600 }}>{s.path}</td>
-                      <td className="text-muted">{s.lastDownloaded ? new Date(s.lastDownloaded).toLocaleDateString() : "Pending"}</td>
-                      <td style={{ textAlign: "center" }}>
-                        <span style={{
-                          background: s.hasErrors ? "#fef2f2" : s.isWarnings ? "#fffbe6" : "#f0fdf4",
-                          color: s.hasErrors ? "#dc2626" : s.isWarnings ? "#d97706" : "#16a34a",
-                          padding: "2px 8px",
-                          borderRadius: "4px",
-                          fontSize: "11px",
-                          fontWeight: 700,
-                        }}>
-                          {s.hasErrors ? "Errors" : s.isWarnings ? "Warnings" : "Success"}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: "right" }}>{s.submitted}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700 }}>{s.indexed}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="card-sub">No sitemaps found in Google Search Console for this property.</p>
-          )}
-        </div>
-      </div>
-
+        <div className="search-intelligence-tabs" role="tablist" aria-label="Search intelligence sections">{TAB_ITEMS.map((tab) => <button key={tab.id} role="tab" aria-selected={activeTab === tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}</div>
+        {renderTab()}
+      </>}
     </div>
   );
+}
+
+function ChangeList({ rows, emptyText }: { rows: SearchIntelligenceReport["winners"]; emptyText: string }) {
+  if (!rows.length) return <EmptySection title="No comparable rows">{emptyText}</EmptySection>;
+  return <div className="search-intelligence-change-list">{rows.map(({ kind, label, row }) => <div key={`${kind}-${label}`} className="search-intelligence-change-row"><div><span className="search-intelligence-kind">{kind}</span><strong title={label}>{kind === "page" ? formatPageLabel(label) : label}</strong></div><div><Delta value={row.change?.clicks ?? null} /><span> clicks</span></div></div>)}</div>;
 }

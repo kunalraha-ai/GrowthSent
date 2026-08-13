@@ -2,6 +2,14 @@ import crypto from "node:crypto";
 import { ObjectId } from "mongodb";
 import { connectToDatabase, safeObjectId } from "../db/mongodb.js";
 import { IntegrationDocument, WebsiteDocument } from "../db/types.js";
+import {
+  buildSearchIntelligenceReport,
+  type GscMetrics,
+  type GscPageRow,
+  type GscQueryPageRow,
+  type GscQueryRow,
+  type SearchIntelligenceReport,
+} from "./search-intelligence.js";
 
 export type GoogleProvider = "google_search_console" | "google_analytics";
 
@@ -546,6 +554,176 @@ function formatCountryName(code: string): string {
 const gscReportCache = new Map<string, { data: GscFullReportData; timestamp: number }>();
 const ga4ReportCache = new Map<string, { data: Ga4FullReportData; timestamp: number }>();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds TTL
+const GSC_INTELLIGENCE_CACHE_TTL_MS = 60 * 1000;
+const GSC_INTELLIGENCE_REQUEST_TIMEOUT_MS = 8_000;
+const GSC_INTELLIGENCE_QUERY_ROW_LIMIT = 250;
+const GSC_INTELLIGENCE_PAGE_ROW_LIMIT = 250;
+const GSC_INTELLIGENCE_QUERY_PAGE_ROW_LIMIT = 500;
+
+const gscIntelligenceCache = new Map<string, { data: SearchIntelligenceReport; timestamp: number }>();
+const gscIntelligenceInFlight = new Map<string, Promise<SearchIntelligenceReport>>();
+
+interface GscSearchAnalyticsApiRow {
+  keys?: string[];
+  clicks?: number;
+  impressions?: number;
+  ctr?: number;
+  position?: number;
+}
+
+interface GscSearchAnalyticsApiResponse {
+  rows?: GscSearchAnalyticsApiRow[];
+  error?: { message?: string };
+}
+
+interface GscSearchAnalyticsRequest {
+  startDate: string;
+  endDate: string;
+  dimensions: Array<"date" | "query" | "page">;
+  rowLimit: number;
+}
+
+function dateRangeForGsc(days: number) {
+  const boundedDays = Math.max(7, Math.min(90, Math.floor(days)));
+  const currentEnd = new Date();
+  // Search Console finalizes data with a short delay. Avoid presenting partial days as final data.
+  currentEnd.setUTCDate(currentEnd.getUTCDate() - 2);
+  const currentStart = new Date(currentEnd);
+  currentStart.setUTCDate(currentStart.getUTCDate() - (boundedDays - 1));
+  const previousEnd = new Date(currentStart);
+  previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+  const previousStart = new Date(previousEnd);
+  previousStart.setUTCDate(previousStart.getUTCDate() - (boundedDays - 1));
+
+  const format = (date: Date) => date.toISOString().slice(0, 10);
+  return {
+    current: { startDate: format(currentStart), endDate: format(currentEnd), days: boundedDays },
+    previous: { startDate: format(previousStart), endDate: format(previousEnd), days: boundedDays },
+  };
+}
+
+async function fetchSearchAnalyticsRows(
+  apiEndpoint: string,
+  accessToken: string,
+  request: GscSearchAnalyticsRequest
+): Promise<GscSearchAnalyticsApiRow[]> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GSC_INTELLIGENCE_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(apiEndpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({})) as GscSearchAnalyticsApiResponse;
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Google Search Console did not return search analytics data.");
+    }
+    return payload.rows || [];
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error("Google Search Console did not respond before the request safety limit.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function toMetrics(row: GscSearchAnalyticsApiRow): GscMetrics {
+  return {
+    clicks: row.clicks || 0,
+    impressions: row.impressions || 0,
+    ctr: row.ctr || 0,
+    position: row.position || 0,
+  };
+}
+
+/**
+ * Returns only bounded Search Console observations. Query/page result sets are
+ * intentionally capped because Search Console's dimensions are not a complete
+ * keyword or URL index. The overview comes from date rows, not those caps.
+ */
+export async function fetchSearchIntelligenceReport(
+  userId: string,
+  websiteId: string,
+  days = 28
+): Promise<SearchIntelligenceReport> {
+  const boundedDays = Math.max(7, Math.min(90, Math.floor(days)));
+  const cacheKey = `${userId}:${websiteId}:${boundedDays}`;
+  const cached = gscIntelligenceCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < GSC_INTELLIGENCE_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const inFlight = gscIntelligenceInFlight.get(cacheKey);
+  if (inFlight) return inFlight;
+
+  const request = (async () => {
+    const { db } = await connectToDatabase();
+    const website = await getWebsiteForUser(userId, websiteId);
+    const integration = await getActiveIntegration(userId, websiteId, "google_search_console");
+    const accessToken = await getValidAccessToken(integration);
+    const siteUrl = await getSearchConsoleSite(accessToken, website.hostname);
+    const ranges = dateRangeForGsc(boundedDays);
+    const apiEndpoint = `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`;
+
+    const [
+      currentDaily,
+      previousDaily,
+      currentQueries,
+      previousQueries,
+      currentPages,
+      previousPages,
+      currentQueryPages,
+    ] = await Promise.all([
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.current, dimensions: ["date"], rowLimit: boundedDays + 2 }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.previous, dimensions: ["date"], rowLimit: boundedDays + 2 }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.current, dimensions: ["query"], rowLimit: GSC_INTELLIGENCE_QUERY_ROW_LIMIT }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.previous, dimensions: ["query"], rowLimit: GSC_INTELLIGENCE_QUERY_ROW_LIMIT }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.current, dimensions: ["page"], rowLimit: GSC_INTELLIGENCE_PAGE_ROW_LIMIT }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.previous, dimensions: ["page"], rowLimit: GSC_INTELLIGENCE_PAGE_ROW_LIMIT }),
+      fetchSearchAnalyticsRows(apiEndpoint, accessToken, { ...ranges.current, dimensions: ["query", "page"], rowLimit: GSC_INTELLIGENCE_QUERY_PAGE_ROW_LIMIT }),
+    ]);
+
+    const report = buildSearchIntelligenceReport({
+      siteUrl,
+      currentPeriod: ranges.current,
+      previousPeriod: ranges.previous,
+      currentDaily: currentDaily.map(toMetrics),
+      previousDaily: previousDaily.map(toMetrics),
+      currentQueries: currentQueries.map((row): GscQueryRow => ({ query: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.query),
+      previousQueries: previousQueries.map((row): GscQueryRow => ({ query: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.query),
+      currentPages: currentPages.map((row): GscPageRow => ({ page: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.page),
+      previousPages: previousPages.map((row): GscPageRow => ({ page: row.keys?.[0] || "", ...toMetrics(row) })).filter((row) => row.page),
+      currentQueryPages: currentQueryPages.map((row): GscQueryPageRow => ({ query: row.keys?.[0] || "", page: row.keys?.[1] || "", ...toMetrics(row) })).filter((row) => row.query && row.page),
+      reportedRowLimits: {
+        queries: GSC_INTELLIGENCE_QUERY_ROW_LIMIT,
+        pages: GSC_INTELLIGENCE_PAGE_ROW_LIMIT,
+        queryPageCombinations: GSC_INTELLIGENCE_QUERY_PAGE_ROW_LIMIT,
+      },
+    });
+
+    await db.collection<IntegrationDocument>("integrations").updateOne(
+      { _id: integration._id },
+      { $set: { updatedAt: new Date() } }
+    );
+    gscIntelligenceCache.set(cacheKey, { data: report, timestamp: Date.now() });
+    return report;
+  })();
+
+  gscIntelligenceInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    gscIntelligenceInFlight.delete(cacheKey);
+  }
+}
 
 export async function fetchSearchConsoleFullReport(
   userId: string,

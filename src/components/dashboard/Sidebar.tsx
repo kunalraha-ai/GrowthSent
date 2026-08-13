@@ -213,10 +213,10 @@ export function Sidebar({
           <a
             className={`nav-item ${activeTab === "gsc" ? "active" : ""}`}
             onClick={() => handleTabClick("gsc")}
-            title="Google Search Console"
+            title="Search Intelligence"
           >
             <span className="icon"><Icons.Integration /></span>
-            <span className="nav-label">Google Search Console</span>
+            <span className="nav-label">Search Intelligence</span>
           </a>
           <a
             className={`nav-item ${activeTab === "ga" ? "active" : ""}`}

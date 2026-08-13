@@ -23,6 +23,7 @@ import {
   completeGoogleAuthorization,
   createGoogleAuthorizationUrl,
   disconnectGoogleIntegration,
+  fetchSearchIntelligenceReport,
   fetchSearchConsoleKeywords,
   fetchSearchConsoleFullReport,
   fetchGoogleAnalyticsReport,
@@ -89,6 +90,13 @@ export const Ga4PropertySelectionSchema = z
   .strict();
 
 const GoogleProviderSchema = z.enum(["google_search_console", "google_analytics"]);
+
+export function normalizeSearchIntelligenceDays(value: string | undefined): number {
+  if (!value) return 28;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return 28;
+  return Math.max(7, Math.min(90, parsed));
+}
 
 export interface ApiRequest {
   method: string;
@@ -428,6 +436,32 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         const queries = await fetchSearchConsoleKeywords(user._id!.toString(), websiteId);
         return { statusCode: 200, body: { queries } };
+      } catch (err) {
+        const message = getErrorMessage(err);
+        const isNotFound = message.includes("No Google Search Console property");
+        return {
+          statusCode: isNotFound ? 404 : 400,
+          body: {
+            error: {
+              code: isNotFound ? "GSC_PROPERTY_NOT_FOUND" : "GSC_ERROR",
+              message: isNotFound ? "No Google Search Console property is configured for this website." : "Unable to load Search Console data.",
+            },
+          },
+        };
+      }
+    }
+
+    if (method === "GET" && path === "/api/v1/search-intelligence") {
+      if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      const websiteId = req.query.websiteId;
+      if (!websiteId) return { statusCode: 400, body: { error: { code: "INVALID_INPUT", message: "websiteId is required." } } };
+      try {
+        const report = await fetchSearchIntelligenceReport(
+          user._id!.toString(),
+          websiteId,
+          normalizeSearchIntelligenceDays(req.query.days)
+        );
+        return { statusCode: 200, body: report };
       } catch (err) {
         const message = getErrorMessage(err);
         const isNotFound = message.includes("No Google Search Console property");

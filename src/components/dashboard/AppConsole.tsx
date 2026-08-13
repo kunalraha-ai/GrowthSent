@@ -432,7 +432,6 @@ export function AppConsole({
           {activeTab === "gsc" && (
             <SearchPerformanceView
               isGscConnected={isGscConnected}
-              onNavigateTab={setActiveTab}
               websiteId={activeWebsiteId}
             />
           )}

@@ -73,19 +73,19 @@ export function OverviewView({
               <div className="console-section-card"><div className="card-header"><h4 className="card-title">Crawl Could Not Be Evaluated</h4></div><p className="card-sub" style={{ padding: "20px" }}>The root page was not retrieved as a successful HTML response. No SEO score or pass result is available.</p></div>
             )}
             <div className="console-section-card" style={{ display: "flex", flexDirection: "column" }}>
-              <div className="card-header"><h4 className="card-title">Search Performance</h4></div>
+              <div className="card-header"><h4 className="card-title">Search Intelligence</h4></div>
               <div style={{ padding: "36px 24px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", flex: 1, minHeight: "220px" }}>
                 <p className="card-sub" style={{ maxWidth: "440px", marginBottom: "24px", fontSize: "14px", lineHeight: "1.6" }}>
                   {isGscConnected
-                    ? "Your connected Search Console data is available in the Search Performance view."
+                    ? "Your connected Search Console data is available in Search Intelligence."
                     : "Connect Google Search Console to retrieve real clicks, impressions, queries, and ranking positions."}
                 </p>
                 <button
                   className="primary-btn"
-                  onClick={() => onNavigateTab(isGscConnected ? "search_performance" : "gsc")}
+                  onClick={() => onNavigateTab("gsc")}
                   style={{ padding: "12px 24px", fontSize: "14px", fontWeight: 700 }}
                 >
-                  {isGscConnected ? "View Search Performance →" : "Connect Google Search Console →"}
+                  {isGscConnected ? "View Search Intelligence →" : "Connect Google Search Console →"}
                 </button>
               </div>
             </div>
