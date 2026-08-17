@@ -1,0 +1,15 @@
+{
+    "commands":  [
+                     "set -e",
+                     "echo ===RELEASE===",
+                     "ls -ld /opt/growthsent/releases/a8f57939cc63fe75b8b092215c4e1336c7b857b4d5ca096063bcd1ac50ad3eb6 2\u003e/dev/null || true",
+                     "echo ===FILES===",
+                     "find /opt/growthsent/releases/a8f57939cc63fe75b8b092215c4e1336c7b857b4d5ca096063bcd1ac50ad3eb6 -maxdepth 2 -type f | sort | head -100",
+                     "echo ===VENV===",
+                     "/opt/growthsent/venv/bin/python --version 2\u003e\u00261 || true",
+                     "echo ===MANIFEST===",
+                     "test -f /opt/growthsent/releases/a8f57939cc63fe75b8b092215c4e1336c7b857b4d5ca096063bcd1ac50ad3eb6/BUNDLE-MANIFEST.json \u0026\u0026 echo BUNDLE_MANIFEST_PRESENT || echo BUNDLE_MANIFEST_MISSING",
+                     "echo ===INSTALL-METADATA===",
+                     "find /opt/growthsent/releases/a8f57939cc63fe75b8b092215c4e1336c7b857b4d5ca096063bcd1ac50ad3eb6 -maxdepth 2 -type f \\( -iname \u0027*install*\u0027 -o -iname \u0027*metadata*\u0027 \\) -print 2\u003e/dev/null || true"
+                 ]
+}

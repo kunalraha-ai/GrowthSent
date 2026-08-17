@@ -1,0 +1,8 @@
+# Kept aligned with the proven production-v1 ingestion closure. The v2 bundle
+# adds only manifest/control tooling; it does not change the Parquet schemas.
+pyarrow==19.0.1
+duckdb==1.5.5
+boto3==1.43.67
+botocore==1.43.67
+s3transfer==0.19.2
+jmespath==1.1.0

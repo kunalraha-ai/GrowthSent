@@ -1,0 +1,33 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListOnlyCanaryInputAndOutputPrefixes",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::growthsent-data-552648196041-us-east-1-an",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "production/common-crawl/wat-pages-links/v1/cc-main-2026-30-first-1000/crawl=CC-MAIN-2026-30/dataset=links",
+            "production/common-crawl/wat-pages-links/v1/cc-main-2026-30-first-1000/crawl=CC-MAIN-2026-30/dataset=links/*",
+            "production/common-crawl/backlink-derived-canary/v1/cc-main-2026-30-first-1000",
+            "production/common-crawl/backlink-derived-canary/v1/cc-main-2026-30-first-1000/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadOnlyV1LinksCanaryInput",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectAttributes"],
+      "Resource": "arn:aws:s3:::growthsent-data-552648196041-us-east-1-an/production/common-crawl/wat-pages-links/v1/cc-main-2026-30-first-1000/crawl=CC-MAIN-2026-30/dataset=links/*"
+    },
+    {
+      "Sid": "PublishAndVerifyOnlyCanaryOutput",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:GetObjectAttributes", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Resource": "arn:aws:s3:::growthsent-data-552648196041-us-east-1-an/production/common-crawl/backlink-derived-canary/v1/cc-main-2026-30-first-1000/*"
+    }
+  ]
+}

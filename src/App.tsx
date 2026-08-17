@@ -1263,7 +1263,12 @@ function App() {
             Terms of Service
           </a>
         </div>
-        <div><b>Social</b><a>𝕏 Twitter</a><a>GitHub</a><a>LinkedIn</a></div>
+        <div>
+          <b>About founder</b>
+          <a href="https://x.com/kunal_raha95453" target="_blank" rel="noreferrer">𝕏 Twitter</a>
+          <a href="https://github.com/kunalraha-ai" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://www.linkedin.com/in/kunal-raha-ai" target="_blank" rel="noreferrer">LinkedIn</a>
+        </div>
       </footer>
 
       {showAuthModal && (
