@@ -40,3 +40,6 @@ my-clerk-app
 /sample.warc.wat.gz
 /wat.paths.gz
 *.log
+
+# Superseded local GCP/R2 release; the reviewed -v2 archive is tracked.
+/deployment/common-crawl-gcp-r2-25k/growthsent-common-crawl-gcp-r2-25k.tar.gz

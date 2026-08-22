@@ -1,0 +1,6 @@
+# Bounded operational lookup fixtures only. Absence is recorded, not treated
+# as a derived-data failure. Do not expand this into a global aggregation.
+github.com
+mongodb.com
+eignex.com
+atmos24.de

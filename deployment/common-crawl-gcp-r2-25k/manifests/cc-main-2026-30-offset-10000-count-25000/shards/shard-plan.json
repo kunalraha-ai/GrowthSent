@@ -1,0 +1,212 @@
+{
+  "base_inputs_sha256": "3625696e98191d77432c62068cfc0bc9eb0fcbc95e80c4d0ba8a62dbe0dd33cb",
+  "base_manifest_sha256": "33420340c9792d90e03c394cfba8590825777010d3aee2ee659e5010b5fc8d1f",
+  "crawl": "CC-MAIN-2026-30",
+  "format_version": 2,
+  "kind": "common-crawl-v2-shard-plan",
+  "plan_sha256": "53c452b1015ea69fd419dc5c13ec4534181fba03319243575ff16d89a6ae49d1",
+  "run_id": "cc-main-2026-30-offset-10000-count-25000",
+  "shard_count": 25,
+  "shards": [
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951507.10/wat/CC-MAIN-20260711134317-20260711164317-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "bbd426583f1a68798423a76d67efd4b6ee1cdf57617fc3797b1c4dafdb1cb206",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951507.10/wat/CC-MAIN-20260711134317-20260711164317-00999.warc.wat.gz",
+      "shard_id": 0,
+      "shard_manifest_sha256": "70d86ca49be1fd4d5625df179dee3dd7913d10a8dcf224f3d821943ff72dd9d7"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951512.38/wat/CC-MAIN-20260711164730-20260711194730-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "95d4af0efe43ffb79ae37761c21536222f8dde8cea477ff4fae66682979cacc3",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951512.38/wat/CC-MAIN-20260711164730-20260711194730-00999.warc.wat.gz",
+      "shard_id": 1,
+      "shard_manifest_sha256": "a4f0e8f206f4c9c2905a1a1c6b2e01d8627cf612531f0d6ce4659b9857c07428"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951514.50/wat/CC-MAIN-20260711195147-20260711225147-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "231fc1008e733af1147fa41131fcb19b6c6846e4488cd28c153897b42390f5cd",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951514.50/wat/CC-MAIN-20260711195147-20260711225147-00999.warc.wat.gz",
+      "shard_id": 2,
+      "shard_manifest_sha256": "db42909921670477d2d98db2250773424db2c77d1da8a8888d4cc8bbbc6f167b"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951526.76/wat/CC-MAIN-20260711225559-20260712015559-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "b65785735be07efb195dd7ae7894b8f05b87a2756b4ff63404744b383113b48e",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951526.76/wat/CC-MAIN-20260711225559-20260712015559-00999.warc.wat.gz",
+      "shard_id": 3,
+      "shard_manifest_sha256": "1aa12a8da636f247d1560b5cde07a54c0e34aeacc74c5b62a7cfeb9e5c171e7e"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951536.14/wat/CC-MAIN-20260712015859-20260712045859-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "439c670f06d6faf5025dff8f47b00a49b4ac38b7cf789a515b595c3973efd73e",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951536.14/wat/CC-MAIN-20260712015859-20260712045859-00999.warc.wat.gz",
+      "shard_id": 4,
+      "shard_manifest_sha256": "75cbdc90dbfde9e370ee217157313a4ffc040dec6aec656faf9db7d4a90fbb1a"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951564.67/wat/CC-MAIN-20260712050426-20260712080426-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "a010ecdeb92cff5e8cccd9318b273c92cfff188b3ccce547f92c879f49a5500d",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951564.67/wat/CC-MAIN-20260712050426-20260712080426-00999.warc.wat.gz",
+      "shard_id": 5,
+      "shard_manifest_sha256": "85832c76db27aa93f76b8cfaae58aeedca7b7f13ccd51691434443271fba5181"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951589.47/wat/CC-MAIN-20260712080722-20260712110722-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "840f5ebc072011551f4e9ea16304ef85cb5e2856600abb152999311c8be1d79c",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951589.47/wat/CC-MAIN-20260712080722-20260712110722-00999.warc.wat.gz",
+      "shard_id": 6,
+      "shard_manifest_sha256": "1e1f6444a0cba7712e2be814849897536ebaad11e9c3de012157fd8aee6b44b8"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951593.69/wat/CC-MAIN-20260712111132-20260712141132-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "6a074f41d2b663b4afcffadc9b49573803339a2fed2ff0a9dbdaf63b3e3813a5",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951593.69/wat/CC-MAIN-20260712111132-20260712141132-00999.warc.wat.gz",
+      "shard_id": 7,
+      "shard_manifest_sha256": "9987fc5a817ed9d2a8a7bf7b108c5c76cffb0ecc44984bda8462963d8fd81059"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951602.30/wat/CC-MAIN-20260712141702-20260712171702-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "dcd956b8c73c77ec9981b96539bea873cd129f202a02595a919a67e709a5a330",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951602.30/wat/CC-MAIN-20260712141702-20260712171702-00999.warc.wat.gz",
+      "shard_id": 8,
+      "shard_manifest_sha256": "637f86861c8aaaf6d0f943750463712f3062697595194275592cdff8690ee4ce"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951611.53/wat/CC-MAIN-20260712172118-20260712202118-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "617df5e3d27804793ee0ace63ac2dcde078bc2aa1b6178c564e49fbe37f218a9",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951611.53/wat/CC-MAIN-20260712172118-20260712202118-00999.warc.wat.gz",
+      "shard_id": 9,
+      "shard_manifest_sha256": "2deb815b6e350b7995697b4b8665a4a93c95c09fab52b94999d66d6fac47a5da"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951621.75/wat/CC-MAIN-20260712202419-20260712232419-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "cdf4c101b2b2624501e0f25194baf669611724f7462956bb429d55e6b762ab23",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951621.75/wat/CC-MAIN-20260712202419-20260712232419-00999.warc.wat.gz",
+      "shard_id": 10,
+      "shard_manifest_sha256": "9ede7c691ae98c304fcbb26c35163f29ef25e9298edce0be64030852f96ace89"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951629.4/wat/CC-MAIN-20260712232836-20260713022836-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "05dd3dc0154dfe245c4d85046c3d831eeff56cbb8834da0622e56a006839ff0f",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951629.4/wat/CC-MAIN-20260712232836-20260713022836-00999.warc.wat.gz",
+      "shard_id": 11,
+      "shard_manifest_sha256": "86e5f83fd97272ea0df345ccd8e1afe870db36b77040a46e710345de52dbdd08"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951631.64/wat/CC-MAIN-20260713023251-20260713053251-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "df2a3462c71022c9539ea284881eacd6af32cd70f1c3749fe7bb247a61d6333d",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951631.64/wat/CC-MAIN-20260713023251-20260713053251-00999.warc.wat.gz",
+      "shard_id": 12,
+      "shard_manifest_sha256": "ee1c70dddd08fb5af92e34a933938b63101804c97d5f6e0de977ac74353e037d"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951636.54/wat/CC-MAIN-20260713053705-20260713083705-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "00e6223eb1669c9196dd65dd4f7ca5a2101890eb87216457fdfbb7defd776ec3",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951636.54/wat/CC-MAIN-20260713053705-20260713083705-00999.warc.wat.gz",
+      "shard_id": 13,
+      "shard_manifest_sha256": "9bb23164d7761e85bb65771dc09cf741f84309d145c6ada13faa7758ae553454"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951639.34/wat/CC-MAIN-20260713084117-20260713114117-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "38aa77722cb5ccaa9de9535b42892a8dc5296dc8fc30f7f7047a6ad4d3f18ea8",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951639.34/wat/CC-MAIN-20260713084117-20260713114117-00999.warc.wat.gz",
+      "shard_id": 14,
+      "shard_manifest_sha256": "9b5b792ce7575af4f54f46d1d28026c28a27e77ac59a0428a0fcb7eb19be258f"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951640.20/wat/CC-MAIN-20260713114529-20260713144529-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "6f15590c054120f66c743a870ef8e90859f61015ccd4b8547693dcdc29d70fcf",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951640.20/wat/CC-MAIN-20260713114529-20260713144529-00999.warc.wat.gz",
+      "shard_id": 15,
+      "shard_manifest_sha256": "aed40ed9cce37f562d28ffb5357901d6b773f3a59c68d7821efac571683f176d"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951655.23/wat/CC-MAIN-20260713144829-20260713174829-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "e1a43afaa7379ef01a7b2117bbb4f669656ca2cb5924404a135ac8f546d25e81",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951655.23/wat/CC-MAIN-20260713144829-20260713174829-00999.warc.wat.gz",
+      "shard_id": 16,
+      "shard_manifest_sha256": "5a81c50b5290d023d5eca677851298d30747ef1146e386917a562c4e5538594d"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951660.0/wat/CC-MAIN-20260713175126-20260713205126-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "92eb031f2fcb60ab739646a7b8d720600db845d6be3dfc461ea195094dfdf5bc",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951660.0/wat/CC-MAIN-20260713175126-20260713205126-00999.warc.wat.gz",
+      "shard_id": 17,
+      "shard_manifest_sha256": "712e05cbfd564ac468f95b880a988fbda42fa7f9ed6b4ea0ca11c608451655db"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951671.71/wat/CC-MAIN-20260713205422-20260713235422-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "82ee4c594256c8db5792959aa4029d086ca493bb477c78bc00ab45d7fc7a3641",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951671.71/wat/CC-MAIN-20260713205422-20260713235422-00999.warc.wat.gz",
+      "shard_id": 18,
+      "shard_manifest_sha256": "4c0b7b7b041d2898b71f6803b338b6b642111309e2e49800863e5d40e4d8c3d7"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951686.44/wat/CC-MAIN-20260713235832-20260714025832-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "4c51ce30a7f49cb315073587d4128b1b0516b123e8ae03f0585f7971679b6ecc",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951686.44/wat/CC-MAIN-20260713235832-20260714025832-00999.warc.wat.gz",
+      "shard_id": 19,
+      "shard_manifest_sha256": "e0da17515744e98ca22f2f0c2216bb1157adf8d30efb9b0db55122187a309e50"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951689.35/wat/CC-MAIN-20260714030243-20260714060243-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "a13426f6f23e415df08edc892ac465e0d7c200a38ea9290e7f0d2aac72860453",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951689.35/wat/CC-MAIN-20260714030243-20260714060243-00999.warc.wat.gz",
+      "shard_id": 20,
+      "shard_manifest_sha256": "0aa588d1ae6f18e5fdaed256513438c8523f84adafa32fd231aded6b73b61fb1"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951692.32/wat/CC-MAIN-20260714060659-20260714090659-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "9e656a9c950fba7cb2efd63e9f9543ccf8d46e50f23f1f860d56c756311cc371",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951692.32/wat/CC-MAIN-20260714060659-20260714090659-00999.warc.wat.gz",
+      "shard_id": 21,
+      "shard_manifest_sha256": "c758c32ca218602798c09e4d3a5ad65afc81289bac246e03137db423fb871d6c"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951695.66/wat/CC-MAIN-20260714090957-20260714120957-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "49696a7fd3be9ba28d34f92b052f6fc202003496baea8b6cfee2cb23b564f688",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951695.66/wat/CC-MAIN-20260714090957-20260714120957-00999.warc.wat.gz",
+      "shard_id": 22,
+      "shard_manifest_sha256": "9b6235898ac487a25108ac3ebc7887afecfaa103a1445f785ab1b2502554a929"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951707.11/wat/CC-MAIN-20260714121256-20260714151256-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "4e989049adcc1db9c6055573f640243c46b6a5cb5d117de25291583dfca7b604",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951707.11/wat/CC-MAIN-20260714121256-20260714151256-00999.warc.wat.gz",
+      "shard_id": 23,
+      "shard_manifest_sha256": "72ce3dc4e6b278a07ec5f99391d8d94a263d7c30aafc390974ecd3405f4da58f"
+    },
+    {
+      "first_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951715.36/wat/CC-MAIN-20260714151556-20260714181556-00000.warc.wat.gz",
+      "input_count": 1000,
+      "inputs_sha256": "4ae28bd9669ed5bd1abb3a2bbac6fed31125545c5cf02194c754a3bf173390bb",
+      "last_input": "crawl-data/CC-MAIN-2026-30/segments/1783663951715.36/wat/CC-MAIN-20260714151556-20260714181556-00999.warc.wat.gz",
+      "shard_id": 24,
+      "shard_manifest_sha256": "7c446a3f8a343d6c99eb5e5fecc89483624c49305f6ec91fcedf1cc981f68905"
+    }
+  ]
+}

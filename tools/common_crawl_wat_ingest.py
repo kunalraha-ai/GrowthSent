@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Iterator
+from urllib.error import HTTPError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
@@ -45,6 +46,16 @@ LINKS_SCHEMA = pa.schema([
 MOJIBAKE_MARKERS = ("Ã", "Â", "â", "ð", "ï¿½")
 SCHEMED_URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 MAX_SAFE_INPUTS = 1_000
+SOURCE_GET_MAX_ATTEMPTS = 8
+SOURCE_RETRY_INITIAL_DELAY_SECONDS = 2.0
+SOURCE_RETRY_MAX_DELAY_SECONDS = 45.0
+SOURCE_S3_CONNECT_TIMEOUT_SECONDS = 10
+SOURCE_S3_READ_TIMEOUT_SECONDS = 120
+SOURCE_RETRYABLE_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
+SOURCE_RETRYABLE_S3_CODES = frozenset({
+    "SlowDown", "RequestTimeout", "RequestTimeoutException", "ServiceUnavailable",
+    "InternalError", "Throttling", "ThrottlingException",
+})
 
 
 @dataclass
@@ -294,19 +305,73 @@ def retry(operation, label: str, attempts: int = 5):
             time.sleep(delay)
 
 
-def s3_client(unsigned: bool = False):
+def is_retryable_source_error(error: Exception) -> bool:
+    """Return whether a source-read failure can be retried without a tight loop."""
+    if isinstance(error, HTTPError):
+        return error.code in SOURCE_RETRYABLE_HTTP_STATUSES
+    response = getattr(error, "response", None)
+    if not isinstance(response, dict):
+        return False
+    error_code = str(response.get("Error", {}).get("Code") or "")
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return error_code in SOURCE_RETRYABLE_S3_CODES or status in SOURCE_RETRYABLE_HTTP_STATUSES
+
+
+def retry_source_read(operation, label: str, attempts: int = SOURCE_GET_MAX_ATTEMPTS):
+    """Bound retries for transient Common Crawl source failures.
+
+    Eight outer GetObject attempts are allowed.  Delays begin at two seconds,
+    grow exponentially with positive jitter, and are capped at 45 seconds.
+    This bounds wait time between attempts while avoiding a synchronized retry
+    storm when Common Crawl responds with SlowDown or 503.
+    """
+    if attempts < 1:
+        raise ValueError("source retry attempts must be positive")
+    for attempt in range(attempts):
+        try:
+            return operation()
+        except Exception as error:
+            if not is_retryable_source_error(error) or attempt == attempts - 1:
+                raise
+            base_delay = min(SOURCE_RETRY_MAX_DELAY_SECONDS, SOURCE_RETRY_INITIAL_DELAY_SECONDS * (2 ** attempt))
+            jitter = random.uniform(0.0, min(5.0, base_delay * 0.25))
+            delay = min(SOURCE_RETRY_MAX_DELAY_SECONDS, base_delay + jitter)
+            logging.warning(
+                "%s retryable source error %s (attempt %s/%s); retrying in %.1fs",
+                label, type(error).__name__, attempt + 1, attempts, delay,
+            )
+            time.sleep(delay)
+
+
+def s3_client(
+    unsigned: bool = False,
+    *,
+    retries: dict[str, Any] | None = None,
+    connect_timeout: int | None = None,
+    read_timeout: int | None = None,
+):
     try:
         import boto3
         from botocore import UNSIGNED
         from botocore.config import Config
     except ImportError as error:
         raise RuntimeError("boto3 is required for S3 inputs or uploads; install requirements-common-crawl.txt") from error
-    return boto3.client("s3", config=Config(signature_version=UNSIGNED) if unsigned else None)
+    config_values: dict[str, Any] = {}
+    if unsigned:
+        config_values["signature_version"] = UNSIGNED
+    if retries is not None:
+        config_values["retries"] = retries
+    if connect_timeout is not None:
+        config_values["connect_timeout"] = connect_timeout
+    if read_timeout is not None:
+        config_values["read_timeout"] = read_timeout
+    return boto3.client("s3", config=Config(**config_values) if config_values else None)
 
 
 @contextmanager
 def open_input(path: str, metrics: Metrics, source_bucket: str, source_unsigned: bool = True,
-               source_url_base: str = "https://data.commoncrawl.org/") -> Iterator[BinaryIO]:
+               source_url_base: str = "https://data.commoncrawl.org/",
+               source_s3_bucket: str | None = None) -> Iterator[BinaryIO]:
     local = Path(path)
     if path.startswith("s3://"):
         if path.startswith("s3://"):
@@ -324,6 +389,26 @@ def open_input(path: str, metrics: Metrics, source_bucket: str, source_unsigned:
         metrics.input_bytes = local.stat().st_size
         with gzip.open(local, "rb") as stream:
             yield stream
+    elif source_s3_bucket:
+        # Keep the locked bare manifest key as metrics.input and as the
+        # deterministic output suffix source.  Only its transport changes.
+        client = s3_client(
+            unsigned=False,
+            retries={"mode": "standard", "total_max_attempts": 1},
+            connect_timeout=SOURCE_S3_CONNECT_TIMEOUT_SECONDS,
+            read_timeout=SOURCE_S3_READ_TIMEOUT_SECONDS,
+        )
+        response = retry_source_read(
+            lambda: client.get_object(Bucket=source_s3_bucket, Key=path),
+            f"download s3://{source_s3_bucket}/{path}",
+        )
+        metrics.input_bytes = int(response.get("ContentLength") or 0)
+        body = response["Body"]
+        try:
+            with gzip.GzipFile(fileobj=body, mode="rb") as stream:
+                yield stream
+        finally:
+            body.close()
     else:
         # Common Crawl's public data endpoint permits HTTPS streaming while its
         # S3 API may deny anonymous requests. Path-list object keys use this
@@ -343,7 +428,10 @@ def upload(local: Path, bucket: str, key: str, content_type: str) -> None:
     retry(lambda: client.upload_file(str(local), bucket, key, ExtraArgs={"ContentType": content_type}), f"upload {key}")
 
 
-def ingest_one(crawl: str, source: str, output_root: Path, batch_size: int, resume: bool, source_bucket: str = "commoncrawl", source_unsigned: bool = True, source_url_base: str = "https://data.commoncrawl.org/") -> Metrics:
+def ingest_one(crawl: str, source: str, output_root: Path, batch_size: int, resume: bool,
+               source_bucket: str = "commoncrawl", source_unsigned: bool = True,
+               source_url_base: str = "https://data.commoncrawl.org/",
+               source_s3_bucket: str | None = None) -> Metrics:
     started = time.monotonic()
     metrics = Metrics(input=source)
     part = input_key(source)
@@ -363,7 +451,7 @@ def ingest_one(crawl: str, source: str, output_root: Path, batch_size: int, resu
     pages_writer = BufferedParquetWriter(pages_tmp, PAGES_SCHEMA, batch_size)
     links_writer = BufferedParquetWriter(links_tmp, LINKS_SCHEMA, batch_size)
     try:
-        with open_input(source, metrics, source_bucket, source_unsigned, source_url_base) as stream:
+        with open_input(source, metrics, source_bucket, source_unsigned, source_url_base, source_s3_bucket) as stream:
             for record in iter_wat_json(stream, metrics):
                 rows = rows_from_record(record, crawl, metrics)
                 if rows is None:
@@ -390,11 +478,14 @@ def ingest_one(crawl: str, source: str, output_root: Path, batch_size: int, resu
     return metrics
 
 
-def _ingest_task(task: tuple[str, str, str, int, bool, str, bool, str]) -> dict[str, Any]:
+def _ingest_task(task: tuple[str, str, str, int, bool, str, bool, str, str | None]) -> dict[str, Any]:
     """Process-pool entry point; each task owns distinct deterministic parts."""
-    crawl, source, output_dir, batch_size, resume, source_bucket, source_unsigned, source_url_base = task
+    crawl, source, output_dir, batch_size, resume, source_bucket, source_unsigned, source_url_base, source_s3_bucket = task
     try:
-        return ingest_one(crawl, source, Path(output_dir), batch_size, resume, source_bucket, source_unsigned, source_url_base).report()
+        return ingest_one(
+            crawl, source, Path(output_dir), batch_size, resume, source_bucket, source_unsigned,
+            source_url_base, source_s3_bucket,
+        ).report()
     except Exception as error:
         return Metrics(input=source, failures=[f"{type(error).__name__}: {error}"]).report()
 
@@ -402,7 +493,8 @@ def _ingest_task(task: tuple[str, str, str, int, bool, str, bool, str]) -> dict[
 def ingest_many(crawl: str, sources: list[str], output_root: Path, batch_size: int, resume: bool,
                 source_bucket: str, workers: int, source_unsigned: bool = True,
                 source_url_base: str = "https://data.commoncrawl.org/",
-                on_complete: Callable[[str, dict[str, Any]], None] | None = None) -> list[dict[str, Any]]:
+                on_complete: Callable[[str, dict[str, Any]], None] | None = None,
+                source_s3_bucket: str | None = None) -> list[dict[str, Any]]:
     """Ingest independent WAT inputs concurrently while preserving input order.
 
     A source hashes to one pages part and one links part, so no two workers
@@ -413,7 +505,11 @@ def ingest_many(crawl: str, sources: list[str], output_root: Path, batch_size: i
         raise ValueError("workers must be one of: 1, 2, 4, 8")
     if len(set(sources)) != len(sources):
         raise ValueError("duplicate --input values are not allowed because they map to the same deterministic part")
-    tasks = [(crawl, source, str(output_root), batch_size, resume, source_bucket, source_unsigned, source_url_base) for source in sources]
+    tasks = [
+        (crawl, source, str(output_root), batch_size, resume, source_bucket, source_unsigned,
+         source_url_base, source_s3_bucket)
+        for source in sources
+    ]
     if workers == 1:
         reports = []
         for source, task in zip(sources, tasks):
@@ -640,6 +736,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-bucket", default="commoncrawl", help="Bucket used when --input is a Common Crawl object key")
     parser.add_argument("--source-url-base", default="https://data.commoncrawl.org/",
                         help="HTTPS base used for plain Common Crawl object keys")
+    parser.add_argument(
+        "--source-s3-bucket",
+        help="Read plain manifest object keys from this bucket using authenticated S3 instead of HTTPS",
+    )
     parser.add_argument("--batch-size", type=int, default=50_000)
     parser.add_argument("--workers", type=int, choices=(1, 2, 4, 8), default=1,
                         help="Bounded number of independent WAT workers (default: 1)")
@@ -734,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             reports = ingest_many(args.crawl, batch, output_root, args.batch_size, args.resume,
                                   args.source_bucket, args.workers, not args.signed_source, args.source_url_base,
-                                  report_completed)
+                                  report_completed, args.source_s3_bucket)
         except ValueError as error:
             parser.error(str(error))
         for source, report in zip(batch, reports):

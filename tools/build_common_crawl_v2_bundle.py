@@ -92,30 +92,56 @@ def build(
         expected_input_count=expected_input_count,
         required_source_prefix=required_source_prefix,
     )
-    release_files = [
+    tool_files = [
         ROOT / "tools" / "common_crawl_wat_ingest.py",
         ROOT / "tools" / "common_crawl_wat_ingest_v2.py",
         ROOT / "tools" / "common_crawl_v2_manifest.py",
         ROOT / "tools" / "verify_common_crawl_v2_run.py",
+        ROOT / "tools" / "promote_common_crawl_v1_shard0_to_v2.py",
         ROOT / "tools" / "common_crawl_backlink_derive.py",
+        ROOT / "tools" / "common_crawl_backlink_derive_production_v1.py",
+    ]
+    release_root_files = [
         ROOT / "deployment" / "common-crawl-production-v2" / "requirements.txt",
         ROOT / "deployment" / "common-crawl-production-v2" / "README.md",
     ]
-    missing = [str(path) for path in release_files if not path.is_file()]
+    runner_files = [
+        ROOT / "deployment" / "common-crawl-production-v2" / "backlink-derived-canary-run.sh",
+        ROOT / "deployment" / "common-crawl-production-v2" / "backlink-derived-production-10k-run.sh",
+        ROOT / "deployment" / "common-crawl-production-v2" / "launch-template-bootstrap.sh",
+        ROOT / "deployment" / "common-crawl-production-v2" / "derive-launch-template-bootstrap.sh",
+    ]
+    systemd_files = [
+        ROOT / "deployment" / "common-crawl-production-v2" / "backlink-derived-production-10k.service.template",
+    ]
+    config_files = [ROOT / "deployment" / "common-crawl-production-v2" / "derive-rollup-hosts.txt"]
+    missing = [str(path) for path in [*tool_files, *release_root_files, *runner_files, *systemd_files, *config_files] if not path.is_file()]
     if missing:
         raise RuntimeError(f"v2 release is missing required files: {', '.join(missing)}")
 
     with tempfile.TemporaryDirectory(prefix="growthsent-cc-v2-") as temporary_directory:
         stage = Path(temporary_directory) / BUNDLE_NAME
         tools_directory = stage / "tools"
+        runners_directory = stage / "runners"
+        systemd_directory = stage / "systemd"
+        config_directory = stage / "config"
         manifests_directory = stage / "manifests"
         shards_directory = manifests_directory / "shards"
         tools_directory.mkdir(parents=True)
+        runners_directory.mkdir(parents=True)
+        systemd_directory.mkdir(parents=True)
+        config_directory.mkdir(parents=True)
         shards_directory.mkdir(parents=True)
-        for path in release_files[:5]:
+        for path in tool_files:
             shutil.copy2(path, tools_directory / path.name)
-        for path in release_files[5:]:
+        for path in release_root_files:
             shutil.copy2(path, stage / path.name)
+        for path in runner_files:
+            shutil.copy2(path, runners_directory / path.name)
+        for path in systemd_files:
+            shutil.copy2(path, systemd_directory / path.name)
+        for path in config_files:
+            shutil.copy2(path, config_directory / path.name)
         shutil.copy2(base_manifest_path, manifests_directory / "base-manifest.json")
         shutil.copy2(shard_plan_path, shards_directory / "shard-plan.json")
         for path, _ in shards:

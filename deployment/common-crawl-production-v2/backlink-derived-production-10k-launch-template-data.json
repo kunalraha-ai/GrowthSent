@@ -1,0 +1,17 @@
+{
+  "ImageId": "ami-07a5b367e8dc8bd92",
+  "InstanceType": "r6i.xlarge",
+  "IamInstanceProfile": {"Name": "growthsent-backlink-derived-role"},
+  "NetworkInterfaces": [{
+    "DeviceIndex": 0,
+    "DeleteOnTermination": true,
+    "AssociatePublicIpAddress": true,
+    "Groups": ["sg-0595a0df1b7105404"]
+  }],
+  "BlockDeviceMappings": [{
+    "DeviceName": "/dev/xvda",
+    "Ebs": {"VolumeSize": 1536, "VolumeType": "gp3", "Encrypted": true, "DeleteOnTermination": true}
+  }],
+  "MetadataOptions": {"HttpTokens": "required", "HttpEndpoint": "enabled", "HttpPutResponseHopLimit": 2, "InstanceMetadataTags": "enabled"},
+  "UserData": "IyEvdXNyL2Jpbi9lbnYgYmFzaAojIFVzZXIgZGF0YSBmb3IgdGhlIGRlZGljYXRlZCAxMEsgZGVyaXZlZC1iYWNrbGluayB3b3JrZXJzLiBJdCBuZXZlciBzdGFydHMgYSBqb2IuCnNldCAtRWV1byBwaXBlZmFpbApyZWFkb25seSBESVI9Ii9ldGMvZ3Jvd3Roc2VudC9jb21tb24tY3Jhd2wtYmFja2xpbmstZGVyaXZlZC12MSIKcmVhZG9ubHkgRklMRT0iJERJUi9sYXVuY2gtaWRlbnRpdHkuZW52Igp2YWxpZGF0ZV9kZXJpdmVfaWRlbnRpdHkoKSB7CiAgW1sgIiRSVU5fSUQiID09ICJjYy1tYWluLTIwMjYtMzAtZmlyc3QtMTAwMDAiIF1dIHx8IHJldHVybiAyCiAgW1sgIiRERVJJVkVfU0hBUkRfQ09VTlQiID09ICIxMCIgXV0gfHwgcmV0dXJuIDIKICBbWyAiJERFUklWRV9TSEFSRF9JRCIgPX4gXlswLTldKyQgXV0gJiYgKCggREVSSVZFX1NIQVJEX0lEID49IDAgJiYgREVSSVZFX1NIQVJEX0lEIDwgMTAgKSkgfHwgcmV0dXJuIDIKfQp0b2tlbj0iJChjdXJsIC0tbm9wcm94eSAnKicgLS1mYWlsIC0tc2lsZW50IC0tc2hvdy1lcnJvciAtLW1heC10aW1lIDIgLVggUFVUIGh0dHA6Ly8xNjkuMjU0LjE2OS4yNTQvbGF0ZXN0L2FwaS90b2tlbiAtSCAnWC1hd3MtZWMyLW1ldGFkYXRhLXRva2VuLXR0bC1zZWNvbmRzOiAyMTYwMCcpIgpyZWFkX3RhZygpIHsgY3VybCAtLW5vcHJveHkgJyonIC0tZmFpbCAtLXNpbGVudCAtLXNob3ctZXJyb3IgLS1tYXgtdGltZSAyIC1IICJYLWF3cy1lYzItbWV0YWRhdGEtdG9rZW46ICR0b2tlbiIgImh0dHA6Ly8xNjkuMjU0LjE2OS4yNTQvbGF0ZXN0L21ldGEtZGF0YS90YWdzL2luc3RhbmNlLyQxIjsgfQpSVU5fSUQ9IiQocmVhZF90YWcgUnVuSWQpIjsgREVSSVZFX1NIQVJEX0lEPSIkKHJlYWRfdGFnIERlcml2ZVNoYXJkSWQpIjsgREVSSVZFX1NIQVJEX0NPVU5UPSIkKHJlYWRfdGFnIERlcml2ZVNoYXJkQ291bnQpIgp2YWxpZGF0ZV9kZXJpdmVfaWRlbnRpdHkgfHwgZXhpdCAkPwppbnN0YWxsIC1kIC1tIDA3NTUgIiRESVIiOyB0ZW1wb3Jhcnk9IiQobWt0ZW1wICIkRElSLy5sYXVuY2gtaWRlbnRpdHkuWFhYWFhYIikiOyB1bWFzayAwNzcKcHJpbnRmICdSVU5fSUQ9JXNcbkRFUklWRV9TSEFSRF9JRD0lc1xuREVSSVZFX1NIQVJEX0NPVU5UPSVzXG4nICIkUlVOX0lEIiAiJERFUklWRV9TSEFSRF9JRCIgIiRERVJJVkVfU0hBUkRfQ09VTlQiID4gIiR0ZW1wb3JhcnkiCmluc3RhbGwgLW0gMDYwMCAiJHRlbXBvcmFyeSIgIiRGSUxFIjsgcm0gLWYgIiR0ZW1wb3JhcnkiCg=="
+}

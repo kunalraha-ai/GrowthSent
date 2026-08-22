@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyLockedRawV2Links",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject"],
+      "Resource": "arn:aws:s3:::growthsent-data-552648196041-us-east-1-an/production/common-crawl/wat-pages-links/v2/cc-main-2026-30-first-10000/crawl=CC-MAIN-2026-30/dataset=links/*"
+    },
+    {
+      "Sid": "PublishOnlyLockedDerivedV1",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload"],
+      "Resource": "arn:aws:s3:::growthsent-data-552648196041-us-east-1-an/production/common-crawl/backlink-derived/v1/cc-main-2026-30-first-10000/*"
+    }
+  ]
+}

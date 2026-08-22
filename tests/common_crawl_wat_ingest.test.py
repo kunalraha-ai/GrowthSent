@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 import pyarrow.parquet as pq
 
@@ -34,6 +35,26 @@ def payload(url="https://example.com/path/page.html"):
             }},
         }
     }
+
+
+class FakeSourceS3Error(Exception):
+    def __init__(self, code: str, status: int | None = None):
+        super().__init__(code)
+        metadata = {} if status is None else {"HTTPStatusCode": status}
+        self.response = {"Error": {"Code": code}, "ResponseMetadata": metadata}
+
+
+class SequencedSourceS3:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.calls = []
+
+    def get_object(self, *, Bucket, Key):
+        self.calls.append((Bucket, Key))
+        response = next(self.responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class WatIngestTests(unittest.TestCase):
@@ -116,6 +137,91 @@ class WatIngestTests(unittest.TestCase):
             first = wat.ingest_one("CC-MAIN-2026-30", str(source), root / "out", 1, False)
             resumed = wat.ingest_one("CC-MAIN-2026-30", str(source), root / "out", 1, True)
             self.assertEqual(resumed.report(), first.report())
+
+    def test_authenticated_s3_streams_a_plain_manifest_key_without_changing_the_key(self):
+        source = "crawl-data/CC-MAIN-2026-30/wat/example.warc.wat.gz"
+        raw = b"streamed WAT bytes"
+        compressed = gzip.compress(raw)
+        client = SequencedSourceS3([{"Body": io.BytesIO(compressed), "ContentLength": len(compressed)}])
+        metrics = wat.Metrics(input=source)
+        with patch.object(wat, "s3_client", return_value=client) as s3_factory:
+            with wat.open_input(source, metrics, "commoncrawl", source_s3_bucket="commoncrawl") as stream:
+                self.assertEqual(stream.read(), raw)
+        s3_factory.assert_called_once_with(
+            unsigned=False,
+            retries={"mode": "standard", "total_max_attempts": 1},
+            connect_timeout=wat.SOURCE_S3_CONNECT_TIMEOUT_SECONDS,
+            read_timeout=wat.SOURCE_S3_READ_TIMEOUT_SECONDS,
+        )
+        self.assertEqual(client.calls, [("commoncrawl", source)])
+        self.assertEqual(metrics.input, source)
+        self.assertEqual(metrics.input_bytes, len(compressed))
+
+    def test_authenticated_s3_retries_slowdown_then_succeeds_with_bounded_backoff(self):
+        source = "crawl-data/CC-MAIN-2026-30/wat/example.warc.wat.gz"
+        raw = gzip.compress(b"retry success")
+        client = SequencedSourceS3([
+            FakeSourceS3Error("SlowDown"),
+            {"Body": io.BytesIO(raw), "ContentLength": len(raw)},
+        ])
+        metrics = wat.Metrics(input=source)
+        with (
+            patch.object(wat, "s3_client", return_value=client),
+            patch.object(wat.random, "uniform", return_value=0.0),
+            patch.object(wat.time, "sleep") as sleep,
+        ):
+            with wat.open_input(source, metrics, "commoncrawl", source_s3_bucket="commoncrawl") as stream:
+                self.assertEqual(stream.read(), b"retry success")
+        self.assertEqual(len(client.calls), 2)
+        sleep.assert_called_once_with(2.0)
+
+    def test_authenticated_s3_stops_after_the_bounded_slowdown_retry_budget(self):
+        source = "crawl-data/CC-MAIN-2026-30/wat/example.warc.wat.gz"
+        client = SequencedSourceS3([FakeSourceS3Error("SlowDown")] * wat.SOURCE_GET_MAX_ATTEMPTS)
+        metrics = wat.Metrics(input=source)
+        with (
+            patch.object(wat, "s3_client", return_value=client),
+            patch.object(wat.random, "uniform", return_value=0.0),
+            patch.object(wat.time, "sleep") as sleep,
+            self.assertRaisesRegex(FakeSourceS3Error, "SlowDown"),
+        ):
+            with wat.open_input(source, metrics, "commoncrawl", source_s3_bucket="commoncrawl"):
+                pass
+        self.assertEqual(len(client.calls), wat.SOURCE_GET_MAX_ATTEMPTS)
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list],
+            [2.0, 4.0, 8.0, 16.0, 32.0, 45.0, 45.0],
+        )
+
+    def test_authenticated_s3_does_not_retry_non_retryable_errors(self):
+        source = "crawl-data/CC-MAIN-2026-30/wat/example.warc.wat.gz"
+        client = SequencedSourceS3([FakeSourceS3Error("AccessDenied", 403)])
+        metrics = wat.Metrics(input=source)
+        with (
+            patch.object(wat, "s3_client", return_value=client),
+            patch.object(wat.time, "sleep") as sleep,
+            self.assertRaisesRegex(FakeSourceS3Error, "AccessDenied"),
+        ):
+            with wat.open_input(source, metrics, "commoncrawl", source_s3_bucket="commoncrawl"):
+                pass
+        self.assertEqual(len(client.calls), 1)
+        sleep.assert_not_called()
+
+    def test_authenticated_s3_keeps_metrics_input_and_deterministic_output_suffix(self):
+        source = "crawl-data/CC-MAIN-2026-30/wat/example.warc.wat.gz"
+        compressed = gzip.compress(wat_record(json.dumps(payload()).encode()))
+        client = SequencedSourceS3([{"Body": io.BytesIO(compressed), "ContentLength": len(compressed)}])
+        with tempfile.TemporaryDirectory() as tmp:
+            output_root = Path(tmp) / "out"
+            with patch.object(wat, "s3_client", return_value=client):
+                metrics = wat.ingest_one(
+                    "CC-MAIN-2026-30", source, output_root, 1, False,
+                    source_s3_bucket="commoncrawl",
+                )
+            part = wat.input_key(source)
+            self.assertEqual(metrics.input, source)
+            self.assertTrue((output_root / "crawl=CC-MAIN-2026-30" / "dataset=pages" / f"part-{part}.parquet").is_file())
+            self.assertTrue((output_root / "crawl=CC-MAIN-2026-30" / "dataset=links" / f"part-{part}.parquet").is_file())
 
     def test_batch_aggregates_and_rejects_duplicate_inputs(self):
         first = wat.Metrics(input="one", input_bytes=10, pages_emitted=1, links_emitted=2, output_bytes=4).report()

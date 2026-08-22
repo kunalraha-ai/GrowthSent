@@ -21,6 +21,11 @@ production-v1, schemas, or deterministic Pages/Links/metrics part names.
   the same shard identity must not process it concurrently.
 - Resume uses the same immutable run ID, shard ID, shard count, release, and
   shard manifest. It never repartitions an active or interrupted run.
+- Bare locked `crawl-data/...` inputs are read through authenticated
+  `s3://commoncrawl/...`, not the public HTTP endpoint. Retryable Common Crawl
+  `SlowDown`/503-style source responses use bounded exponential backoff; the
+  original manifest path remains the metrics input and deterministic part-key
+  source.
 
 ## Expected bundle layout
 
@@ -30,6 +35,15 @@ The approved v2 release must contain these files:
 tools/common_crawl_wat_ingest.py       # proven engine, unchanged
 tools/common_crawl_wat_ingest_v2.py    # v2 scope/control wrapper
 tools/common_crawl_v2_manifest.py
+tools/promote_common_crawl_v1_shard0_to_v2.py  # explicit v1-to-v2 shard-0 reuse only
+tools/common_crawl_backlink_derive.py
+tools/common_crawl_backlink_derive_production_v1.py  # locked 10K derived publication protocol
+runners/backlink-derived-canary-run.sh          # validated 1,024-bucket derived runner
+runners/backlink-derived-production-10k-run.sh  # locked ten-shard derived worker
+runners/launch-template-bootstrap.sh
+runners/derive-launch-template-bootstrap.sh
+systemd/backlink-derived-production-10k.service.template
+config/derive-rollup-hosts.txt
 manifests/base-manifest.json
 manifests/shards/shard-<id>-of-<count>.json
 manifests/shards/shard-plan.json
@@ -196,3 +210,79 @@ The configured worker remains four bounded ingestion processes and exactly
 introduced. The separate derived-data process never changes the raw Pages,
 Links, or metrics schemas and must use a new derived prefix after raw-shard
 completion.
+
+## Derived-backlink v1 production workers
+
+The raw v2 run and derived layout are deliberately separate. The latter is
+locked to `cc-main-2026-30-first-10000`, exactly ten derive shards, and this
+immutable schema/layout prefix:
+
+```text
+production/common-crawl/backlink-derived/v1/cc-main-2026-30-first-10000/
+```
+
+Use the dedicated `r6i.xlarge` / 1.5 TiB gp3 launch specification and the
+least-privilege policy in the sibling derived-production files. A derive
+worker receives only its matching 1,000 raw Links parts, creates all 1,024
+`target_host_bucket` partitions locally, then publishes only its own
+`input_shard=shard-<id>-of-010` paths. Its completion marker is written after
+all artifacts and the publication manifest have been verified. See
+`README-backlink-derived-production-10k.md` for the layout and worker
+contract. These local configuration files do not create AWS resources or
+start a derive job.
+
+## Reusing the proven v1 first 1,000 inputs as v2 shard 0
+
+The reviewed v2 shard 0 exactly matches the proven v1 first-1,000 manifest.
+It must be promoted before any v2 shard worker is started; do not reprocess
+those WAT files. The promotion tool is hard-locked to these prefixes and to
+shard 0:
+
+```text
+source:      production/common-crawl/wat-pages-links/v1/cc-main-2026-30-first-1000/
+destination: production/common-crawl/wat-pages-links/v2/cc-main-2026-30-first-10000/
+```
+
+It validates the immutable v1 manifest, all 1,000 Pages/Links/Metrics
+triplets, every metric's input path, and the destination before performing
+any write. Its only write mode uses S3 server-side copy with a source ETag
+precondition; it never writes or deletes a v1 key. It neither writes v2 shard
+completion state nor takes a v2 shard lease. The normal v2 runner must run
+after a verified promotion so its own `--resume` and lease/control path records
+the completed shard.
+
+Run these commands from the installed reviewed v2 release on the designated
+shard-0 worker. The first command is local-only; the second is read-only S3
+verification. Do not run the third command without explicit approval.
+
+```bash
+PYTHON=/opt/growthsent/venv/bin/python
+RELEASE=/opt/growthsent/releases/<reviewed-10k-release-sha256>
+
+$PYTHON "$RELEASE/tools/promote_common_crawl_v1_shard0_to_v2.py" \
+  --base-manifest "$RELEASE/manifests/base-manifest.json" \
+  --shard-manifest "$RELEASE/manifests/shards/shard-00000-of-00010.json" \
+  --shard-plan "$RELEASE/manifests/shards/shard-plan.json" \
+  --validate-local
+
+$PYTHON "$RELEASE/tools/promote_common_crawl_v1_shard0_to_v2.py" \
+  --base-manifest "$RELEASE/manifests/base-manifest.json" \
+  --shard-manifest "$RELEASE/manifests/shards/shard-00000-of-00010.json" \
+  --shard-plan "$RELEASE/manifests/shards/shard-plan.json" \
+  --verify
+
+# Approved write mode only: exactly 3,000 v1->v2 server-side artifact copies.
+$PYTHON "$RELEASE/tools/promote_common_crawl_v1_shard0_to_v2.py" \
+  --base-manifest "$RELEASE/manifests/base-manifest.json" \
+  --shard-manifest "$RELEASE/manifests/shards/shard-00000-of-00010.json" \
+  --shard-plan "$RELEASE/manifests/shards/shard-plan.json" \
+  --apply
+```
+
+If any v2 object already exists, it is accepted only when its size plus an
+available SHA-256 checksum, a valid plain ETag, or the tool's own provenance
+metadata proves it is the same source artifact. Any other existing object,
+missing source artifact, unexpected artifact, or metric/input mismatch aborts
+the operation. After `--apply`, use the ordinary v2 `ValidateShardSetup` then
+`Start` action for shard 0; that runner performs the actual resume discovery
+and writes the shard lifecycle/progress/summary objects.

@@ -1,0 +1,5 @@
+# Bounded, reviewed per-shard rollups only. Empty/comment lines are ignored.
+github.com
+mongodb.com
+eignex.com
+atmos24.de

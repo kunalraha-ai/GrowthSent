@@ -1,0 +1,20 @@
+[Unit]
+Description=GrowthSent derived backlink v1 shard __DERIVE_SHARD_ID__ of 10
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=RELEASE=__RELEASE_PATH__
+Environment=PYTHON=/opt/growthsent/venv/bin/python
+Environment=AWS_REGION=us-east-1
+Environment=AWS_DEFAULT_REGION=us-east-1
+ExecStart=/opt/growthsent/releases/__RELEASE_SHA256__/runners/backlink-derived-production-10k-run.sh
+WorkingDirectory=/opt/growthsent-backlink-derived-v1/cc-main-2026-30-first-10000/__SHARD_LABEL__
+Restart=no
+TimeoutStartSec=24h
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

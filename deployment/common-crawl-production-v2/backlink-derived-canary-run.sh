@@ -19,6 +19,7 @@ readonly INPUT_DIR="$ROOT/input-links"
 readonly OUTPUT_ROOT="$ROOT/output"
 readonly STATUS_DIR="$ROOT/status"
 readonly DETAIL_ROOT="$OUTPUT_ROOT/crawl=$CRAWL/dataset=backlink-details"
+readonly DETAIL_SHARD_ROOT="$DETAIL_ROOT/input_shard=shard-000-of-001"
 readonly PYTHON="$ROOT/venv/bin/python"
 readonly TOOL="$ROOT/release/tools/common_crawl_backlink_derive.py"
 
@@ -50,8 +51,10 @@ fail() {
 trap fail ERR
 
 verify_destination_is_empty() {
-  if aws s3api head-object --bucket "$BUCKET" --key "${DESTINATION_PREFIX}CANARY-COMPLETED.json" >/dev/null 2>&1; then
-    echo "refusing to overwrite a completed canary prefix: s3://$BUCKET/$DESTINATION_PREFIX" >&2
+  local key_count
+  key_count="$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$DESTINATION_PREFIX" --max-keys 1 --query 'KeyCount' --output text)"
+  if [[ "$key_count" != "0" ]]; then
+    echo "refusing to use a non-empty canary prefix: s3://$BUCKET/$DESTINATION_PREFIX" >&2
     exit 2
   fi
 }
@@ -61,7 +64,7 @@ sum_local_input_bytes() {
 }
 
 write_metrics() {
-  "$PYTHON" - "$OUTPUT_ROOT/crawl=$CRAWL/dataset=backlink-details/DERIVED-MANIFEST.json" \
+  "$PYTHON" - "$DETAIL_SHARD_ROOT/DERIVED-MANIFEST.json" \
     "$STATUS_DIR/derive-time.txt" "$STATUS_DIR/disk-samples.tsv" "$STATUS_DIR/DERIVED-CANARY-METRICS.json" <<'PY'
 import json
 import re
@@ -162,12 +165,25 @@ set +e
   --links-dir "$INPUT_DIR" --output-root "$OUTPUT_ROOT" --run-id "$RUN_ID" --crawl "$CRAWL" \
   --shard-id 0 --shard-count 1 --expected-links-files "$EXPECTED_LINK_FILES" \
   --memory-limit 24GB --threads 4 --row-group-size 50000 --temp-directory "$ROOT/duckdb-spill" \
+  --max-temp-directory-size 1.25TiB \
   >"$STATUS_DIR/detail-report.json" 2>"$STATUS_DIR/derive-time.txt"
 derive_status="$?"
 set -e
 kill "$monitor_pid" 2>/dev/null || true
 wait "$monitor_pid" 2>/dev/null || true
 test "$derive_status" -eq 0
+# A bucket may legitimately contain more than one Parquet file.  Validate the
+# partition namespace itself rather than assuming one file per bucket.
+mapfile -t detail_buckets < <(
+  find "$DETAIL_SHARD_ROOT" -mindepth 1 -maxdepth 1 -type d \
+    -name 'target_host_bucket=[0-9][0-9][0-9][0-9]' -printf '%f\n' |
+    LC_ALL=C sort -u
+)
+test "${#detail_buckets[@]}" -eq 1024
+for bucket_number in $(seq 0 1023); do
+  printf -v expected_bucket 'target_host_bucket=%04d' "$bucket_number"
+  test -d "$DETAIL_SHARD_ROOT/$expected_bucket"
+done
 
 write_status "building_bounded_host_rollups"
 build_rollup_if_present "github.com"
@@ -197,13 +213,13 @@ write_status "publishing_new_canary_prefix"
 # Only completed, immutable local output roots are copied.  The marker is
 # deliberately uploaded last; a Data Federation mapping is not created until
 # this marker and the manifest have both been checked.
-aws s3 sync --only-show-errors --no-progress "$OUTPUT_ROOT/crawl=$CRAWL/" "s3://$BUCKET/$DESTINATION_PREFIX/crawl=$CRAWL/"
-aws s3 cp --only-show-errors "$STATUS_DIR/DERIVED-CANARY-METRICS.json" "s3://$BUCKET/$DESTINATION_PREFIX/metrics/DERIVED-CANARY-METRICS.json"
-aws s3 cp --only-show-errors "$STATUS_DIR/detail-report.json" "s3://$BUCKET/$DESTINATION_PREFIX/metrics/detail-report.json"
-aws s3 cp --only-show-errors "$STATUS_DIR/derive-time.txt" "s3://$BUCKET/$DESTINATION_PREFIX/logs/derive-time.txt"
+aws s3 sync --only-show-errors --no-progress "$OUTPUT_ROOT/crawl=$CRAWL/" "s3://$BUCKET/${DESTINATION_PREFIX}crawl=$CRAWL/"
+aws s3 cp --only-show-errors "$STATUS_DIR/DERIVED-CANARY-METRICS.json" "s3://$BUCKET/${DESTINATION_PREFIX}metrics/DERIVED-CANARY-METRICS.json"
+aws s3 cp --only-show-errors "$STATUS_DIR/detail-report.json" "s3://$BUCKET/${DESTINATION_PREFIX}metrics/detail-report.json"
+aws s3 cp --only-show-errors "$STATUS_DIR/derive-time.txt" "s3://$BUCKET/${DESTINATION_PREFIX}logs/derive-time.txt"
 for report in "$STATUS_DIR"/rollup-*.json; do
   test -e "$report" || continue
-  aws s3 cp --only-show-errors "$report" "s3://$BUCKET/$DESTINATION_PREFIX/metrics/$(basename "$report")"
+  aws s3 cp --only-show-errors "$report" "s3://$BUCKET/${DESTINATION_PREFIX}metrics/$(basename "$report")"
 done
 "$PYTHON" - "$STATUS_DIR/CANARY-COMPLETED.json" "$STATUS_DIR/DERIVED-CANARY-METRICS.json" <<'PY'
 import hashlib
@@ -223,6 +239,6 @@ output.write_text(json.dumps({
     "completed_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
 }, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 PY
-aws s3 cp --only-show-errors "$STATUS_DIR/CANARY-COMPLETED.json" "s3://$BUCKET/$DESTINATION_PREFIX/CANARY-COMPLETED.json"
+aws s3 cp --only-show-errors "$STATUS_DIR/CANARY-COMPLETED.json" "s3://$BUCKET/${DESTINATION_PREFIX}CANARY-COMPLETED.json"
 write_status "completed"
 echo "CANARY_COMPLETED run_id=$RUN_ID additional_host=$extra_host"

@@ -1,0 +1,50 @@
+{
+  "labels": {
+    "system": "growthsent-common-crawl",
+    "stage": "raw",
+    "run_id": "cc-main-2026-30-offset-10000-count-25000"
+  },
+  "taskGroups": [
+    {
+      "taskCount": 1,
+      "taskSpec": {
+        "maxRetryCount": 0,
+        "maxRunDuration": "43200s",
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "REPLACE_WITH_DIGEST_PINNED_ARTIFACT_REGISTRY_IMAGE",
+              "entrypoint": "/opt/growthsent/runners/raw-task.sh"
+            }
+          }
+        ],
+        "computeResource": {"cpuMilli": 4000, "memoryMib": 16384},
+        "environment": {
+          "variables": {
+            "GROWTHSENT_RUN_ID": "cc-main-2026-30-offset-10000-count-25000",
+            "GROWTHSENT_CRAWL": "CC-MAIN-2026-30",
+            "GROWTHSENT_SHARD_COUNT": "25",
+            "GROWTHSENT_EXPECTED_INPUT_COUNT": "1000",
+            "GROWTHSENT_RAW_PREFIX": "production/common-crawl/wat-pages-links/v2/cc-main-2026-30-offset-10000-count-25000",
+            "GROWTHSENT_DERIVED_PREFIX": "production/common-crawl/backlink-derived/v1/cc-main-2026-30-offset-10000-count-25000",
+            "GROWTHSENT_RAW_WORKERS": "1",
+            "GROWTHSENT_WORK_DIR": "/work/growthsent"
+          }
+        }
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "serviceAccount": {"email": "REPLACE_WITH_RAW_WORKER_SERVICE_ACCOUNT"},
+    "instances": [
+      {
+        "policy": {
+          "machineType": "n2-standard-4",
+          "provisioningModel": "SPOT",
+          "bootDisk": {"sizeGb": 80, "type": "pd-balanced"}
+        }
+      }
+    ]
+  },
+  "logsPolicy": {"destination": "CLOUD_LOGGING"}
+}

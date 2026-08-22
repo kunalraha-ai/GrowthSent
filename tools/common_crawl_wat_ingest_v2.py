@@ -445,6 +445,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--source-bucket", default="commoncrawl")
     parser.add_argument("--source-url-base", default="https://data.commoncrawl.org/")
+    parser.add_argument(
+        "--source-s3-bucket",
+        help="Read locked bare input keys from this bucket using authenticated S3 instead of HTTPS",
+    )
     parser.add_argument("--signed-source", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--upload", action="store_true")
@@ -547,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
         for batch in v1.chunks(pending, args.files_per_batch):
             reports = v1.ingest_many(
                 context.crawl, batch, args.output_dir, args.batch_size, args.resume, args.source_bucket, args.workers,
-                not args.signed_source, args.source_url_base, report_completed,
+                not args.signed_source, args.source_url_base, report_completed, args.source_s3_bucket,
             )
             for source, report in zip(batch, reports):
                 summaries_by_source[source] = report

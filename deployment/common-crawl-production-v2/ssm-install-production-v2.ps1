@@ -25,8 +25,8 @@ if ([string]::IsNullOrWhiteSpace($BundlePath)) {
 }
 
 $BundleRoot = "growthsent-common-crawl-production-v2"
-$ExpectedBundleSha256 = "17ee0ba3ef2453c479dc6510a24fe236b9a86bbe2e7eabc69d46455d1f8a98ca"
-$ExpectedBundleBytes = 101085
+$ExpectedBundleSha256 = "c1396f11e1eaee2d3100fdafa02577023341378922826bc5ab95976978fe27e2"
+$ExpectedBundleBytes = 122308
 $ExpectedRunId = "cc-main-2026-30-first-10000"
 $ExpectedCrawl = "CC-MAIN-2026-30"
 $ExpectedBaseInputCount = 10000
@@ -309,7 +309,15 @@ with tarfile.open(archive_path, "r:gz") as archive:
     for required_path in (
         "tools/common_crawl_v2_manifest.py",
         "tools/common_crawl_wat_ingest_v2.py",
+        "tools/promote_common_crawl_v1_shard0_to_v2.py",
         "tools/common_crawl_backlink_derive.py",
+        "tools/common_crawl_backlink_derive_production_v1.py",
+        "runners/backlink-derived-canary-run.sh",
+        "runners/backlink-derived-production-10k-run.sh",
+        "runners/launch-template-bootstrap.sh",
+        "runners/derive-launch-template-bootstrap.sh",
+        "systemd/backlink-derived-production-10k.service.template",
+        "config/derive-rollup-hosts.txt",
         "manifests/base-manifest.json",
         "manifests/shards/shard-plan.json",
         "requirements.txt",
@@ -407,7 +415,15 @@ for relative, expected in files.items():
 for relative in (
   "tools/common_crawl_v2_manifest.py",
   "tools/common_crawl_wat_ingest_v2.py",
+  "tools/promote_common_crawl_v1_shard0_to_v2.py",
   "tools/common_crawl_backlink_derive.py",
+  "tools/common_crawl_backlink_derive_production_v1.py",
+  "runners/backlink-derived-canary-run.sh",
+  "runners/backlink-derived-production-10k-run.sh",
+  "runners/launch-template-bootstrap.sh",
+  "runners/derive-launch-template-bootstrap.sh",
+  "systemd/backlink-derived-production-10k.service.template",
+  "config/derive-rollup-hosts.txt",
     "manifests/base-manifest.json",
     "manifests/shards/shard-plan.json",
     "requirements.txt",
@@ -571,8 +587,18 @@ PY
 test -f "$STAGE/BUNDLE-MANIFEST.json"
 test -f "$STAGE/tools/common_crawl_v2_manifest.py"
 test -f "$STAGE/tools/common_crawl_wat_ingest_v2.py"
+test -f "$STAGE/tools/promote_common_crawl_v1_shard0_to_v2.py"
+test -f "$STAGE/tools/common_crawl_backlink_derive.py"
+test -f "$STAGE/tools/common_crawl_backlink_derive_production_v1.py"
+test -f "$STAGE/runners/backlink-derived-canary-run.sh"
+test -f "$STAGE/runners/backlink-derived-production-10k-run.sh"
+test -f "$STAGE/runners/launch-template-bootstrap.sh"
+test -f "$STAGE/runners/derive-launch-template-bootstrap.sh"
+test -f "$STAGE/systemd/backlink-derived-production-10k.service.template"
+test -f "$STAGE/config/derive-rollup-hosts.txt"
 test -f "$STAGE/manifests/base-manifest.json"
 test -f "$STAGE/manifests/shards/shard-plan.json"
+chmod 0755 "$STAGE/runners/backlink-derived-canary-run.sh" "$STAGE/runners/backlink-derived-production-10k-run.sh" "$STAGE/runners/launch-template-bootstrap.sh" "$STAGE/runners/derive-launch-template-bootstrap.sh"
 /usr/bin/python3.12 - "$STAGE/INSTALL-METADATA.json" "$EXPECTED_ARCHIVE_SHA256" "$EXPECTED_ARCHIVE_BYTES" <<'PY'
 import json
 import pathlib
@@ -714,8 +740,19 @@ function Test-ProductionV2InstallerLocally {
             throw "generated v2 installer contains forbidden non-install action: $forbidden"
         }
     }
-    if ($finalize -notmatch 'test -f "\$STAGE/tools/common_crawl_wat_ingest_v2\.py"') {
-        throw "installer no longer verifies the bundled v2 ingestion tool without invoking it"
+    foreach ($requiredMember in @(
+        'tools/common_crawl_wat_ingest_v2.py',
+        'tools/promote_common_crawl_v1_shard0_to_v2.py',
+        'runners/backlink-derived-canary-run.sh',
+        'runners/backlink-derived-production-10k-run.sh',
+        'runners/launch-template-bootstrap.sh',
+        'runners/derive-launch-template-bootstrap.sh',
+        'systemd/backlink-derived-production-10k.service.template',
+        'config/derive-rollup-hosts.txt'
+    )) {
+        if ($finalize -notmatch [regex]::Escape("test -f `"`$STAGE/$requiredMember`"")) {
+            throw "installer no longer verifies required reviewed bundle member: $requiredMember"
+        }
     }
     Test-ReviewedBundleEndToEndLocally -Bundle $bundle
     Write-Output "Production-v2 bundle installer local validation passed: SHA-256 $($bundle.Sha256), $($bundle.Bytes) bytes, $($chunks.Count) SSM chunks. No AWS command was invoked."

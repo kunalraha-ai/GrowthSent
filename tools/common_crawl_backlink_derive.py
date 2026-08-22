@@ -133,7 +133,10 @@ def _parquet_glob(path: Path) -> str:
 
 
 def _connection(
-    memory_limit: str, threads: int, temp_directory: Path | None = None
+    memory_limit: str,
+    threads: int,
+    temp_directory: Path | None = None,
+    max_temp_directory_size: str | None = None,
 ) -> duckdb.DuckDBPyConnection:
     if threads < 1 or threads > 8:
         raise DerivedDataError("threads must be between 1 and 8")
@@ -146,6 +149,12 @@ def _connection(
         # implicit, potentially small system temporary directory.
         temp_directory.mkdir(parents=True, exist_ok=True)
         connection.execute(f"SET temp_directory={sql_literal(temp_directory.as_posix())}")
+    if max_temp_directory_size is not None:
+        if temp_directory is None:
+            raise DerivedDataError("max_temp_directory_size requires an explicit temp_directory")
+        connection.execute(
+            f"SET max_temp_directory_size={sql_literal(max_temp_directory_size)}"
+        )
     connection.execute("PRAGMA preserve_insertion_order=false")
     return connection
 
@@ -205,6 +214,32 @@ def _verify_details_manifest(root: Path, expected: dict[str, Any]) -> bool:
     return True
 
 
+def validate_detail_bucket_directories(detail_shard_root: Path) -> list[str]:
+    """Fail closed unless one completed detail shard has every bucket once.
+
+    DuckDB may create multiple Parquet files inside a bucket.  The published
+    contract is therefore the 1,024 direct hive-partition directories, never
+    a one-file-per-bucket assumption.
+    """
+
+    if not detail_shard_root.is_dir():
+        raise DerivedDataError(f"detail shard directory does not exist: {detail_shard_root}")
+    actual = sorted(
+        child.name
+        for child in detail_shard_root.iterdir()
+        if child.is_dir() and child.name.startswith("target_host_bucket=")
+    )
+    expected = [f"target_host_bucket={bucket:0{BUCKET_WIDTH}d}" for bucket in range(BUCKET_COUNT)]
+    if actual != expected:
+        missing = sorted(set(expected) - set(actual))
+        unexpected = sorted(set(actual) - set(expected))
+        raise DerivedDataError(
+            "detail bucket partition contract failed "
+            f"missing={missing[:3]} unexpected={unexpected[:3]} actual_count={len(actual)}"
+        )
+    return actual
+
+
 def build_detail_shard(
     *,
     links_directory: Path,
@@ -218,6 +253,7 @@ def build_detail_shard(
     threads: int = 4,
     row_group_size: int = DEFAULT_ROW_GROUP_SIZE,
     temp_directory: Path | None = None,
+    max_temp_directory_size: str | None = None,
     resume: bool = False,
 ) -> dict[str, Any]:
     """Partition one bounded raw Links shard into stable target-host buckets.
@@ -257,7 +293,12 @@ def build_detail_shard(
     stage.mkdir(parents=True, exist_ok=False)
     started = time.monotonic()
     try:
-        connection = _connection(memory_limit, threads, temp_directory)
+        connection = _connection(
+            memory_limit,
+            threads,
+            temp_directory,
+            max_temp_directory_size,
+        )
         source_sql, source_parameters = _read_links_relation(paths)
         query = f"""
             SELECT
@@ -342,6 +383,8 @@ def build_host_rollup(
     top_k: int = 100,
     memory_limit: str = DEFAULT_MEMORY_LIMIT,
     threads: int = 2,
+    input_shard_id: int | None = None,
+    input_shard_count: int | None = None,
 ) -> dict[str, Any]:
     """Build exact raw-observation rollups for one target host only.
 
@@ -357,6 +400,12 @@ def build_host_rollup(
         raise DerivedDataError("target_host must be a non-empty normalized hostname")
     if top_k < 1 or top_k > 1_000:
         raise DerivedDataError("top_k must be between 1 and 1,000")
+    if (input_shard_id is None) != (input_shard_count is None):
+        raise DerivedDataError("input_shard_id and input_shard_count must be supplied together")
+    input_shard_label: str | None = None
+    if input_shard_id is not None and input_shard_count is not None:
+        _require_shard_identity(input_shard_id, input_shard_count)
+        input_shard_label = shard_label(input_shard_id, input_shard_count)
     files = _host_detail_files(detail_root, target_host)
     bucket = host_bucket(target_host)
     source_sql, parameters = _read_links_relation(files)
@@ -420,7 +469,10 @@ def build_host_rollup(
     # manifest.  An existing key is never overwritten, so a theoretical
     # collision fails closed rather than mixing two hosts.
     host_partition_key = host_key[:16]
-    destination = output_root / f"crawl={crawl}" / "dataset=backlink-host-rollups" / f"target_host_bucket={bucket}" / f"target_host_key={host_partition_key}"
+    destination = output_root / f"crawl={crawl}" / "dataset=backlink-host-rollups"
+    if input_shard_label is not None:
+        destination = destination / f"input_shard={input_shard_label}"
+    destination = destination / f"target_host_bucket={bucket}" / f"target_host_key={host_partition_key}"
     if destination.exists():
         raise DerivedDataError(f"refusing to overwrite an existing target-host rollup: {destination}")
     # Keep the staging path short on Windows; repeating the 64-hex host key in
@@ -465,6 +517,10 @@ def build_host_rollup(
             "target_host_bucket": bucket,
             "target_host_sha256": host_key,
             "target_host_key": host_partition_key,
+            "input_shard": (
+                {"id": input_shard_id, "count": input_shard_count, "label": input_shard_label}
+                if input_shard_label is not None else None
+            ),
             "detail_file_count": len(files),
             "scope": "raw HTML link observations; external/internal classification is intentionally deferred to the application's tldts logic",
             "top_k": top_k,
@@ -528,6 +584,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     detail.add_argument("--threads", type=int, default=4)
     detail.add_argument("--row-group-size", type=int, default=DEFAULT_ROW_GROUP_SIZE)
     detail.add_argument("--temp-directory", type=Path)
+    detail.add_argument("--max-temp-directory-size")
     detail.add_argument("--resume", action="store_true")
     host = commands.add_parser("build-host-rollup", help="materialize exact raw-observation rollups for one host")
     host.add_argument("--detail-root", required=True, type=Path)
@@ -538,6 +595,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     host.add_argument("--top-k", type=int, default=100)
     host.add_argument("--memory-limit", default=DEFAULT_MEMORY_LIMIT)
     host.add_argument("--threads", type=int, default=2)
+    host.add_argument("--input-shard-id", type=int)
+    host.add_argument("--input-shard-count", type=int)
     lookup = commands.add_parser("lookup-details", help="read a bounded target-host detail sample")
     lookup.add_argument("--detail-root", required=True, type=Path)
     lookup.add_argument("--target-host", required=True)
@@ -561,6 +620,7 @@ def main(argv: list[str] | None = None) -> int:
             threads=args.threads,
             row_group_size=args.row_group_size,
             temp_directory=args.temp_directory,
+            max_temp_directory_size=args.max_temp_directory_size,
             resume=args.resume,
         )
     elif args.command == "build-host-rollup":
@@ -573,6 +633,8 @@ def main(argv: list[str] | None = None) -> int:
             top_k=args.top_k,
             memory_limit=args.memory_limit,
             threads=args.threads,
+            input_shard_id=args.input_shard_id,
+            input_shard_count=args.input_shard_count,
         )
     else:
         result = lookup_detail_rows(

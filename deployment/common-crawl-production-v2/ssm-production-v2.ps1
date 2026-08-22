@@ -11,8 +11,16 @@ param(
     [int]$ShardId = 0,
     [ValidateRange(1, 100000)]
     [int]$ShardCount = 10,
+    # Recovery may deliberately reduce source-read concurrency.  Never allow a
+    # value above the reviewed four-worker production topology.
+    [ValidateSet(1, 2, 4)]
+    [int]$Workers = 4,
     [ValidatePattern("^[a-fA-F0-9]{64}$")]
     [string]$ReleaseSha256,
+    # A reviewed release change for an already stopped shard must first be
+    # materialized through ValidateShardSetup. Normal Start/Resume operations
+    # remain fenced to the existing environment contract.
+    [switch]$AllowReviewedReleaseUpgrade,
     # An expired running S3 lease is intentionally not taken over by default.
     # This explicit recovery acknowledgement is accepted only by -Action Resume
     # after an operator has confirmed the prior worker is stopped.
@@ -33,7 +41,6 @@ $env:PYTHONIOENCODING = "utf-8"
 $Crawl = "CC-MAIN-2026-30"
 $ExpectedBaseInputCount = 10000
 $MaxInputsPerShard = 1000
-$Workers = 4
 $FilesPerBatch = 16
 $Bucket = "growthsent-data-552648196041-us-east-1-an"
 $InputPrefix = "crawl-data/CC-MAIN-2026-30/"
@@ -44,6 +51,9 @@ function Assert-ProductionV2Arguments {
     if ($ValidateSerializationOnly) { return }
     if ($AcknowledgeExpiredLeaseTakeover -and $Action -ne "Resume") {
         throw "-AcknowledgeExpiredLeaseTakeover is allowed only with -Action Resume"
+    }
+    if ($AllowReviewedReleaseUpgrade -and $Action -ne "ValidateShardSetup") {
+        throw "-AllowReviewedReleaseUpgrade is allowed only with -Action ValidateShardSetup"
     }
     if ([string]::IsNullOrWhiteSpace($InstanceId) -or $InstanceId -notmatch "^i-[0-9a-f]+$") {
         throw "-InstanceId must be an explicit EC2 instance ID"
@@ -98,6 +108,7 @@ function New-ProductionV2Contract {
         Destination = "s3://$Bucket/production/common-crawl/wat-pages-links/v2/$RunId/"
         ControlPrefix = "control/shards/$controlLabel"
         AllowExpiredLeaseTakeover = [bool]$AcknowledgeExpiredLeaseTakeover
+        AllowReviewedReleaseUpgrade = [bool]$AllowReviewedReleaseUpgrade
     }
 }
 
@@ -231,6 +242,7 @@ EXPECTED_BASE_INPUT_COUNT=$ExpectedBaseInputCount
 MAX_INPUTS_PER_SHARD=$MaxInputsPerShard
 WORKERS=$Workers
 FILES_PER_BATCH=$FilesPerBatch
+SOURCE_S3_BUCKET=commoncrawl
 BASE_MANIFEST=$($Contract.BaseManifest)
 SHARD_MANIFEST=$($Contract.ShardManifest)
 CONTROL_DIR=$($Contract.ControlDir)
@@ -239,6 +251,7 @@ PATHS_FILE=$($Contract.PathsFile)
 DESTINATION=$($Contract.Destination)
 CONTROL_PREFIX=$($Contract.ControlPrefix)
 ALLOW_EXPIRED_LEASE_TAKEOVER=$($Contract.AllowExpiredLeaseTakeover.ToString().ToLowerInvariant())
+ALLOW_REVIEWED_RELEASE_UPGRADE=$($Contract.AllowReviewedReleaseUpgrade.ToString().ToLowerInvariant())
 "@.Replace("`r`n", "`n")
 }
 
@@ -342,7 +355,8 @@ validate_environment() {
   [[ "$EXPECTED_BASE_INPUT_COUNT" == "10000" && "$MAX_INPUTS_PER_SHARD" == "1000" ]] || {
     log "unexpected scope ceiling"; return 2;
   }
-  [[ "$WORKERS" == "4" && "$FILES_PER_BATCH" == "16" ]] || { log "unexpected worker configuration"; return 2; }
+  [[ "$WORKERS" =~ ^(1|2|4)$ && "$FILES_PER_BATCH" == "16" ]] || { log "unexpected worker configuration"; return 2; }
+  [[ "$SOURCE_S3_BUCKET" == "commoncrawl" ]] || { log "unexpected source S3 bucket"; return 2; }
 }
 
 verify_manifest_set() {
@@ -460,6 +474,7 @@ set +e
   "${lease_takeover_args[@]}" \
   --workers "$WORKERS" \
   --files-per-batch "$FILES_PER_BATCH" \
+  --source-s3-bucket "$SOURCE_S3_BUCKET" \
   --output-dir "$WORK_DIR" \
   --resume \
   --upload \
@@ -537,6 +552,7 @@ UNIT_B64_PATH="__UNIT_B64_PATH__"
 RUNNER_SHA256="__RUNNER_SHA256__"
 ENV_SHA256="__ENV_SHA256__"
 UNIT_SHA256="__UNIT_SHA256__"
+ALLOW_REVIEWED_RELEASE_UPGRADE="__ALLOW_REVIEWED_RELEASE_UPGRADE__"
 
 install -d -m 0755 "$CONTROL_DIR"
 SETUP_LOG="$CONTROL_DIR/start-setup.log"
@@ -607,7 +623,17 @@ verify_existing_environment_contract() {
   [[ "$existing_run" == "__RUN_ID__" ]] || { log "existing shard environment RunId mismatch"; return 2; }
   [[ "$existing_shard_id" == "__SHARD_ID__" ]] || { log "existing shard environment ShardId mismatch"; return 2; }
   [[ "$existing_shard_count" == "__SHARD_COUNT__" ]] || { log "existing shard environment ShardCount mismatch"; return 2; }
-  [[ "$existing_release" == "__RELEASE_SHA256__" ]] || { log "existing shard environment release SHA mismatch"; return 2; }
+  if [[ "$existing_release" != "__RELEASE_SHA256__" ]]; then
+    [[ "$ALLOW_REVIEWED_RELEASE_UPGRADE" == "true" ]] || {
+      log "existing shard environment release SHA mismatch"
+      return 2
+    }
+    if systemctl is-active --quiet "$UNIT"; then
+      log "refusing reviewed release upgrade while shard unit is active"
+      return 2
+    fi
+    log "approved inactive shard release upgrade old=$existing_release new=__RELEASE_SHA256__"
+  fi
 }
 verify_locked_manifest_set() {
   local expected_suffix
@@ -685,6 +711,7 @@ log "SETUP_STARTED run=$RUN_ID shard=$SHARD_ID/$SHARD_COUNT"
         "__RUNNER_SHA256__" = "__RUNNER_SHA256__"
         "__ENV_SHA256__" = "__ENV_SHA256__"
         "__UNIT_SHA256__" = "__UNIT_SHA256__"
+        "__ALLOW_REVIEWED_RELEASE_UPGRADE__" = $Contract.AllowReviewedReleaseUpgrade.ToString().ToLowerInvariant()
     }
     foreach ($entry in $replacements.GetEnumerator()) {
         if ($entry.Key -ne "__MODE__" -and $entry.Value -ne $entry.Key) {
@@ -889,6 +916,8 @@ function Test-ProductionV2RunnerConfiguration {
     $script:RunId = "cc-main-2026-30-first-10000"
     $script:ShardId = 7
     $script:ShardCount = 10
+    $script:Workers = 1
+    $script:AllowReviewedReleaseUpgrade = $false
     $contract = New-ProductionV2Contract
     if ($contract.ShardLabel -ne "shard-00007-of-00010") {
         throw "v2 shard label is not deterministic: $($contract.ShardLabel)"
@@ -921,7 +950,7 @@ function Test-ProductionV2RunnerConfiguration {
             throw "generated v2 runner contains an unsupported v1-only ingestion argument: $forbidden"
         }
     }
-    foreach ($required in @("MAX_INPUTS_PER_SHARD=1000", "EXPECTED_BASE_INPUT_COUNT=10000", "RUN_ID=$($contract.RunId)", "SHARD_LABEL=$($contract.ShardLabel)", "ALLOW_EXPIRED_LEASE_TAKEOVER=false")) {
+    foreach ($required in @("MAX_INPUTS_PER_SHARD=1000", "EXPECTED_BASE_INPUT_COUNT=10000", "WORKERS=1", "SOURCE_S3_BUCKET=commoncrawl", "RUN_ID=$($contract.RunId)", "SHARD_LABEL=$($contract.ShardLabel)", "ALLOW_EXPIRED_LEASE_TAKEOVER=false", "ALLOW_REVIEWED_RELEASE_UPGRADE=false")) {
         if (-not $environment.Contains($required)) { throw "generated v2 environment is missing fixed identity/scope: $required" }
     }
     $script:AcknowledgeExpiredLeaseTakeover = $true
@@ -931,6 +960,13 @@ function Test-ProductionV2RunnerConfiguration {
         throw "generated v2 recovery environment does not require an explicit expired-lease acknowledgement"
     }
     $script:AcknowledgeExpiredLeaseTakeover = $false
+    $script:AllowReviewedReleaseUpgrade = $true
+    $upgradeContract = New-ProductionV2Contract
+    $upgradeSetup = (New-RemoteStartSetupScript -Contract $upgradeContract).Replace("`r`n", "`n")
+    if (-not $upgradeSetup.Contains('ALLOW_REVIEWED_RELEASE_UPGRADE="true"') -or -not $upgradeSetup.Contains('refusing reviewed release upgrade while shard unit is active')) {
+        throw "generated v2 release-upgrade gate is missing"
+    }
+    $script:AllowReviewedReleaseUpgrade = $false
     if (-not $setup.Contains("verify_existing_environment_contract")) {
         throw "generated v2 setup does not fence a resume against a changed shard environment"
     }
