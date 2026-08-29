@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { z } from "zod";
 import { checkRateLimit } from "../ratelimit/limiter.js";
 import { validateUrlForScan } from "../security/ssrf.js";
+import { validateTurnstileToken } from "../security/turnstile.js";
 import {
   getScanByIdForAccess,
   getScanPagesForAccess,
@@ -54,11 +55,13 @@ export const AuthSignupSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(8, "Password must be at least 8 characters").max(128, "Password is too long"),
   name: z.string().trim().max(200, "Name is too long").optional(),
+  turnstileToken: z.string().max(2048, "Invalid human verification token").optional(),
 });
 
 export const AuthLoginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
+  turnstileToken: z.string().max(2048, "Invalid human verification token").optional(),
 });
 
 export const WebsiteInputSchema = z.object({
@@ -808,6 +811,13 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
           body: { error: { code: "INVALID_INPUT", message: parse.error.issues[0]?.message } },
         };
       }
+      const humanVerification = await validateTurnstileToken(parse.data.turnstileToken, req.ip);
+      if (!humanVerification.ok) {
+        return {
+          statusCode: humanVerification.statusCode,
+          body: { error: { code: "TURNSTILE_VERIFICATION_FAILED", message: humanVerification.message } },
+        };
+      }
       const newUser = await createUser(parse.data.email, parse.data.password, parse.data.name);
       const { rawToken } = await createSession(newUser._id!.toString());
       return {
@@ -823,6 +833,13 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         return {
           statusCode: 400,
           body: { error: { code: "INVALID_INPUT", message: parse.error.issues[0]?.message } },
+        };
+      }
+      const humanVerification = await validateTurnstileToken(parse.data.turnstileToken, req.ip);
+      if (!humanVerification.ok) {
+        return {
+          statusCode: humanVerification.statusCode,
+          body: { error: { code: "TURNSTILE_VERIFICATION_FAILED", message: humanVerification.message } },
         };
       }
       const verified = await verifyUserCredentials(parse.data.email, parse.data.password);

@@ -28,11 +28,22 @@ my-clerk-app
 
 .vercel
 
+# Local captures, reports, and tool state
+/Screenshot*.png
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+/.coverage
+/coverage/
+*.tsbuildinfo
+*.eslintcache
+
 # Common Crawl ingestion outputs (reproducible, potentially large)
 /artifacts/
 /scratch/
 **/__pycache__/
 *.pyc
+**/.wrangler/
 
 # Generated local Common Crawl samples and diagnostics
 /*.parquet

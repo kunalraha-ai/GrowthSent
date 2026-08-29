@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { AppConsole } from "./components/dashboard/AppConsole";
 import { PrivacyPolicy } from "./components/PrivacyPolicy";
 import { TermsOfService } from "./components/TermsOfService";
@@ -133,6 +133,80 @@ export interface WebsiteItem {
 // ---------------------------------------------------------
 // ACCOUNT AUTHENTICATION
 // ---------------------------------------------------------
+type TurnstileApi = {
+  render: (
+    container: HTMLElement,
+    options: {
+      sitekey: string;
+      theme?: "light" | "dark" | "auto";
+      callback?: (token: string) => void;
+      "expired-callback"?: () => void;
+      "error-callback"?: () => void;
+    }
+  ) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId?: string) => void;
+};
+
+function TurnstileWidget({ onToken, resetNonce }: { onToken: (token: string) => void; resetNonce: number }) {
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string>();
+  const onTokenRef = useRef(onToken);
+
+  useEffect(() => {
+    onTokenRef.current = onToken;
+  }, [onToken]);
+
+  useEffect(() => {
+    if (!siteKey || !containerRef.current) return;
+
+    let disposed = false;
+    const getTurnstile = () => (window as typeof window & { turnstile?: TurnstileApi }).turnstile;
+    const render = () => {
+      const turnstile = getTurnstile();
+      if (disposed || !turnstile || !containerRef.current || widgetIdRef.current) return;
+      widgetIdRef.current = turnstile.render(containerRef.current, {
+        sitekey: siteKey,
+        theme: "dark",
+        callback: (token) => onTokenRef.current(token),
+        "expired-callback": () => onTokenRef.current(""),
+        "error-callback": () => onTokenRef.current(""),
+      });
+    };
+
+    let script = document.getElementById("growthsent-turnstile-script") as HTMLScriptElement | null;
+    if (script) {
+      script.addEventListener("load", render);
+      render();
+    } else {
+      script = document.createElement("script");
+      script.id = "growthsent-turnstile-script";
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.addEventListener("load", render, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      disposed = true;
+      script?.removeEventListener("load", render);
+      const widgetId = widgetIdRef.current;
+      if (widgetId) getTurnstile()?.remove(widgetId);
+      widgetIdRef.current = undefined;
+    };
+  }, [siteKey]);
+
+  useEffect(() => {
+    if (!resetNonce || !widgetIdRef.current) return;
+    (window as typeof window & { turnstile?: TurnstileApi }).turnstile?.reset(widgetIdRef.current);
+  }, [resetNonce]);
+
+  if (!siteKey) return null;
+  return <div ref={containerRef} style={{ minHeight: "65px", display: "flex", justifyContent: "center" }} />;
+}
+
 function AuthModal({
   onClose,
   onAuthenticated,
@@ -148,11 +222,26 @@ function AuthModal({
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(initialError || "");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileResetNonce, setTurnstileResetNonce] = useState(0);
+  const turnstileConfigured = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim());
+  const resetTurnstile = useCallback(() => {
+    setTurnstileToken("");
+    setTurnstileResetNonce((current) => current + 1);
+  }, []);
+  const handleTurnstileToken = useCallback((token: string) => {
+    setTurnstileToken(token);
+    if (token) setErrorMsg("");
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setErrorMsg("Email and password are required.");
+      return;
+    }
+    if (turnstileConfigured && !turnstileToken) {
+      setErrorMsg("Please complete the human verification.");
       return;
     }
     setLoading(true);
@@ -163,19 +252,21 @@ function AuthModal({
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(isSignup ? { email, password, name } : { email, password }),
+        body: JSON.stringify(isSignup ? { email, password, name, turnstileToken } : { email, password, turnstileToken }),
       });
       let data: any = null;
       try {
         data = await res.json();
       } catch {
         setErrorMsg(`Server error (${res.status}). Ensure MONGODB_URI and SESSION_SECRET environment variables are set in Vercel.`);
+        resetTurnstile();
         setLoading(false);
         return;
       }
 
       if (!res.ok || data.error) {
         setErrorMsg(data.error?.message || "Authentication failed.");
+        resetTurnstile();
         setLoading(false);
         return;
       }
@@ -183,6 +274,7 @@ function AuthModal({
       onAuthenticated(data.user || { email, name: name || email.split("@")[0] });
     } catch {
       setErrorMsg("Network error connecting to backend.");
+      resetTurnstile();
       setLoading(false);
     }
   };
@@ -354,6 +446,8 @@ function AuthModal({
               style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", background: "#20211e", border: "1px solid #383a35", color: "#ffffff", fontSize: "14px" }}
             />
           </div>
+
+          <TurnstileWidget onToken={handleTurnstileToken} resetNonce={turnstileResetNonce} />
 
           <button
             type="submit"

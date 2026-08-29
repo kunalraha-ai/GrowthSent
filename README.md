@@ -23,35 +23,44 @@ GrowthSent does not manufacture SEO facts or analytics.
 
 ## Architecture
 
-```text
-Browser
-  │
-  ├─ React + Vite dashboard
-  │
-  └─ /api/v1/* → Vercel function → application router
-                              │
-                              ├─ MongoDB Atlas: users, audit jobs, crawl admission, operational state
-                              ├─ Google Search Console: server-side search-performance requests
-                              └─ Common Crawl link data: bounded exact-host preview path
+```mermaid
+flowchart TB
+  Browser[Browser] --> Web[React + Vite dashboard]
+  Web --> API[Vercel API / application router]
+  API --> Mongo[(MongoDB Atlas<br/>users, audits, leases, state)]
+  API --> GSC[Google Search Console<br/>server-side queries]
 
-Audit path
-  POST /api/v1/audit → durable MongoDB job → protected lease-based worker → bounded crawl
+  subgraph Pipeline[Bounded Common Crawl processing]
+    Operator[Operator in Ubuntu / WSL] --> Baseline[Build or reuse<br/>public-source semantic baseline]
+    Baseline --> AuditR2[(R2 audit prefix<br/>immutable reference manifests)]
+    Operator --> Launcher[Reviewed WSL launcher]
+    Launcher -->|parent API token<br/>stdin only| TempCreds[Cloudflare temporary<br/>credential API]
+    TempCreds -->|prefix-scoped child<br/>credential only| Worker[Temporary Worker]
+    Worker --> DO[One Durable Object<br/>per canary shard]
+    DO --> Container[Cloudflare Container<br/>10 WATs sequentially]
+    CommonCrawl[Common Crawl public HTTPS] --> Container
+    AuditR2 --> Container
+    Container --> CanaryR2[(R2 isolated canary prefix<br/>Pages, Links, metrics, markers)]
+    CanaryR2 --> Verifier[Read-only verifier]
+    Operator --> Verifier
+  end
+
+  CanaryR2 -. bounded, verified link observations .-> API
 ```
 
-The application MongoDB connection and analytical/link-data connection remain separate and server-only.
+The application and ingestion planes are deliberately separate. The public app uses MongoDB and Google Search Console through server-side APIs. The Common Crawl pipeline runs only as approved, isolated canaries; it never shares its short-lived storage credential with the app.
 
-## Data coverage
+## Pipeline status
 
-The completed reference data-engineering milestone is the ordered first **10,000** WAT inputs from `CC-MAIN-2026-30`.
+The historic 10K materials remain a bounded reference implementation, but its original golden raw artifacts are unavailable. New Cloudflare runs therefore use explicitly labelled **public-source semantic baselines**, not a claim of golden-artifact equivalence.
 
-- Raw ingestion: 10,000 / 10,000 inputs completed.
-- Derived backlink layout: 10 / 10 derive shards completed.
-- Derived reference inventory: 13,080 objects and 214,367,837,062 bytes.
-- Detail layout: 1,024 deterministic `target_host_bucket` partitions per derive shard.
+The current Cloudflare validation milestone is complete:
 
-This is a verified bounded dataset, not a claim of complete Common Crawl or web coverage. Serving detail records requires both `target_host_bucket` and exact `target_host`; the request path must not scan the full graph by host alone.
+- 50 `CC-MAIN-2026-30` WATs were processed as five independent ten-WAT semantic-v2 shards.
+- Every completed shard passed its exact 43-object R2 contract, full object integrity checks, semantic equivalence checks, and completion-marker-last validation.
+- The temporary Workers used for those verified runs were retired; immutable R2 output remains preserved.
 
-The next proposed workload is a separate, non-overlapping 25,000-input window (`[10000, 35000)`). It is **prepared for a canary only** and has not been started by this repository.
+There is no approved 1,000- or 100,000-WAT production launch in this repository. The next stage requires Cloudflare confirmation of concurrent Container admission and account capacity; scale only through measured, approved batches.
 
 ## Repository layout
 
@@ -64,6 +73,10 @@ tools/                                Common Crawl manifests, ingestion, verific
 deployment/common-crawl-production-v2/
                                       Proven bounded production-v2 release/runbook artifacts
 deployment/common-crawl-gcp-r2-25k/  Local-only GCP → Cloudflare R2 25K canary preparation
+deployment/common-crawl-cloudflare-r2-10-wat-canary/
+                                      Reusable one-container, ten-WAT Cloudflare canary
+deployment/common-crawl-cloudflare-r2-50-wat-canary/
+                                      Five-shard baseline, verification, and Worker retirement helpers
 ```
 
 ## Local development
@@ -97,21 +110,22 @@ The cloud pipeline has additional focused Python tests under `tests/`. They are 
 
 Copy `.env.example` to a local `.env` and populate only the services you are developing against. Never commit credentials, MongoDB URIs, cookies, OAuth tokens, AWS credentials, Cloudflare R2 credentials, or scheduler secrets.
 
-Cloud-accessed pipeline code is designed around least-privilege, runtime-injected credentials. The GCP/R2 preparation uses Google Secret Manager as its planned secret-delivery boundary; no Cloudflare credential is embedded in source, release bundles, containers, or job specifications.
+Cloud-accessed pipeline code is designed around least-privilege, runtime-injected credentials. The GCP/R2 preparation uses Google Secret Manager as its planned secret-delivery boundary. Cloudflare parent API tokens are accepted only locally through hidden stdin prompts; they are never embedded in source, release bundles, Worker configuration, containers, R2, logs, or command arguments. Cloudflare Workers receive only short-lived child R2 credentials scoped to one fresh canary prefix.
 
-## Common Crawl pipeline status
+Turnstile protects login and signup when configured. `VITE_TURNSTILE_SITE_KEY` is a public browser-side site key; `TURNSTILE_SECRET_KEY` is server-only and belongs in the Vercel environment, never in source control.
 
-The production-v2 code preserves deterministic manifests, immutable output keys, checksum metadata, resumability, and completion-marker-last publication. Existing artifacts remain useful as a proven reference implementation.
+## Cloudflare canary runbook
 
-The next-generation preparation under `deployment/common-crawl-gcp-r2-25k/` is intentionally isolated from the completed 10K dataset. It provides:
+The WSL-native canary workflow is intentionally bounded and explicit:
 
-- an immutable 25K source slice (`[10000, 35000)`) split into 25 canonical shards;
-- Common Crawl public-HTTPS streaming with bounded retry/backoff and telemetry;
-- Cloudflare R2 immutable publication using `growthsent-sha256` metadata and fail-closed reuse/conflict detection;
-- Google Batch job specifications, container definitions, credential design, and one-WAT canary tooling;
-- no cloud execution, data migration, or 25K processing by default.
+1. Prepare or reuse a local semantic-v2 baseline for an exact ten-WAT input set.
+2. Publish the baseline to an isolated R2 audit prefix with its completion marker written last.
+3. Run the reviewed launcher with an explicit approval flag. It verifies the baseline, mints a short-lived child R2 credential, and deploys one temporary Worker/Container pair.
+4. The Container reads one WAT at a time over public HTTPS, validates semantic digests before publishing, and writes Pages, Links, metrics, and per-WAT completion objects to a fresh canary prefix.
+5. Use the read-only verifier to check exact keys, SHA-256 metadata, full JSON hashes, semantic results, and completion-marker ordering.
+6. Retire the temporary Worker only after verification. Do not remove immutable R2 output as part of routine cleanup.
 
-Before any cloud run, follow the deployment runbooks, verify locked manifest/release hashes, and approve each canary stage explicitly.
+Run Cloudflare deployment scripts only from Ubuntu/WSL with Docker available. They require a deliberate approval flag and never accept secrets as command-line arguments.
 
 ## Engineering principles
 
