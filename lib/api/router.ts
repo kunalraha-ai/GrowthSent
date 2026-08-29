@@ -46,6 +46,7 @@ import { withMongoOperationPhase } from "../db/mongo-diagnostics.js";
 import { BacklinkAnalyticsError, getBacklinkAnalytics } from "../backlinks/service.js";
 import { BacklinkProtectionError, enforceBacklinkRequestQuota } from "../backlinks/shared-protection.js";
 import { logProductionApiHandlerError } from "./production-error-log.js";
+import { buildAiReadinessReport } from "../ai-readiness/service.js";
 
 // Input Validation Schemas
 export const ScanInputSchema = z.object({
@@ -946,6 +947,50 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       const website = await getWebsiteById(webIdMatch[1], user._id!.toString());
       if (!website) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
       return { statusCode: 200, body: website };
+    }
+
+    const aiReadinessMatch = path.match(/^\/api\/v1\/websites\/([a-f0-9]{24})\/ai-readiness$/);
+    if (method === "POST" && aiReadinessMatch) {
+      if (!user) {
+        return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      }
+
+      const websiteId = aiReadinessMatch[1];
+      const readinessLimit = checkRateLimit(`ai-readiness:${user._id!.toString()}:${websiteId}`, {
+        maxRequests: 3,
+        windowMs: 60 * 1000,
+      });
+      if (!readinessLimit.allowed) {
+        return {
+          statusCode: 429,
+          body: { error: { code: "AI_READINESS_RATE_LIMITED", message: "Please wait a minute before running another AI readiness audit for this website." } },
+        };
+      }
+
+      const website = await getWebsiteById(websiteId, user._id!.toString());
+      if (!website) {
+        return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Website not found." } } };
+      }
+
+      const target = await validateUrlForScan(`https://${website.hostname}/`);
+      if (!target.isValid || !target.normalizedUrl) {
+        return {
+          statusCode: 422,
+          body: {
+            error: {
+              code: "AI_READINESS_TARGET_UNAVAILABLE",
+              message: "This website cannot be fetched safely for an AI readiness audit. Check its public hostname and try again.",
+            },
+          },
+        };
+      }
+
+      const report = await buildAiReadinessReport(target.normalizedUrl);
+      return {
+        statusCode: 200,
+        headers: { "Cache-Control": "no-store" },
+        body: report,
+      };
     }
 
     const latestWebScanMatch = path.match(/^\/api\/v1\/websites\/([a-f0-9]{24})\/latest-scan$/);

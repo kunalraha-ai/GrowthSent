@@ -17,6 +17,12 @@ const Icons = {
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
     </svg>
   ),
+  Spark: () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 3-1.8 5.2L5 10l5.2 1.8L12 17l1.8-5.2L19 10l-5.2-1.8L12 3Z" />
+      <path d="m19 16-.7 2.3L16 19l2.3.7L19 22l.7-2.3L22 19l-2.3-.7L19 16Z" />
+    </svg>
+  ),
   Pages: () => (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -204,6 +210,18 @@ export function Sidebar({
           >
             <span className="icon"><Icons.Issues /></span>
             <span className="nav-label">Issues</span>
+          </a>
+        </div>
+
+        <div className="nav-group">
+          <small className="nav-group-title">AI</small>
+          <a
+            className={`nav-item ${activeTab === "ai_readiness" ? "active" : ""}`}
+            onClick={() => handleTabClick("ai_readiness")}
+            title="AI Readiness Audit"
+          >
+            <span className="icon"><Icons.Spark /></span>
+            <span className="nav-label">AI Readiness</span>
           </a>
         </div>
 

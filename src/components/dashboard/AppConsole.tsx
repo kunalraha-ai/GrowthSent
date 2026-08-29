@@ -9,6 +9,7 @@ import { IssuesView } from "./IssuesView";
 import { AnalyticsView } from "./AnalyticsView";
 import { SettingsView } from "./SettingsView";
 import BacklinkAnalyticsView from "./BacklinkAnalyticsView";
+import AiReadinessView from "./AiReadinessView";
 import { toAuditJobUiStatus, type AuditJobUiStatus } from "./audit-status";
 
 export interface UserProfile {
@@ -428,6 +429,8 @@ export function AppConsole({
           )}
 
           {activeTab === "backlinks" && <BacklinkAnalyticsView initialDomain={activeSite} />}
+
+          {activeTab === "ai_readiness" && <AiReadinessView activeSite={activeSite} websiteId={activeWebsiteId} />}
 
           {activeTab === "gsc" && (
             <SearchPerformanceView
