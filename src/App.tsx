@@ -578,12 +578,14 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
   const [scanning, setScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const pollTimerRef = useRef<number | null>(null);
+  const pollInFlightRef = useRef(false);
 
   const stopPolling = () => {
     if (pollTimerRef.current !== null) {
       window.clearInterval(pollTimerRef.current);
       pollTimerRef.current = null;
     }
+    pollInFlightRef.current = false;
   };
 
   useEffect(() => () => stopPolling(), []);
@@ -614,7 +616,9 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
 
       // Use the same bounded audit path as the dashboard. Polling is cleaned
       // up on unmount and never starts a second legacy scan.
-      pollTimerRef.current = window.setInterval(async () => {
+      const pollAudit = async () => {
+        if (pollInFlightRef.current) return;
+        pollInFlightRef.current = true;
         try {
           const pollRes = await fetch(`/api/v1/audit/${jobId}`);
           const scanData = await pollRes.json().catch(() => null);
@@ -635,8 +639,12 @@ function UrlBar({ dark = false, onScanStarted, onScanResult }: { dark?: boolean;
           stopPolling();
           setScanning(false);
           setErrorMessage("Lost connection while checking audit progress.");
+        } finally {
+          pollInFlightRef.current = false;
         }
-      }, 3000);
+      };
+      void pollAudit();
+      pollTimerRef.current = window.setInterval(() => void pollAudit(), 1500);
     } catch {
       setErrorMessage("Network error starting scan.");
       setScanning(false);

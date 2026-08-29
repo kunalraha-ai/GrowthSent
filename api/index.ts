@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { waitUntil } from "@vercel/functions";
 import { parseBoundedRequestBody } from "../lib/api/request-body.js";
 import { initializeDatabaseIndexes } from "../lib/db/indexes.js";
 import { withMongoOperationPhase } from "../lib/db/mongo-diagnostics.js";
@@ -19,6 +20,22 @@ function safeErrorMetadata(error: unknown): { errorName: string; errorCode?: str
   return typeof errorCode === "string" || typeof errorCode === "number"
     ? { errorName, errorCode }
     : { errorName };
+}
+
+function registerBackgroundTask(task: () => Promise<unknown>): void {
+  try {
+    waitUntil(
+      Promise.resolve()
+        .then(task)
+        .catch((error: unknown) => {
+          console.error("[api] Background audit dispatch failed.", safeErrorMetadata(error));
+        })
+    );
+  } catch (error) {
+    // The durable scheduler remains the recovery path when this handler is
+    // not running inside Vercel's background-work context.
+    console.error("[api] Background audit dispatch could not be registered.", safeErrorMetadata(error));
+  }
 }
 
 function ensureIndexes() {
@@ -98,6 +115,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         });
       }
       res.end(body);
+      if (apiRes.backgroundTask) registerBackgroundTask(apiRes.backgroundTask);
     } catch (error) {
       if (isWebsiteCollectionRequest(path)) {
         console.info("[websites] handler timing", {

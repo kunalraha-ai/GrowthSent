@@ -238,7 +238,7 @@ export function AppConsole({
     stopAuditPolling();
     setIsScanning(true);
     setAuditStatus(initialStatus);
-    auditPollTimerRef.current = window.setInterval(async () => {
+    const pollOnce = async () => {
       if (auditPollInFlightRef.current) return;
       auditPollInFlightRef.current = true;
       try {
@@ -268,7 +268,9 @@ export function AppConsole({
       } finally {
         auditPollInFlightRef.current = false;
       }
-    }, 3000);
+    };
+    void pollOnce();
+    auditPollTimerRef.current = window.setInterval(() => void pollOnce(), 1500);
   };
 
   const handleScanForUrl = async (targetUrl: string) => {

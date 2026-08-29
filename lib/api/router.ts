@@ -19,6 +19,7 @@ import { getAdminStats } from "../admin/service.js";
 import { AuditService } from "../services/audit.service.js";
 import { AuditTargetValidationError } from "../services/audit-errors.js";
 import { CrawlAdmissionError } from "../jobs/crawl-admission.js";
+import { dispatchImmediateAuditJob } from "../jobs/immediate-audit.js";
 import { handleDurableCrawlCronRequest, hasValidCronAuthorization } from "../jobs/cron-worker.js";
 import { getInternalWorkerHealth } from "../jobs/worker-health.js";
 import {
@@ -116,6 +117,8 @@ export interface ApiResponse {
   statusCode: number;
   headers?: Record<string, string | string[]>;
   body: any;
+  /** Server-only work registered by the Vercel handler after the response. */
+  backgroundTask?: () => Promise<unknown>;
 }
 
 const OAUTH_CALLBACK_MAX_AGE_SECONDS = 10 * 60;
@@ -624,6 +627,11 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         statusCode: 202,
         headers,
         body: { jobId: job.jobId, status: job.status },
+        // Do not run a crawl inline with the user request. The Vercel handler
+        // registers this named, bounded task with waitUntil after it replies.
+        // The scheduler remains the durable recovery path if capacity is full
+        // or the background invocation is interrupted.
+        backgroundTask: job.reused ? undefined : () => dispatchImmediateAuditJob(job.jobId),
       };
     }
 
