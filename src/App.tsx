@@ -1365,16 +1365,6 @@ function App() {
         </div>
       </footer>
 
-      {showAuthModal && (
-        <AuthModal
-          onClose={() => setShowAuthModal(false)}
-          initialError={authRedirectError}
-          onAuthenticated={(u) => {
-            setUser(u);
-            setShowAuthModal(false);
-          }}
-        />
-      )}
     </main>
   );
 }

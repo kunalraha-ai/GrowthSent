@@ -91,6 +91,12 @@ async function findOrCreateSocialUser(input: {
   name?: string;
   provider: SocialProvider;
   providerId: string;
+  /**
+   * Google has asserted that this address is verified.  Allow that assertion
+   * to attach the provider identity to an existing GrowthSent account with the
+   * same normalized email so its owner can use the direct Google login button.
+   */
+  allowVerifiedEmailLink?: boolean;
 }): Promise<UserDocument> {
   const { db } = await connectToDatabase();
   const normalizedEmail = input.email.toLowerCase().trim();
@@ -98,8 +104,8 @@ async function findOrCreateSocialUser(input: {
   const providerField = input.provider === "google" ? "googleId" : "githubId";
   const users = db.collection<UserDocument>("users");
 
-  // A provider subject is the stable identity. Never attach it to an account merely
-  // because an OAuth provider returned a matching email address.
+  // A provider subject is the stable identity. It always takes precedence over
+  // an email match when resolving an existing social identity.
   const existingProviderUser = await users.findOne({ [providerField]: input.providerId });
   if (existingProviderUser) {
     return existingProviderUser;
@@ -107,6 +113,41 @@ async function findOrCreateSocialUser(input: {
 
   const existingEmailUser = await users.findOne({ email: normalizedEmail });
   if (existingEmailUser) {
+    if (input.allowVerifiedEmailLink) {
+      try {
+        // Do not replace an identity that is already bound to a different
+        // provider subject.  The conditional update also makes concurrent
+        // first-time callbacks converge on one account safely.
+        const linkedUser = await users.findOneAndUpdate(
+          {
+            _id: existingEmailUser._id,
+            [providerField]: { $exists: false },
+          },
+          {
+            $set: {
+              [providerField]: input.providerId,
+              updatedAt: now,
+            },
+          },
+          { returnDocument: "after" }
+        );
+        if (linkedUser) return linkedUser;
+
+        // A concurrent callback may have completed the link first.  Return
+        // that account only when it is bound to this exact provider subject.
+        const concurrentlyLinked = await users.findOne({ [providerField]: input.providerId });
+        if (concurrentlyLinked) return concurrentlyLinked;
+      } catch (error: unknown) {
+        // A sparse unique provider-ID index can report a duplicate during a
+        // concurrent first link.  Re-read the identity rather than attaching
+        // it to an unrelated account.
+        if (typeof error === "object" && error && "code" in error && (error as { code?: unknown }).code === 11000) {
+          const concurrentlyLinked = await users.findOne({ [providerField]: input.providerId });
+          if (concurrentlyLinked) return concurrentlyLinked;
+        }
+        throw error;
+      }
+    }
     throw new Error("An account with this email already exists. Sign in using its existing method.");
   }
 
@@ -202,6 +243,7 @@ export async function completeGoogleLogin(code: string, state: string, browserNo
     name: profile.name,
     provider: "google",
     providerId: profile.sub,
+    allowVerifiedEmailLink: true,
   });
 }
 
