@@ -22,6 +22,7 @@ import { commonCrawlMetricsFromError } from "../crawler/providers/common-crawl.j
 import { admitAndInsertCrawlJob, releaseCrawlAdmission } from "../jobs/crawl-admission.js";
 import { evaluateRootPage, type CrawlExecutionResult, type RootPageEvaluation } from "../crawler/crawler.js";
 import { analyzeCrawlResults } from "../seo/engine.js";
+import { auditTargetValidationError, publicAuditFailure } from "./audit-errors.js";
 import {
   CrawlJobDocument,
   ScanDocument,
@@ -152,7 +153,7 @@ export class AuditService {
   ): Promise<CreatedCrawlJob> {
     const ssrf = await validateUrlForScan(inputUrl);
     if (!ssrf.isValid || !ssrf.normalizedUrl) {
-      throw new Error(ssrf.reason || "Invalid URL for scan.");
+      throw auditTargetValidationError(ssrf.reason);
     }
 
     const { db, client } = await withMongoOperationPhase("audit_database_connect", () => connectToDatabase());
@@ -237,6 +238,7 @@ export class AuditService {
       };
     }
 
+    const failure = job.status === "failed" ? publicAuditFailure(job.failureCategory) : undefined;
     return {
       jobId: job.jobId,
       status: job.status,
@@ -244,11 +246,8 @@ export class AuditService {
       pagesCrawled: job.pagesCrawled,
       // Never return persisted errors: historical rows can contain raw
       // target-controlled URLs or internal driver/provider details.
-      error: job.status === "failed"
-        ? job.failureCategory
-          ? "Crawl failed: the root page could not be evaluated."
-          : "Crawl could not be completed."
-        : undefined,
+      error: failure?.message,
+      errorCode: failure?.code,
     };
   }
 

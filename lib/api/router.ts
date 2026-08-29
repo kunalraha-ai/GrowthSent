@@ -17,6 +17,7 @@ import { recordAnalyticsEvent } from "../analytics/collector.js";
 import { getAnalyticsSummary } from "../analytics/aggregator.js";
 import { getAdminStats } from "../admin/service.js";
 import { AuditService } from "../services/audit.service.js";
+import { AuditTargetValidationError } from "../services/audit-errors.js";
 import { CrawlAdmissionError } from "../jobs/crawl-admission.js";
 import { handleDurableCrawlCronRequest, hasValidCronAuthorization } from "../jobs/cron-worker.js";
 import { getInternalWorkerHealth } from "../jobs/worker-health.js";
@@ -596,6 +597,12 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
       try {
         job = await AuditService.createCrawlJob(targetUrl, user?._id?.toString(), websiteId, req.ip);
       } catch (error) {
+        if (error instanceof AuditTargetValidationError) {
+          return {
+            statusCode: error.statusCode,
+            body: { error: { code: error.code, message: error.message } },
+          };
+        }
         if (error instanceof CrawlAdmissionError) {
           const statusCode = error.code === "CRAWL_QUEUE_FULL" ? 503 : 429;
           return { statusCode, body: { error: { code: error.code, message: error.message } } };
