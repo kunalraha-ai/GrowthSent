@@ -64,6 +64,18 @@ class RootPageNotEvaluableError extends Error {
   }
 }
 
+/**
+ * Root-page failures caused by a definite site response cannot become healthy
+ * on a repeat request. Retrying those jobs delays an actionable result and
+ * leaves the UI polling during backoff. Transport faults remain retryable
+ * within the existing three-attempt durable-job bound.
+ */
+export function shouldRetryRootPageFailure(
+  failureCategory: NonNullable<RootPageEvaluation["failureCategory"]>
+): boolean {
+  return failureCategory === "timeout" || failureCategory === "network" || failureCategory === "response_body_unavailable";
+}
+
 function nextRetryAt(attempts: number): Date {
   const delayMs = Math.min(5 * 60 * 1000, 30_000 * 2 ** Math.max(0, attempts - 1));
   return new Date(Date.now() + delayMs);
@@ -414,9 +426,11 @@ export class AuditService {
 
   private static async markAttemptFailed(job: ClaimedCrawlJob, error?: unknown, jobStartedAt?: number): Promise<void> {
     const { db } = await connectToDatabase();
-    // Malformed index/WARC responses are terminal for this job; only provider
-    // faults classified transient receive the existing durable retry policy.
-    const retry = shouldRetryDurableCrawlAttempt(job.attempts, MAX_ATTEMPTS, error);
+    // A definitive root-page response (for example an HTTP 403) is terminal
+    // immediately. Only transport faults receive the bounded retry policy.
+    const retry = error instanceof RootPageNotEvaluableError
+      ? job.attempts < MAX_ATTEMPTS && shouldRetryRootPageFailure(error.failureCategory)
+      : shouldRetryDurableCrawlAttempt(job.attempts, MAX_ATTEMPTS, error);
     const setFields: Record<string, unknown> = {
       status: retry ? "queued" : "failed",
       error: retry ? "Crawl attempt failed and will be retried." : "Crawl failed after the maximum retry attempts.",

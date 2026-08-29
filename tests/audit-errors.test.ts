@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { auditTargetValidationError, publicAuditFailure } from "../lib/services/audit-errors";
+import { shouldRetryRootPageFailure } from "../lib/services/audit.service";
 
 test("audit target validation errors are specific and safe", () => {
   const unresolvable = auditTargetValidationError("Unable to resolve host safely.");
@@ -31,4 +32,13 @@ test("terminal audit failures retain an actionable public reason", () => {
     code: "AUDIT_FAILED",
     message: "The audit could not be completed. Please try again later.",
   });
+});
+
+test("definitive root-page responses fail immediately while transport faults retry", () => {
+  assert.equal(shouldRetryRootPageFailure("unexpected_http_status"), false);
+  assert.equal(shouldRetryRootPageFailure("non_html_response"), false);
+  assert.equal(shouldRetryRootPageFailure("blocked_by_safety_policy"), false);
+  assert.equal(shouldRetryRootPageFailure("timeout"), true);
+  assert.equal(shouldRetryRootPageFailure("network"), true);
+  assert.equal(shouldRetryRootPageFailure("response_body_unavailable"), true);
 });
