@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Readable } from "node:stream";
-import { createPinnedLookup, fetchUrl, readBodyWithLimit } from "../lib/crawler/fetcher";
+import { createPinnedLookup, fetchUrl, firstPartyAuditHeaders, readBodyWithLimit } from "../lib/crawler/fetcher";
 import { parsePageHtml } from "../lib/crawler/parser";
 import { evaluateRootPage, type CrawlExecutionResult } from "../lib/crawler/crawler";
 import { analyzeCrawlResults } from "../lib/seo/engine";
@@ -54,6 +54,23 @@ test("the pinned DNS lookup supplies a real address to Node automatic family sel
   });
 
   assert.deepEqual(addresses, [{ address: "93.184.216.34", family: 4 }]);
+});
+
+test("first-party audit token is restricted to exact configured hosts", () => {
+  const config = {
+    hosts: "growthsent.com, www.growthsent.com",
+    token: "test-audit-token",
+  };
+
+  assert.deepEqual(firstPartyAuditHeaders("www.growthsent.com", config), {
+    "X-GrowthSent-Audit-Token": "test-audit-token",
+  });
+  assert.deepEqual(firstPartyAuditHeaders("GROWTHSENT.COM.", config), {
+    "X-GrowthSent-Audit-Token": "test-audit-token",
+  });
+  assert.deepEqual(firstPartyAuditHeaders("customer.example", config), {});
+  assert.deepEqual(firstPartyAuditHeaders("growthsent.com.evil.example", config), {});
+  assert.deepEqual(firstPartyAuditHeaders("www.growthsent.com", { hosts: config.hosts }), {});
 });
 
 test("a failed root fetch is not usable as technical SEO evidence", () => {

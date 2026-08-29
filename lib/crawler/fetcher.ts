@@ -47,6 +47,45 @@ type AsyncBody = AsyncIterable<unknown> & {
 const DEFAULT_USER_AGENT = process.env.CRAWLER_USER_AGENT || "GrowthSentBot/1.0 (+https://growthsent.com)";
 const DEFAULT_TIMEOUT_MS = Number.parseInt(process.env.CRAWLER_TIMEOUT || "10000", 10);
 const DEFAULT_MAX_SIZE = 2 * 1024 * 1024; // 2 MB max
+const FIRST_PARTY_AUDIT_HEADER = "X-GrowthSent-Audit-Token";
+
+export interface FirstPartyAuditConfig {
+  hosts?: string;
+  token?: string;
+}
+
+function normalizedHostname(value: string): string | undefined {
+  const hostname = value.trim().toLowerCase().replace(/\.$/, "");
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(hostname)
+    ? hostname
+    : undefined;
+}
+
+/**
+ * Returns the private first-party audit header only for an exact host listed
+ * in server-side configuration. The decision is made per HTTP request, after
+ * redirect and SSRF validation, so a token can never follow a redirect to an
+ * unrelated site.
+ */
+export function firstPartyAuditHeaders(
+  hostname: string,
+  config: FirstPartyAuditConfig = {}
+): Record<string, string> {
+  const token = config.token ?? process.env.CRAWLER_FIRST_PARTY_AUDIT_TOKEN;
+  const configuredHosts = config.hosts ?? process.env.CRAWLER_FIRST_PARTY_AUDIT_HOSTS ?? "";
+  const normalizedRequestedHost = normalizedHostname(hostname);
+  if (!token || !normalizedRequestedHost) return {};
+
+  const permittedHosts = new Set(
+    configuredHosts
+      .split(",")
+      .map(normalizedHostname)
+      .filter((value): value is string => Boolean(value))
+  );
+  if (!permittedHosts.has(normalizedRequestedHost)) return {};
+
+  return { [FIRST_PARTY_AUDIT_HEADER]: token };
+}
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
   if (value === undefined || !Number.isFinite(value) || value < 0) return fallback;
@@ -188,6 +227,7 @@ function requestPinnedUrl(
       "User-Agent": userAgent,
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Accept-Language": "en-US,en;q=0.9",
+      ...firstPartyAuditHeaders(hostname),
     },
     lookup,
     // Do not reuse a socket that was opened for another resolution. This keeps
