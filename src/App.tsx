@@ -1006,7 +1006,7 @@ function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [showLandingView, setShowLandingView] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return !(params.has("integration") || params.has("websiteId") || params.has("code"));
+    return window.location.pathname !== "/dashboard" && !(params.has("integration") || params.has("websiteId") || params.has("code"));
   });
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
@@ -1025,13 +1025,19 @@ function App() {
     setCurrentPath(path);
   };
 
+  const openDashboard = () => {
+    setShowLandingView(false);
+    if (window.location.pathname !== "/dashboard") navigateTo("/dashboard");
+  };
+
   const cleanPath = currentPath.toLowerCase().replace(/\/$/, "") || "/";
   const isPrivacy = cleanPath === "/privacy" || cleanPath === "/privacy-policy";
   const isTerms = cleanPath === "/terms" || cleanPath === "/terms-of-service" || cleanPath === "/terms-and-conditions";
   const isPricing = cleanPath === "/pricing";
   const is500 = cleanPath === "/500";
   const isHome = cleanPath === "/";
-  const is404 = !isHome && !isPrivacy && !isTerms && !isPricing && !is500;
+  const isDashboard = cleanPath === "/dashboard";
+  const is404 = !isHome && !isDashboard && !isPrivacy && !isTerms && !isPricing && !is500;
 
   useEffect(() => {
     if (isHome) {
@@ -1077,11 +1083,12 @@ function App() {
     setUser(null);
     setShowLandingView(true);
     setConsoleTab("overview");
+    navigateTo("/");
   };
 
   const handleOpenReport = () => {
     if (user) {
-      setShowLandingView(false);
+      openDashboard();
     } else {
       setShowAuthModal(true);
     }
@@ -1101,8 +1108,7 @@ function App() {
         onBack={() => navigateTo("/")}
         onGetStarted={() => {
           if (user) {
-            setShowLandingView(false);
-            navigateTo("/");
+            openDashboard();
           } else {
             setShowAuthModal(true);
           }
@@ -1128,7 +1134,10 @@ function App() {
       <AppConsole
         user={user}
         onLogout={handleLogout}
-        onBackToLanding={() => setShowLandingView(true)}
+        onBackToLanding={() => {
+          setShowLandingView(true);
+          navigateTo("/");
+        }}
         initialTab={consoleTab}
       />
     );
@@ -1159,7 +1168,7 @@ function App() {
         </nav>
         <div className="nav-actions">
           {user ? (
-            <a onClick={() => setShowLandingView(false)} style={{ cursor: "pointer", color: "#a4ef51", fontWeight: 700 }}>Console →</a>
+            <a onClick={openDashboard} style={{ cursor: "pointer", color: "#a4ef51", fontWeight: 700 }}>Console →</a>
           ) : (
             <>
               <a onClick={() => setShowAuthModal(true)} style={{ cursor: "pointer" }}>Log in</a>
@@ -1226,6 +1235,7 @@ function App() {
           onAuthenticated={(loggedInUser) => {
             setUser(loggedInUser);
             setShowAuthModal(false);
+            openDashboard();
           }}
         />
       )}

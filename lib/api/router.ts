@@ -234,6 +234,10 @@ function getFrontendRedirectBase(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") || "";
 }
 
+export function getDashboardRedirect(appUrl: string): string {
+  return `${appUrl}/dashboard`;
+}
+
 /** Remove worker coordination and anonymous capability fields from API responses. */
 function toPublicScan(scan: object): Record<string, unknown> {
   const {
@@ -778,7 +782,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         const { rawToken } = await createSession(loggedInUser._id!.toString());
         return {
           statusCode: 302,
-          headers: { Location: appUrl || "/", "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
+          headers: { Location: getDashboardRedirect(appUrl), "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
           body: {},
         };
       } catch (error) {
@@ -840,7 +844,7 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         const { rawToken } = await createSession(loggedInUser._id!.toString());
         return {
           statusCode: 302,
-          headers: { Location: appUrl || "/", "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
+          headers: { Location: getDashboardRedirect(appUrl), "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
           body: {},
         };
       } catch {

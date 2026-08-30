@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import test from "node:test";
 import { Readable } from "node:stream";
-import { AuditInputSchema, AnalyticsCollectSchema, handleApiRequest, normalizeSearchIntelligenceDays } from "../lib/api/router";
+import { AuditInputSchema, AnalyticsCollectSchema, getDashboardRedirect, handleApiRequest, normalizeSearchIntelligenceDays } from "../lib/api/router";
 import { normalizeAnalyticsRangeDays } from "../lib/analytics/aggregator";
 import { parseBoundedRequestBody } from "../lib/api/request-body";
 import { createOpaqueAccessToken, hashOpaqueAccessToken, verifyOpaqueAccessToken } from "../lib/security/access-token";
@@ -99,6 +99,11 @@ test("OAuth callbacks fail closed when their nonce cookie is missing", async () 
   });
   assert.equal(socialLogin.statusCode, 302);
   assert.match(String(socialLogin.headers?.Location), /authError=Google\+sign-in\+failed/);
+});
+
+test("successful social logins have a canonical dashboard destination", () => {
+  assert.equal(getDashboardRedirect("https://www.growthsent.com"), "https://www.growthsent.com/dashboard");
+  assert.equal(getDashboardRedirect(""), "/dashboard");
 });
 
 test("analytics date ranges are bounded before querying MongoDB", () => {
