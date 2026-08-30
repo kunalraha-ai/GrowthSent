@@ -47,8 +47,36 @@ records that no remote start was permitted.
 ## Decision after the local gate
 
 Only after this gate passes and a separate remote-run approval is given should
-we add a one-WAT provision/start and read-only verifier. A passing remote
-benchmark must show the semantic-v2 result matching the selected published
-baseline, completion-marker-last, and resource telemetry within the
-`standard-1` envelope. That evidence—not a generic quota figure—will determine
-whether a 2 → 10 → 25 → 50 concurrency ramp is safe.
+we provision one temporary Worker and start one benchmark Container. The remote
+launcher requires an explicit baseline-object key as well as the matching local
+manifest, so it cannot accidentally compare against a different ten-WAT shard.
+A passing remote benchmark must show the semantic-v2 result matching the
+selected published baseline, completion-marker-last, and resource telemetry
+within the `standard-1` envelope. That evidence—not a generic quota figure—will
+determine whether a 2 → 10 → 25 → 50 concurrency ramp is safe.
+
+## Approved remote benchmark
+
+When a one-WAT remote run is approved, set the exact local baseline and its
+matching immutable R2 key. For the already prepared shard 05 baseline:
+
+```bash
+export GROWTHSENT_REFERENCE_MANIFEST=/tmp/growthsent-cloudflare-50-wat-reference-JCTjc8/shard-05/PUBLIC-SOURCE-BASELINE-MANIFEST.json
+export GROWTHSENT_REFERENCE_BASELINE_KEY=production/common-crawl/audit/public-source-baseline/v2/cc-main-2026-30-50-wat-shard-05/PUBLIC-SOURCE-BASELINE-MANIFEST.json
+bash deployment/common-crawl-cloudflare-r2-standard1-benchmark/provision-and-start-wsl.sh --approved-one-wat-standard1-benchmark
+```
+
+The launcher verifies that the published object matches the local manifest
+hash, confirms the fresh benchmark prefix is empty using both `aws4fetch` and
+the exact `boto3` client used in the Container, then deploys one temporary
+Worker and requests one start. Do not rerun it after a start is accepted.
+
+After the Container has finished, verify only that benchmark's R2 objects:
+
+```bash
+bash deployment/common-crawl-cloudflare-r2-standard1-benchmark/verify-benchmark-wsl.sh --benchmark-id <benchmark-id>
+```
+
+The verifier mints a new one-hour read-only child credential and requires the
+exact seven-object contract, full JSON hash checks, matching semantic-v2
+digests, and completion-marker-last publication.

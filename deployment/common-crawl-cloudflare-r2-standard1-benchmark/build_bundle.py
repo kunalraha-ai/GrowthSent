@@ -40,6 +40,8 @@ STATIC_FILES = (
     "standard1_benchmark_entry.py",
     "run-benchmark.sh",
     "package.json",
+    "provision-and-start-wsl.mjs",
+    "r2-boto3-preflight.py",
 )
 
 
@@ -76,6 +78,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--worker-name", required=True)
     parser.add_argument("--container-name", required=True)
     parser.add_argument("--reference-manifest", type=Path, required=True)
+    parser.add_argument("--reference-baseline-key", default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -117,6 +120,12 @@ def main(argv: list[str] | None = None) -> int:
     reference = checked_file(args.reference_manifest, "reference manifest")
     reference_sha256 = sha256_file(reference)
     _document, selected = load_reference(reference)
+    reference_baseline_key = args.reference_baseline_key
+    if reference_baseline_key is not None and not re.fullmatch(
+        r"production/common-crawl/audit/public-source-baseline/v2/[a-z0-9][a-z0-9-]{0,63}/PUBLIC-SOURCE-BASELINE-MANIFEST\.json",
+        reference_baseline_key,
+    ):
+        raise SystemExit("--reference-baseline-key must name one public-source-baseline v2 manifest")
     if args.output_dir.exists():
         raise SystemExit(f"refusing to overwrite an existing bundle directory: {args.output_dir}")
 
@@ -151,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         "worker_name": args.worker_name,
         "container_name": args.container_name,
         "reference_manifest_sha256": reference_sha256,
+        "reference_baseline_key": reference_baseline_key,
         "reference_manifest_entry_count": REFERENCE_ENTRY_COUNT,
         "selected_reference_entry_index": SELECTED_REFERENCE_ENTRY_INDEX,
         "selected_source_key": selected["source_key"],
@@ -193,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             "GROWTHSENT_BENCHMARK_ID": args.benchmark_id,
             "GROWTHSENT_RELEASE_SHA256": release,
             "GROWTHSENT_REFERENCE_MANIFEST_SHA256": reference_sha256,
+            "GROWTHSENT_REFERENCE_BASELINE_KEY": reference_baseline_key or "",
             "GROWTHSENT_CONTAINER_INSTANCE_TYPE": "standard-1",
             "GROWTHSENT_HARD_TIMEOUT_SECONDS": str(HARD_TIMEOUT_SECONDS),
         },
