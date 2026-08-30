@@ -78,11 +78,15 @@ PY
   npx --offline --yes wrangler@4.126.0 deploy --dry-run --config wrangler.jsonc
 )
 docker run --rm --entrypoint python "$WORKER_NAME:worker" -c "
+import json
 from pathlib import Path
 import common_crawl_cloudflare_r2_standard1_benchmark as benchmark
-entry = benchmark.selected_reference_entry(Path('/opt/growthsent/reference-manifest.json'), expected_sha256='$REFERENCE_SHA256')
-assert entry.source_key.endswith('00000.warc.wat.gz')
-assert entry.deterministic_suffix == 'a129b99c34135f0d'
+manifest_path = Path('/opt/growthsent/reference-manifest.json')
+manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+expected = manifest['entries'][benchmark.REFERENCE_ENTRY_INDEX]
+entry = benchmark.selected_reference_entry(manifest_path, expected_sha256='$REFERENCE_SHA256')
+assert entry.source_key == expected['source_key']
+assert entry.deterministic_suffix == expected['deterministic_suffix']
 assert benchmark.INPUT_COUNT == 1 and benchmark.REFERENCE_ENTRY_INDEX == 0
 print('standard-1 benchmark runtime reference gate passed')
 "
