@@ -148,15 +148,28 @@ type TurnstileApi = {
   remove: (widgetId?: string) => void;
 };
 
-function TurnstileWidget({ onToken, resetNonce }: { onToken: (token: string) => void; resetNonce: number }) {
+function TurnstileWidget({
+  onToken,
+  onError,
+  resetNonce,
+}: {
+  onToken: (token: string) => void;
+  onError: () => void;
+  resetNonce: number;
+}) {
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string>();
   const onTokenRef = useRef(onToken);
+  const onErrorRef = useRef(onError);
 
   useEffect(() => {
     onTokenRef.current = onToken;
   }, [onToken]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     if (!siteKey || !containerRef.current) return;
@@ -171,7 +184,7 @@ function TurnstileWidget({ onToken, resetNonce }: { onToken: (token: string) => 
         theme: "dark",
         callback: (token) => onTokenRef.current(token),
         "expired-callback": () => onTokenRef.current(""),
-        "error-callback": () => onTokenRef.current(""),
+        "error-callback": () => onErrorRef.current(),
       });
     };
 
@@ -224,14 +237,24 @@ function AuthModal({
   const [errorMsg, setErrorMsg] = useState(initialError || "");
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileResetNonce, setTurnstileResetNonce] = useState(0);
+  const [turnstileError, setTurnstileError] = useState(false);
   const turnstileConfigured = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim());
   const resetTurnstile = useCallback(() => {
     setTurnstileToken("");
+    setTurnstileError(false);
     setTurnstileResetNonce((current) => current + 1);
   }, []);
   const handleTurnstileToken = useCallback((token: string) => {
     setTurnstileToken(token);
-    if (token) setErrorMsg("");
+    if (token) {
+      setTurnstileError(false);
+      setErrorMsg("");
+    }
+  }, []);
+  const handleTurnstileError = useCallback(() => {
+    setTurnstileToken("");
+    setTurnstileError(true);
+    setErrorMsg("Human verification did not load. Refresh the page or temporarily disable privacy-blocking extensions, then try again.");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -447,7 +470,16 @@ function AuthModal({
             />
           </div>
 
-          <TurnstileWidget onToken={handleTurnstileToken} resetNonce={turnstileResetNonce} />
+          <TurnstileWidget onToken={handleTurnstileToken} onError={handleTurnstileError} resetNonce={turnstileResetNonce} />
+          {turnstileError && (
+            <button
+              type="button"
+              onClick={resetTurnstile}
+              style={{ alignSelf: "center", border: "none", background: "none", color: "#a4ef51", fontSize: "12px", cursor: "pointer", textDecoration: "underline" }}
+            >
+              Retry human verification
+            </button>
+          )}
 
           <button
             type="submit"

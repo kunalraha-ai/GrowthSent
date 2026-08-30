@@ -4,6 +4,7 @@ const MAX_TURNSTILE_TOKEN_LENGTH = 2_048;
 
 type TurnstileSiteverifyResponse = {
   success?: boolean;
+  "error-codes"?: string[];
 };
 
 export type TurnstileValidationResult =
@@ -50,6 +51,20 @@ export async function validateTurnstileToken(
       return { ok: false, statusCode: 503, message: "Human verification is temporarily unavailable." };
     }
     if (!result?.success) {
+      const errorCodes = Array.isArray(result?.["error-codes"])
+        ? result["error-codes"].filter((code): code is string => typeof code === "string")
+        : [];
+      if (errorCodes.includes("missing-input-secret") || errorCodes.includes("invalid-input-secret")) {
+        // This is an operator configuration fault, not a visitor failure. Keep
+        // the response safe while leaving a durable production diagnostic.
+        console.error("[turnstile] Siteverify rejected the configured secret.", {
+          errorCodes: errorCodes.filter((code) => code === "missing-input-secret" || code === "invalid-input-secret"),
+        });
+        return { ok: false, statusCode: 503, message: "Human verification is temporarily unavailable." };
+      }
+      if (errorCodes.includes("timeout-or-duplicate")) {
+        return { ok: false, statusCode: 400, message: "Human verification expired. Please complete it again." };
+      }
       return { ok: false, statusCode: 400, message: "Human verification failed. Please try again." };
     }
     return { ok: true };

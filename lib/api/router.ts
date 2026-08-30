@@ -187,6 +187,31 @@ function safeErrorMetadata(error: unknown): { errorName: string; errorCode?: str
     : { errorName };
 }
 
+/**
+ * Maps known Google social-login failures to safe operational categories.
+ * These are intentionally not returned to the browser: provider responses,
+ * user identities, and database details must remain out of request logs.
+ */
+function googleSocialLoginFailureCategory(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "The Google sign-in request is invalid or has expired. Please try again.") {
+    return "state_invalid_or_expired";
+  }
+  if (message === "Unable to complete Google sign-in. Please try again.") {
+    return "provider_token_exchange_failed";
+  }
+  if (message === "Unable to fetch your Google account profile.") {
+    return "provider_profile_fetch_failed";
+  }
+  if (message === "Google did not provide a verified email address for this account.") {
+    return "verified_email_required";
+  }
+  if (message === "An account with this email already exists. Sign in using its existing method.") {
+    return "account_link_conflict";
+  }
+  return "unknown";
+}
+
 type WebsiteRoutePhase = "auth" | "owner_validation" | "website_query";
 
 function logWebsiteRouteTiming(
@@ -726,7 +751,8 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
           },
           body: { authorizationUrl },
         };
-      } catch {
+      } catch (error) {
+        console.error("[auth] Google social sign-in could not start.", safeErrorMetadata(error));
         return {
           statusCode: 503,
           body: { error: { code: "OAUTH_UNAVAILABLE", message: "Google sign-in is temporarily unavailable." } },
@@ -755,7 +781,14 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
           headers: { Location: appUrl || "/", "Set-Cookie": [buildSessionCookieHeader(rawToken), clearNonceCookie], "Cache-Control": "no-store" },
           body: {},
         };
-      } catch {
+      } catch (error) {
+        // Never disclose provider, database, or identity details to a browser.
+        // The safe category is enough to distinguish an expired state from a
+        // provider exchange or configuration incident in production logs.
+        console.warn("[auth] Google social sign-in callback failed.", {
+          ...safeErrorMetadata(error),
+          category: googleSocialLoginFailureCategory(error),
+        });
         return {
           statusCode: 302,
           headers: { Location: `${appUrl}/?authError=Google+sign-in+failed`, "Set-Cookie": clearNonceCookie, "Cache-Control": "no-store" },
