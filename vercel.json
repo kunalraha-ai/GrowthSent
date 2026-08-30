@@ -6,6 +6,17 @@
       "includeFiles": "lib/**"
     }
   },
+  "headers": [
+    {
+      "source": "/api/v1/shared/audits/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/v1/:path*",
