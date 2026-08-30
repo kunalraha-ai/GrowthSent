@@ -43,7 +43,7 @@ export function SharedAuditView({ token }: { token: string }) {
     <main style={{ maxWidth: "960px", margin: "48px auto", padding: "0 24px 56px", color: "#182117" }}>
       <header style={{ display: "flex", justifyContent: "space-between", gap: "20px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "28px" }}>
         <div><p style={{ color: "#557633", fontSize: "12px", fontWeight: 800, letterSpacing: ".1em", margin: "0 0 8px" }}>READ-ONLY SHARED AUDIT</p><h1 style={{ margin: 0, fontSize: "32px" }}>{report.scan.hostname}</h1><p style={{ color: "#596356" }}>A bounded technical SEO snapshot shared from GrowthSent.</p></div>
-        <button className="secondary-btn" type="button" onClick={() => downloadAuditReport(scanResult)}>Download report</button>
+        <button className="secondary-btn" type="button" onClick={() => void downloadAuditReport(scanResult)}>Download PDF</button>
       </header>
       <section className="metrics-grid">
         <div className="metric-card"><p className="metric-label">SEO Health Score</p><b className="metric-val">{typeof report.scan.seoScore === "number" ? `${report.scan.seoScore}%` : "—"}</b></div>

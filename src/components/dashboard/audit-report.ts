@@ -1,17 +1,14 @@
+import type { jsPDF } from "jspdf";
 import { isAuditResultEvaluable } from "./audit-evidence";
 
-function text(value: unknown): string {
-  return typeof value === "string" || typeof value === "number" ? String(value) : "";
-}
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+const MARGIN = 48;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 
-function escapeHtml(value: unknown): string {
-  return text(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  })[character] || character);
+function text(value: unknown): string {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, " ");
 }
 
 function dateLabel(value: unknown): string {
@@ -21,39 +18,168 @@ function dateLabel(value: unknown): string {
 
 function reportFilename(hostname: unknown): string {
   const safeHost = text(hostname).toLowerCase().replace(/[^a-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "") || "website";
-  return `growthsent-audit-${safeHost}.html`;
+  return `growthsent-audit-${safeHost}.pdf`;
 }
 
-/** Builds a self-contained, readable HTML report from the current audit data. */
-export function buildAuditReportHtml(scanResult: any): string {
+/** Builds a self-contained PDF locally in the visitor's browser. */
+export async function createAuditReportPdf(scanResult: any): Promise<jsPDF> {
   const scan = scanResult?.scan;
   if (!scan) throw new Error("A completed audit is required to create a report.");
+
   const pages: any[] = Array.isArray(scanResult?.pages) ? scanResult.pages : [];
   const issues: any[] = Array.isArray(scanResult?.issues) ? scanResult.issues : [];
   const evaluable = isAuditResultEvaluable(scanResult);
-  const score = evaluable && typeof scan.seoScore === "number" ? `${scan.seoScore}%` : "Not evaluated";
-  const pageRows = pages.map((page) => `<tr><td>${escapeHtml(page.url)}</td><td>${escapeHtml(page.statusCode || "Not fetched")}</td><td>${escapeHtml(page.title || "No title")}</td><td>${escapeHtml(page.isNoindex ? "Noindex" : "Indexable")}</td></tr>`).join("");
-  const issueRows = issues.map((issue) => `<article class="issue"><p class="severity">${escapeHtml(issue.severity || "info")}</p><h3>${escapeHtml(issue.title || issue.ruleId || "Audit finding")}</h3><p><strong>URL:</strong> ${escapeHtml(issue.affectedUrl)}</p><p>${escapeHtml(issue.description || issue.explanation)}</p><p><strong>Recommendation:</strong> ${escapeHtml(issue.recommendation)}</p></article>`).join("");
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4", compress: true });
+  const hostname = text(scan.hostname) || "Website audit";
+  let y = MARGIN;
 
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GrowthSent audit — ${escapeHtml(scan.hostname)}</title>
-<style>body{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#182117;line-height:1.5;max-width:920px;margin:40px auto;padding:0 24px;background:#fff}h1{margin-bottom:4px}.muted{color:#596356}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0}.card,.issue{border:1px solid #dce4d9;border-radius:12px;padding:16px;background:#fbfdf9}.label,.severity{text-transform:uppercase;letter-spacing:.08em;font-size:12px;font-weight:700;color:#557633;margin:0 0 8px}.value{font-size:28px;font-weight:800;margin:0}table{width:100%;border-collapse:collapse;font-size:14px;overflow-wrap:anywhere}th,td{text-align:left;border-bottom:1px solid #e5e9e2;padding:10px;vertical-align:top}th{font-size:12px;text-transform:uppercase;color:#596356}.issue{margin:12px 0}.issue h3{margin:0 0 8px}.issue p{margin:8px 0}@media print{body{margin:0;max-width:none}.card,.issue{break-inside:avoid}}</style></head>
-<body><header><p class="label">GrowthSent technical SEO audit</p><h1>${escapeHtml(scan.hostname)}</h1><p class="muted">Completed ${escapeHtml(dateLabel(scan.completionTime || scan.createdAt))}. This report contains only evidence collected by this bounded audit.</p></header>
-<section class="grid"><div class="card"><p class="label">SEO Health Score</p><p class="value">${escapeHtml(score)}</p></div><div class="card"><p class="label">Pages checked</p><p class="value">${escapeHtml(scan.crawlStats?.totalPagesCrawled ?? pages.length)}</p></div><div class="card"><p class="label">Findings</p><p class="value">${escapeHtml(issues.length)}</p></div></section>
-<section><h2>Findings</h2>${issueRows || "<p>No issues were returned by the checks collected in this audit.</p>"}</section>
-<section><h2>Pages collected</h2>${pageRows ? `<table><thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Indexing</th></tr></thead><tbody>${pageRows}</tbody></table>` : "<p>No pages were collected.</p>"}</section>
-</body></html>`;
+  const nextPage = () => {
+    doc.addPage();
+    y = MARGIN;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(85, 118, 51);
+    doc.text(`GrowthSent audit - ${hostname}`, MARGIN, y);
+    y += 24;
+  };
+
+  const ensureSpace = (height: number) => {
+    if (y + height > PAGE_HEIGHT - MARGIN - 22) nextPage();
+  };
+
+  const wrappedHeight = (value: unknown, width: number, options: { size?: number; lineHeight?: number; bold?: boolean } = {}) => {
+    doc.setFont("helvetica", options.bold ? "bold" : "normal");
+    doc.setFontSize(options.size ?? 10);
+    const lines = doc.splitTextToSize(text(value) || "Not recorded", width) as string[];
+    return lines.length * (options.lineHeight ?? 14) + 3;
+  };
+
+  const writeWrapped = (value: unknown, width: number, options: { size?: number; lineHeight?: number; bold?: boolean; color?: [number, number, number] } = {}) => {
+    const size = options.size ?? 10;
+    const lineHeight = options.lineHeight ?? 14;
+    const content = text(value) || "Not recorded";
+    doc.setFont("helvetica", options.bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...(options.color ?? [24, 33, 23]));
+    const lines = doc.splitTextToSize(content, width) as string[];
+    ensureSpace(lines.length * lineHeight + 3);
+    doc.text(lines, MARGIN, y);
+    y += lines.length * lineHeight + 3;
+  };
+
+  const heading = (value: string) => {
+    ensureSpace(28);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(24, 33, 23);
+    doc.text(value, MARGIN, y);
+    y += 26;
+  };
+
+  const label = (value: string) => {
+    ensureSpace(16);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(85, 118, 51);
+    doc.text(value.toUpperCase(), MARGIN, y);
+    y += 14;
+  };
+
+  doc.setProperties({ title: `GrowthSent audit - ${hostname}`, subject: "Technical SEO audit" });
+  label("GrowthSent technical SEO audit");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(24);
+  doc.setTextColor(24, 33, 23);
+  doc.text(hostname, MARGIN, y);
+  y += 26;
+  writeWrapped(
+    `Completed ${dateLabel(scan.completionTime || scan.createdAt)}. This report contains only evidence collected by this bounded audit.`,
+    CONTENT_WIDTH,
+    { size: 10, lineHeight: 14, color: [89, 99, 86] }
+  );
+  y += 14;
+
+  const score = evaluable && typeof scan.seoScore === "number" ? `${scan.seoScore}%` : "Not evaluated";
+  const metrics = [
+    { label: "SEO health score", value: score },
+    { label: "Pages checked", value: text(scan.crawlStats?.totalPagesCrawled ?? pages.length) || "0" },
+    { label: "Findings", value: text(issues.length) },
+  ];
+  const cardGap = 10;
+  const cardWidth = (CONTENT_WIDTH - cardGap * 2) / 3;
+  const cardHeight = 72;
+  ensureSpace(cardHeight + 18);
+  metrics.forEach((metric, index) => {
+    const x = MARGIN + index * (cardWidth + cardGap);
+    doc.setDrawColor(220, 228, 217);
+    doc.setFillColor(251, 253, 249);
+    doc.roundedRect(x, y, cardWidth, cardHeight, 8, 8, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(85, 118, 51);
+    doc.text(metric.label.toUpperCase(), x + 10, y + 18);
+    doc.setFontSize(18);
+    doc.setTextColor(24, 33, 23);
+    doc.text(metric.value, x + 10, y + 47);
+  });
+  y += cardHeight + 24;
+
+  heading("Findings");
+  if (issues.length === 0) {
+    writeWrapped("No issues were returned by the checks collected in this audit.", CONTENT_WIDTH, { color: [89, 99, 86] });
+  } else {
+    issues.forEach((issue, index) => {
+      if (index > 0) y += 7;
+      const issueHeight = 14
+        + wrappedHeight(issue.title || issue.ruleId || "Audit finding", CONTENT_WIDTH, { size: 12, lineHeight: 16, bold: true })
+        + wrappedHeight(`URL: ${text(issue.affectedUrl) || "Not recorded"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13 })
+        + wrappedHeight(issue.description || issue.explanation, CONTENT_WIDTH, { size: 10, lineHeight: 14 })
+        + wrappedHeight(`Recommendation: ${text(issue.recommendation) || "Not recorded"}`, CONTENT_WIDTH, { size: 10, lineHeight: 14, bold: true })
+        + 9;
+      ensureSpace(issueHeight);
+      label(text(issue.severity || "info"));
+      writeWrapped(issue.title || issue.ruleId || "Audit finding", CONTENT_WIDTH, { size: 12, lineHeight: 16, bold: true });
+      writeWrapped(`URL: ${text(issue.affectedUrl) || "Not recorded"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13, color: [89, 99, 86] });
+      writeWrapped(issue.description || issue.explanation, CONTENT_WIDTH, { size: 10, lineHeight: 14 });
+      writeWrapped(`Recommendation: ${text(issue.recommendation) || "Not recorded"}`, CONTENT_WIDTH, { size: 10, lineHeight: 14, bold: true });
+      y += 9;
+    });
+  }
+
+  heading("Pages collected");
+  if (pages.length === 0) {
+    writeWrapped("No pages were collected.", CONTENT_WIDTH, { color: [89, 99, 86] });
+  } else {
+    pages.forEach((page, index) => {
+      if (index > 0) y += 7;
+      const pageHeight = wrappedHeight(page.url, CONTENT_WIDTH, { size: 10, lineHeight: 14, bold: true })
+        + wrappedHeight(`Status: ${text(page.statusCode) || "Not fetched"}  |  Indexing: ${page.isNoindex ? "Noindex" : "Indexable"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13 })
+        + wrappedHeight(`Title: ${text(page.title) || "No title"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13 })
+        + 7;
+      ensureSpace(pageHeight);
+      writeWrapped(page.url, CONTENT_WIDTH, { size: 10, lineHeight: 14, bold: true });
+      writeWrapped(`Status: ${text(page.statusCode) || "Not fetched"}  |  Indexing: ${page.isNoindex ? "Noindex" : "Indexable"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13, color: [89, 99, 86] });
+      writeWrapped(`Title: ${text(page.title) || "No title"}`, CONTENT_WIDTH, { size: 9, lineHeight: 13 });
+      y += 7;
+    });
+  }
+
+  const pageCount = doc.getNumberOfPages();
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    doc.setPage(pageNumber);
+    doc.setDrawColor(220, 228, 217);
+    doc.line(MARGIN, PAGE_HEIGHT - MARGIN + 4, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - MARGIN + 4);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(89, 99, 86);
+    doc.text(`GrowthSent - Page ${pageNumber} of ${pageCount}`, MARGIN, PAGE_HEIGHT - MARGIN + 18);
+  }
+
+  return doc;
 }
 
-export function downloadAuditReport(scanResult: any): void {
-  const html = buildAuditReportHtml(scanResult);
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const href = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = reportFilename(scanResult?.scan?.hostname);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(href);
+export async function downloadAuditReport(scanResult: any): Promise<void> {
+  const report = await createAuditReportPdf(scanResult);
+  report.save(reportFilename(scanResult?.scan?.hostname));
 }

@@ -182,7 +182,7 @@ export function SeoAuditView({
 
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {scanResult?.scan && onCreateShareLink && !isScanning && <>
-            <button className="secondary-btn" type="button" onClick={() => downloadAuditReport(scanResult)}>Download report</button>
+            <button className="secondary-btn" type="button" onClick={() => void downloadAuditReport(scanResult)}>Download PDF</button>
             <button className="secondary-btn" type="button" onClick={() => void createShareLink()} disabled={isSharing}>{isSharing ? "Creating link..." : "Share result"}</button>
           </>}
           <button className="secondary-btn" type="button" onClick={onRunScan} disabled={isScanning}>{auditProgressLabel(isScanning, auditProgress.status)}</button>

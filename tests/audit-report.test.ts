@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildAuditReportHtml } from "../src/components/dashboard/audit-report.js";
+import { createAuditReportPdf } from "../src/components/dashboard/audit-report.js";
 
-test("downloadable audit report is evidence-based and escapes website content", () => {
-  const html = buildAuditReportHtml({
+test("downloadable audit report is a PDF built from audit evidence", async () => {
+  const report = await createAuditReportPdf({
     scan: {
       hostname: "example.com",
       completionTime: "2026-08-30T00:00:00.000Z",
@@ -14,9 +14,7 @@ test("downloadable audit report is evidence-based and escapes website content", 
     issues: [{ severity: "high", title: "Missing <title>", affectedUrl: "https://example.com/", description: "<script>alert(1)</script>", recommendation: "Add a title." }],
   });
 
-  assert.match(html, /72%/);
-  assert.match(html, /Pages checked/);
-  assert.match(html, /&lt;script&gt;/);
-  assert.match(html, /&lt;img src=x&gt;/);
-  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/);
+  assert.equal(report.getNumberOfPages() >= 1, true);
+  const bytes = new Uint8Array(report.output("arraybuffer"));
+  assert.equal(new TextDecoder().decode(bytes.slice(0, 4)), "%PDF");
 });

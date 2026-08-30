@@ -35,6 +35,7 @@ my-clerk-app
 /.ruff_cache/
 /.coverage
 /coverage/
+/tmp/
 *.tsbuildinfo
 *.eslintcache
 
