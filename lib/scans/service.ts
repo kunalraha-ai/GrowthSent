@@ -20,10 +20,12 @@ import {
 import { commonCrawlMetricsFromError } from "../crawler/providers/common-crawl.js";
 import type { CrawlExecutionResult } from "../crawler/crawler.js";
 import { analyzeCrawlResults } from "../seo/engine.js";
+import { buildPublicAuditReport, type PublicAuditReport } from "../audits/public-report.js";
 
 const MAX_SCAN_PAGES = 200;
 const MAX_ATTEMPTS = 3;
 const LEASE_DURATION_MS = 15 * 60 * 1000;
+const SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
 export interface CreateScanOptions {
   url: string;
@@ -551,6 +553,46 @@ async function canAccessScan(db: Db, scan: ScanDocument, access: ScanAccessConte
   // use `ownerUserId`; unknown legacy ownership fails closed.
   if (scan.clerkUserId) return Boolean(access.userId && scan.clerkUserId === access.userId);
   return verifyOpaqueAccessToken(access.accessToken, scan.anonymousAccessTokenHash);
+}
+
+/**
+ * Creates a new read-only report capability for the authenticated owner. A
+ * replacement deliberately invalidates any earlier copied link: raw tokens
+ * are never stored, only their SHA-256 hashes.
+ */
+export async function createScanShareToken(scanId: string, userId: string): Promise<string | null> {
+  const { db } = await connectToDatabase();
+  let objectId: ObjectId;
+  try {
+    objectId = safeObjectId(scanId);
+  } catch {
+    return null;
+  }
+  const scan = await db.collection<ScanDocument>("scans").findOne({ _id: objectId });
+  if (!scan || scan.status !== "completed" || !(await canAccessScan(db, scan, { userId }))) return null;
+
+  const token = createOpaqueAccessToken();
+  const updated = await db.collection<ScanDocument>("scans").updateOne(
+    { _id: objectId, status: "completed" },
+    { $set: { shareTokenHash: hashOpaqueAccessToken(token), shareCreatedAt: new Date() } }
+  );
+  return updated.matchedCount === 1 ? token : null;
+}
+
+/** Returns a sanitized completed report for one opaque sharing capability. */
+export async function getSharedScanReport(token: string): Promise<PublicAuditReport | null> {
+  if (!SHARE_TOKEN_RE.test(token)) return null;
+  const { db } = await connectToDatabase();
+  const scan = await db.collection<ScanDocument>("scans").findOne({
+    status: "completed",
+    shareTokenHash: hashOpaqueAccessToken(token),
+  });
+  if (!scan?._id) return null;
+  const [pages, issues] = await Promise.all([
+    db.collection<PageDocument>("pages").find({ scanId: scan._id }).limit(100).toArray(),
+    db.collection<IssueDocument>("issues").find({ scanId: scan._id }).toArray(),
+  ]);
+  return buildPublicAuditReport(scan, pages, issues);
 }
 
 /** Returns null for unknown *or unauthorized* scans to avoid resource enumeration. */

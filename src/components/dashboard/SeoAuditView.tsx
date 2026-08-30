@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
-import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
+import { AuditProgressPanel } from "./AuditProgressPanel";
+import { downloadAuditReport } from "./audit-report";
+import { auditProgressLabel, type AuditProgress } from "./audit-status";
 import { isAuditResultEvaluable, isSuccessfulAuditPage } from "./audit-evidence";
 
 interface SeoAuditViewProps {
@@ -9,8 +11,9 @@ interface SeoAuditViewProps {
   onNavigateTab: (tab: string) => void;
   onRunScan: () => void;
   isScanning: boolean;
-  auditStatus?: AuditJobUiStatus;
+  auditProgress?: AuditProgress;
   scanResult?: any;
+  onCreateShareLink?: () => Promise<string>;
 }
 
 interface MetricRowData {
@@ -125,10 +128,20 @@ export function SeoAuditView({
   onNavigateTab,
   onRunScan,
   isScanning,
-  auditStatus = null,
+  auditProgress = { status: null, progressPercent: 0, pagesCrawled: 0 },
   scanResult,
+  onCreateShareLink,
 }: SeoAuditViewProps) {
   const [selectedMetric, setSelectedMetric] = useState<MetricRowData | null>(null);
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
+  const [isSharing, setIsSharing] = useState(false);
+  const scanId = typeof scanResult?.scan?._id === "string" ? scanResult.scan._id : null;
+
+  useEffect(() => {
+    setShareUrl("");
+    setShareMessage("");
+  }, [scanId]);
 
   const metricsList = buildAuditMetrics(scanResult, activeSite);
   const crawlMetrics = metricsList.filter((m) => m.category === "crawl");
@@ -139,6 +152,26 @@ export function SeoAuditView({
     ? scanResult.issues
     : [];
 
+  const createShareLink = async () => {
+    if (!onCreateShareLink) return;
+    setIsSharing(true);
+    setShareMessage("");
+    try {
+      const url = await onCreateShareLink();
+      setShareUrl(url);
+      try {
+        await navigator.clipboard?.writeText(url);
+        setShareMessage("New read-only link copied. Creating another link will replace this one.");
+      } catch {
+        setShareMessage("Copy the read-only link below. Creating another link will replace this one.");
+      }
+    } catch (error) {
+      setShareMessage(error instanceof Error ? error.message : "We could not create a share link. Please try again.");
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <div className="seo-audit-view">
       {/* Header Bar */}
@@ -147,15 +180,24 @@ export function SeoAuditView({
           <h3 className="title-text">Technical SEO for {activeSite}</h3>
         </div>
 
-        <button className="secondary-btn" onClick={onRunScan} disabled={isScanning}>
-          {auditProgressLabel(isScanning, auditStatus)}
-        </button>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {scanResult?.scan && onCreateShareLink && !isScanning && <>
+            <button className="secondary-btn" type="button" onClick={() => downloadAuditReport(scanResult)}>Download report</button>
+            <button className="secondary-btn" type="button" onClick={() => void createShareLink()} disabled={isSharing}>{isSharing ? "Creating link..." : "Share result"}</button>
+          </>}
+          <button className="secondary-btn" type="button" onClick={onRunScan} disabled={isScanning}>{auditProgressLabel(isScanning, auditProgress.status)}</button>
+        </div>
       </div>
 
+      {(shareUrl || shareMessage) && <div aria-live="polite" className="console-section-card" style={{ marginTop: "16px", padding: "14px 16px" }}>
+        <strong>{shareMessage || "Read-only audit link"}</strong>
+        {shareUrl && <input aria-label="Read-only audit link" className="form-input" readOnly value={shareUrl} onFocus={(event) => event.currentTarget.select()} style={{ width: "100%", marginTop: "10px" }} />}
+      </div>}
+
       {isScanning ? (
-        <div style={{ marginTop: "20px" }}>
+        <><AuditProgressPanel progress={auditProgress} /><div style={{ marginTop: "20px" }}>
           <OverviewSkeleton />
-        </div>
+        </div></>
       ) : metricsList.length === 0 ? (
         <div className="console-section-card" style={{ marginTop: "24px", padding: "40px", textAlign: "center" }}>
           <div style={{ fontSize: "32px", marginBottom: "12px" }}>⌕</div>

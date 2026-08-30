@@ -10,7 +10,7 @@ import { AnalyticsView } from "./AnalyticsView";
 import { SettingsView } from "./SettingsView";
 import BacklinkAnalyticsView from "./BacklinkAnalyticsView";
 import AiReadinessView from "./AiReadinessView";
-import { toAuditJobUiStatus, type AuditJobUiStatus } from "./audit-status";
+import { toAuditJobUiStatus, toAuditProgress, type AuditJobUiStatus, type AuditProgress } from "./audit-status";
 
 export interface UserProfile {
   id?: string;
@@ -24,6 +24,14 @@ export interface WebsiteItem {
   hostname: string;
   displayName?: string;
 }
+
+interface AuditFailure {
+  message: string;
+  code?: string;
+  retryUrl?: string;
+}
+
+const EMPTY_AUDIT_PROGRESS: AuditProgress = { status: null, progressPercent: 0, pagesCrawled: 0 };
 
 interface AppConsoleProps {
   user: UserProfile;
@@ -166,14 +174,14 @@ export function AppConsole({
   const [activeWebsiteId, setActiveWebsiteId] = useState<string | null>(null);
   const [showAddSite, setShowAddSite] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [auditStatus, setAuditStatus] = useState<AuditJobUiStatus>(null);
+  const [auditProgress, setAuditProgress] = useState<AuditProgress>(EMPTY_AUDIT_PROGRESS);
   const [scanResult, setScanResult] = useState<any>(null);
   const [isGscConnected, setIsGscConnected] = useState(false);
   const [isGaConnected, setIsGaConnected] = useState(false);
   const auditPollTimerRef = useRef<number | null>(null);
   const auditPollInFlightRef = useRef(false);
 
-  const [scanError, setScanError] = useState("");
+  const [auditFailure, setAuditFailure] = useState<AuditFailure | null>(null);
 
   const stopAuditPolling = () => {
     if (auditPollTimerRef.current !== null) {
@@ -234,10 +242,10 @@ export function AppConsole({
     setActiveWebsiteId(website?._id || null);
   };
 
-  const pollAudit = (jobId: string, initialStatus: AuditJobUiStatus = "queued") => {
+  const pollAudit = (jobId: string, initialStatus: AuditJobUiStatus = "queued", retryUrl?: string) => {
     stopAuditPolling();
     setIsScanning(true);
-    setAuditStatus(initialStatus);
+    setAuditProgress({ status: initialStatus, progressPercent: 0, pagesCrawled: 0 });
     const pollOnce = async () => {
       if (auditPollInFlightRef.current) return;
       auditPollInFlightRef.current = true;
@@ -247,24 +255,27 @@ export function AppConsole({
         if (!response.ok || !data) {
           stopAuditPolling();
           setIsScanning(false);
-          setAuditStatus(null);
-          setScanError("Unable to check audit progress. Please try again later.");
+          setAuditProgress(EMPTY_AUDIT_PROGRESS);
+          setAuditFailure({ message: "We could not check this audit’s progress. Please try again.", retryUrl });
           return;
         }
-        const status = toAuditJobUiStatus(data.status);
-        if (status) setAuditStatus(status);
+        setAuditProgress(toAuditProgress(data));
         if (data.status === "completed" || data.status === "failed") {
           stopAuditPolling();
           setIsScanning(false);
-          setAuditStatus(null);
+          setAuditProgress(EMPTY_AUDIT_PROGRESS);
           if (data.status === "completed") setScanResult(data);
-          else setScanError(data.error || "The audit could not be completed.");
+          else setAuditFailure({
+            message: typeof data.error === "string" ? data.error : "The audit could not be completed.",
+            code: typeof data.errorCode === "string" ? data.errorCode : undefined,
+            retryUrl,
+          });
         }
       } catch {
         stopAuditPolling();
         setIsScanning(false);
-        setAuditStatus(null);
-        setScanError("Lost connection while checking audit progress.");
+        setAuditProgress(EMPTY_AUDIT_PROGRESS);
+        setAuditFailure({ message: "We lost the connection while checking this audit. Please try again.", retryUrl });
       } finally {
         auditPollInFlightRef.current = false;
       }
@@ -274,9 +285,10 @@ export function AppConsole({
   };
 
   const handleScanForUrl = async (targetUrl: string) => {
+    stopAuditPolling();
     setIsScanning(true);
-    setAuditStatus(null);
-    setScanError("");
+    setAuditProgress({ status: "queued", progressPercent: 0, pagesCrawled: 0 });
+    setAuditFailure(null);
     setScanResult(null);
 
     let cleanHost = targetUrl.trim().toLowerCase();
@@ -314,16 +326,34 @@ export function AppConsole({
       });
       const data = await res.json();
       if (!res.ok || !data.jobId) throw new Error(data.error?.message || "Unable to start the audit.");
-      pollAudit(data.jobId, toAuditJobUiStatus(data.status) || "queued");
+      pollAudit(data.jobId, toAuditJobUiStatus(data.status) || "queued", targetUrl);
     } catch (error) {
       setIsScanning(false);
-      setAuditStatus(null);
-      setScanError(error instanceof Error ? error.message : "Unable to start the audit.");
+      setAuditProgress(EMPTY_AUDIT_PROGRESS);
+      setAuditFailure({ message: error instanceof Error ? error.message : "Unable to start the audit.", retryUrl: targetUrl });
     }
   };
 
   const handleFreshScan = async () => {
     if (activeSite) await handleScanForUrl(`https://${activeSite}`);
+  };
+
+  const retryAudit = () => {
+    const retryUrl = auditFailure?.retryUrl || (activeSite ? `https://${activeSite}` : "");
+    if (retryUrl) void handleScanForUrl(retryUrl);
+  };
+
+  const createAuditShareLink = async (): Promise<string> => {
+    const scanId = scanResult?.scan?._id;
+    if (typeof scanId !== "string" || !/^[a-f0-9]{24}$/i.test(scanId)) {
+      throw new Error("This completed audit is not ready to share yet. Refresh and try again.");
+    }
+    const response = await fetch(`/api/v1/scans/${scanId}/share`, { method: "POST" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || typeof data?.token !== "string" || !/^[A-Za-z0-9_-]{32,128}$/.test(data.token)) {
+      throw new Error(data?.error?.message || "We could not create a share link. Please try again.");
+    }
+    return new URL(`/audit/${data.token}`, window.location.origin).toString();
   };
 
   const handleWebsiteDeleted = (deletedId: string) => {
@@ -382,9 +412,14 @@ export function AppConsole({
 
         {/* Console Main Content */}
         <div className="console-main">
-          {scanError && (
-            <div role="alert" style={{ marginBottom: "16px", padding: "12px 14px", borderRadius: "8px", color: "#b42318", background: "#fef3f2", border: "1px solid #fecdca" }}>
-              {scanError}
+          {auditFailure && (
+            <div role="alert" style={{ marginBottom: "16px", padding: "14px", borderRadius: "8px", color: "#8a1c12", background: "#fef3f2", border: "1px solid #fecdca", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+              <div>
+                <strong>Audit didn’t finish</strong>
+                <div style={{ marginTop: "4px" }}>{auditFailure.message}</div>
+                {auditFailure.code && <div style={{ marginTop: "4px", fontSize: "12px", color: "#9a4e47" }}>Reason: {auditFailure.code.replace(/_/g, " ").toLowerCase()}</div>}
+              </div>
+              <button className="secondary-btn" type="button" onClick={retryAudit} disabled={isScanning || !auditFailure.retryUrl && !activeSite}>Try again</button>
             </div>
           )}
           {activeTab === "overview" && (
@@ -396,7 +431,7 @@ export function AppConsole({
               onRunScan={handleFreshScan}
               onScanUrl={handleScanForUrl}
               isScanning={isScanning}
-              auditStatus={auditStatus}
+              auditProgress={auditProgress}
               isGscConnected={isGscConnected}
               scanResult={scanResult}
             />
@@ -408,8 +443,9 @@ export function AppConsole({
               onNavigateTab={setActiveTab}
               onRunScan={handleFreshScan}
               isScanning={isScanning}
-              auditStatus={auditStatus}
+              auditProgress={auditProgress}
               scanResult={scanResult}
+              onCreateShareLink={createAuditShareLink}
             />
           )}
 
@@ -479,7 +515,7 @@ export function AppConsole({
             setShowAddSite(false);
 
             if (jobId) {
-              pollAudit(jobId);
+              pollAudit(jobId, "queued", `https://${newSite.hostname}`);
             }
           }}
         />

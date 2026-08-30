@@ -9,6 +9,8 @@ import {
   getScanIssuesForAccess,
   getScanPages,
   getScanIssues,
+  createScanShareToken,
+  getSharedScanReport,
 } from "../scans/service.js";
 import { createUser, verifyUserCredentials, deleteUserAccount } from "../auth/user.js";
 import { createSession, validateSession, destroySession, buildSessionCookieHeader, extractSessionTokenFromCookie } from "../auth/session.js";
@@ -251,6 +253,8 @@ function toPublicScan(scan: object): Record<string, unknown> {
     clerkUserId: _clerkUserId,
     anonymousSessionId: _anonymousSessionId,
     commonCrawlRequesterKey: _commonCrawlRequesterKey,
+    shareTokenHash: _shareTokenHash,
+    shareCreatedAt: _shareCreatedAt,
     error: _error,
     ...publicScan
   } = scan as Record<string, unknown>;
@@ -678,6 +682,25 @@ export async function handleApiRequest(req: ApiRequest): Promise<ApiResponse> {
         };
       }
       return { statusCode: 200, body: toPublicAuditStatus(statusData) };
+    }
+
+    const shareCreateMatch = path.match(/^\/api\/v1\/scans\/([a-f0-9]{24})\/share$/);
+    if (method === "POST" && shareCreateMatch) {
+      if (!user) return { statusCode: 401, body: { error: { code: "UNAUTHORIZED", message: "Authentication required." } } };
+      const token = await createScanShareToken(shareCreateMatch[1], user._id!.toString());
+      if (!token) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Completed audit not found." } } };
+      return {
+        statusCode: 201,
+        headers: { "Cache-Control": "no-store" },
+        body: { token },
+      };
+    }
+
+    const sharedAuditMatch = path.match(/^\/api\/v1\/shared\/audits\/([A-Za-z0-9_-]{32,128})$/);
+    if (method === "GET" && sharedAuditMatch) {
+      const report = await getSharedScanReport(sharedAuditMatch[1]);
+      if (!report) return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Shared audit not found." } } };
+      return { statusCode: 200, headers: { "Cache-Control": "no-store" }, body: report };
     }
 
     if (method === "POST" && path === "/api/v1/scans") {

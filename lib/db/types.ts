@@ -120,6 +120,10 @@ export interface ScanDocument {
   completionTime?: Date;
   status: ScanStatus;
   error?: string;
+  /** SHA-256 of the currently active read-only report-sharing capability. */
+  shareTokenHash?: string;
+  /** Recorded only to support internal lifecycle visibility; never public. */
+  shareCreatedAt?: Date;
   crawlStats: {
     totalPagesCrawled: number;
     totalDurationMs: number;

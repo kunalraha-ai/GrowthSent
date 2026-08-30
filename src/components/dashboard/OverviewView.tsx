@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { SeverityBadge } from "./SeverityIcon";
 import { OverviewSkeleton } from "./SkeletonLoaders";
-import { auditProgressLabel, type AuditJobUiStatus } from "./audit-status";
+import { AuditProgressPanel } from "./AuditProgressPanel";
+import { auditProgressLabel, type AuditProgress } from "./audit-status";
 import { isAuditResultEvaluable } from "./audit-evidence";
 
 interface OverviewViewProps {
@@ -12,7 +13,7 @@ interface OverviewViewProps {
   onRunScan: () => void;
   onScanUrl?: (url: string) => void;
   isScanning: boolean;
-  auditStatus?: AuditJobUiStatus;
+  auditProgress?: AuditProgress;
   isGscConnected: boolean;
   scanResult?: { scan?: any; issues?: any[] } | null;
 }
@@ -25,7 +26,7 @@ export function OverviewView({
   onRunScan,
   onScanUrl,
   isScanning,
-  auditStatus = null,
+  auditProgress = { status: null, progressPercent: 0, pagesCrawled: 0 },
   isGscConnected,
   scanResult,
 }: OverviewViewProps) {
@@ -48,7 +49,7 @@ export function OverviewView({
           <h3 className="title-text">Website Overview</h3>
           {websites.length > 0 && <select value={activeSite} onChange={(event) => onSelectSite(event.target.value)} className="site-selector-dropdown"><option value="" disabled>Select a website</option>{websites.map((site) => <option key={site.hostname} value={site.hostname}>{site.hostname}</option>)}</select>}
         </div>
-        <button className="secondary-btn" onClick={onRunScan} disabled={isScanning || !activeSite}>{auditProgressLabel(isScanning, auditStatus)}</button>
+        <button className="secondary-btn" onClick={onRunScan} disabled={isScanning || !activeSite}>{auditProgressLabel(isScanning, auditProgress.status)}</button>
       </div>
 
       <form onSubmit={submit} style={{ marginTop: "16px", display: "flex", gap: "10px" }}>
@@ -56,7 +57,7 @@ export function OverviewView({
         <button className="primary-btn" type="submit" disabled={isScanning}>Add and scan</button>
       </form>
 
-      {isScanning ? <div style={{ marginTop: "20px" }}><OverviewSkeleton /></div> : !scan ? (
+      {isScanning ? <><AuditProgressPanel progress={auditProgress} /><div style={{ marginTop: "20px" }}><OverviewSkeleton /></div></> : !scan ? (
         <div className="console-section-card" style={{ marginTop: "20px", padding: "40px", textAlign: "center" }}><h4 className="card-title">No audit data yet</h4><p className="card-sub">Add a public website and run a scan to see its live technical SEO data.</p></div>
       ) : (
         <>

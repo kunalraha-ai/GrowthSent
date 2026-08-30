@@ -5,6 +5,7 @@ import { TermsOfService } from "./components/TermsOfService";
 import { PricingPage } from "./components/PricingPage";
 import { NotFound404 } from "./components/NotFound404";
 import { ServerError500 } from "./components/ServerError500";
+import { SharedAuditView } from "./components/SharedAuditView";
 import { Logo } from "./components/Logo";
 
 const Check = ({ children }: { children: ReactNode }) => <div className="check"><span>✓</span>{children}</div>;
@@ -1031,13 +1032,14 @@ function App() {
   };
 
   const cleanPath = currentPath.toLowerCase().replace(/\/$/, "") || "/";
+  const sharedAuditMatch = cleanPath.match(/^\/audit\/([a-f0-9]{32,128})$/);
   const isPrivacy = cleanPath === "/privacy" || cleanPath === "/privacy-policy";
   const isTerms = cleanPath === "/terms" || cleanPath === "/terms-of-service" || cleanPath === "/terms-and-conditions";
   const isPricing = cleanPath === "/pricing";
   const is500 = cleanPath === "/500";
   const isHome = cleanPath === "/";
   const isDashboard = cleanPath === "/dashboard";
-  const is404 = !isHome && !isDashboard && !isPrivacy && !isTerms && !isPricing && !is500;
+  const is404 = !sharedAuditMatch && !isHome && !isDashboard && !isPrivacy && !isTerms && !isPricing && !is500;
 
   useEffect(() => {
     if (isHome) {
@@ -1093,6 +1095,10 @@ function App() {
       setShowAuthModal(true);
     }
   };
+
+  if (sharedAuditMatch) {
+    return <SharedAuditView token={sharedAuditMatch[1]} />;
+  }
 
   if (isPrivacy) {
     return <PrivacyPolicy onBack={() => navigateTo("/")} />;
