@@ -73,6 +73,14 @@ class RegionalRampContractTests(unittest.TestCase):
             ramp.task_prefix("cc-main-2026-30-regional-test", "APAC", 0, 1),
             "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-regional-test/region=apac/tasks/task-0001",
         )
+        self.assertEqual(
+            ramp.task_prefix_for_output_prefix(
+                "production/common-crawl/cloudflare-r2-final-campaigns/v1/cc-main-2026-30-final-test/lane=apac-01",
+                11_000,
+                100_000,
+            ),
+            "production/common-crawl/cloudflare-r2-final-campaigns/v1/cc-main-2026-30-final-test/lane=apac-01/tasks/task-11001",
+        )
 
     def test_selected_inputs_fail_closed_on_digest_or_index_mismatch(self):
         with tempfile.TemporaryDirectory() as temporary:

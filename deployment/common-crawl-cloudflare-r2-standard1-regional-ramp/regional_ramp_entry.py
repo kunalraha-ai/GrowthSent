@@ -104,7 +104,8 @@ def main() -> int:
         }
 
     try:
-        prefix = ramp.region_prefix(run_id, region)
+        configured_output_prefix = os.environ.get("GROWTHSENT_R2_OUTPUT_PREFIX")
+        prefix = ramp.region_prefix(run_id, region) if configured_output_prefix is None else r2.normalize_key(configured_output_prefix)
         store = r2.R2Store.from_environment(allowed_prefixes=[prefix])
         result = ramp.run_task(
             run_id=run_id,
@@ -115,6 +116,7 @@ def main() -> int:
             output_dir=Path("/work/output"),
             release_sha256=required("GROWTHSENT_RELEASE_SHA256"),
             store=store,
+            r2_output_prefix=prefix,
             runtime_metadata=runtime_metadata,
         )
         print(json.dumps({

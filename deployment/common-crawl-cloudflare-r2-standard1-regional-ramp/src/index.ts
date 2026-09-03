@@ -324,6 +324,9 @@ function credentialStartWindow(env: RampEnv): { allowed: boolean; remainingSecon
 
 function runnerEnvironment(env: RampEnv): Record<string, string> {
   const settings = regionSettings(env);
+  const outputPrefix = typeof env.GROWTHSENT_R2_OUTPUT_PREFIX === "string" && env.GROWTHSENT_R2_OUTPUT_PREFIX.length > 0
+    ? env.GROWTHSENT_R2_OUTPUT_PREFIX
+    : null;
   return {
     GROWTHSENT_R2_ACCOUNT_ID: envText(env, "GROWTHSENT_R2_ACCOUNT_ID"),
     GROWTHSENT_R2_BUCKET: envText(env, "GROWTHSENT_R2_BUCKET"),
@@ -341,6 +344,7 @@ function runnerEnvironment(env: RampEnv): Record<string, string> {
     GROWTHSENT_SELECTED_INPUTS_SHA256: envText(env, "GROWTHSENT_SELECTED_INPUTS_SHA256"),
     GROWTHSENT_CONTAINER_INSTANCE_TYPE: envText(env, "GROWTHSENT_CONTAINER_INSTANCE_TYPE"),
     GROWTHSENT_HARD_TIMEOUT_SECONDS: envText(env, "GROWTHSENT_HARD_TIMEOUT_SECONDS"),
+    ...(outputPrefix === null ? {} : { GROWTHSENT_R2_OUTPUT_PREFIX: outputPrefix }),
   };
 }
 

@@ -145,6 +145,8 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
 
     def test_runtime_requires_shared_admission_and_does_not_spend_attempts_when_paced(self):
         worker = REGIONAL_SOURCE.read_text(encoding="utf-8")
+        entrypoint = (ROOT / "deployment" / "common-crawl-cloudflare-r2-standard1-regional-ramp" / "regional_ramp_entry.py").read_text(encoding="utf-8")
+        builder = (SELF_RECOVERY / "build_self_recovery_bundles.py").read_text(encoding="utf-8")
         admission = (SELF_RECOVERY / "src" / "admission.ts").read_text(encoding="utf-8")
         self.assertIn("REGIONAL_ADMISSION?: DurableObjectNamespace<RegionalStartAdmissionContract>", worker)
         self.assertIn("GROWTHSENT_SOURCE_INDEX_START", worker)
@@ -156,6 +158,10 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("reportCapacityFailure", admission)
         self.assertIn("capacity_backoff_until_ms", admission)
         self.assertIn("claimStart", admission)
+        self.assertIn("GROWTHSENT_R2_OUTPUT_PREFIX", worker)
+        self.assertIn("GROWTHSENT_R2_OUTPUT_PREFIX", entrypoint)
+        self.assertIn("r2_output_prefix=prefix", entrypoint)
+        self.assertIn('"GROWTHSENT_R2_OUTPUT_PREFIX": f"production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}/lane={lane.lower()}"', builder)
 
     def test_builder_and_policy_are_explicitly_launch_disabled(self):
         builder = (SELF_RECOVERY / "build_self_recovery_bundles.py").read_text(encoding="utf-8")

@@ -98,7 +98,13 @@ def region_prefix(run_id: str, region: str) -> str:
 
 
 def task_prefix(run_id: str, region: str, task_index: int, task_count: int) -> str:
-    return r2.normalize_key(region_prefix(run_id, region), "tasks", f"task-{task_number(task_index, task_count):04d}")
+    return task_prefix_for_output_prefix(region_prefix(run_id, region), task_index, task_count)
+
+
+def task_prefix_for_output_prefix(output_prefix: str, task_index: int, task_count: int) -> str:
+    """Build a task key below an explicitly scoped immutable lane prefix."""
+
+    return r2.normalize_key(r2.normalize_prefix(output_prefix), "tasks", f"task-{task_number(task_index, task_count):04d}")
 
 
 def _artifact_key(prefix: str, dataset: str, source: str) -> str:
@@ -288,6 +294,7 @@ def run_task(
     output_dir: Path,
     release_sha256: str,
     store: r2.R2Store,
+    r2_output_prefix: str | None = None,
     runtime_metadata: Callable[[], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Process exactly one source key from the locked selected-input contract."""
@@ -297,8 +304,13 @@ def run_task(
     inputs = load_inputs(inputs_path, expected_sha256=selected_inputs_sha256)
     input_count = _required_non_negative_int(inputs.get("input_count"), "input_count")
     source = selected_input(inputs, task_index=task_index)
-    prefix = task_prefix(run_id, region, task_index, input_count)
-    expected_allowed_prefix = r2.normalize_prefix(region_prefix(run_id, region))
+    # Older regional profiles derive their output prefix from the run ID. The
+    # final 89K campaign uses `lane=...` prefixes instead, so its exact prefix
+    # is an explicit, non-secret runtime setting. In both cases the temporary
+    # credential must be scoped to precisely that one lane.
+    region_output_prefix = region_prefix(run_id, region) if r2_output_prefix is None else r2.normalize_key(r2_output_prefix)
+    prefix = task_prefix_for_output_prefix(region_output_prefix, task_index, input_count)
+    expected_allowed_prefix = r2.normalize_prefix(region_output_prefix)
     if tuple(store.allowed_prefixes) != (expected_allowed_prefix,):
         raise RegionalRampError("regional task credential/store must be restricted to exactly its regional run prefix")
 

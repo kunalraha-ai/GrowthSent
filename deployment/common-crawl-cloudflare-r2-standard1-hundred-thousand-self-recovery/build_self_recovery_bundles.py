@@ -286,6 +286,7 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
         "vars": {
             "GROWTHSENT_R2_ACCOUNT_ID": ACCOUNT_ID,
             "GROWTHSENT_R2_BUCKET": BUCKET,
+            "GROWTHSENT_R2_OUTPUT_PREFIX": f"production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}/lane={lane.lower()}",
             "GROWTHSENT_RAMP_ID": run_id,
             "GROWTHSENT_REGION": lane,
             "GROWTHSENT_PLACEMENT_GROUP": placement_group,
