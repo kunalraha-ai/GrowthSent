@@ -291,7 +291,23 @@ function isCapacityFailure(failure: SafeError): boolean {
 
 function isRecoverablePartialPrefixFailure(failure: SafeError): boolean {
   return failure.type === "TaskProcessExit"
-    && failure.message.includes("partial immutable task prefix requires isolated recovery");
+    && (
+      failure.message.includes("partial immutable task prefix requires isolated recovery")
+      // A stopped task can have written one immutable payload before a retry
+      // observed it. Its per-run metrics include runtime data, so a later
+      // second writer is intentionally rejected instead of replacing it.
+      // The same fresh-prefix recovery rule applies to this explicit conflict.
+      || failure.message.includes("destination conflict:")
+    );
+}
+
+function isResumableInterruptedTaskFailure(failure: SafeError): boolean {
+  // The runner remains alive when its foreground task subprocess receives
+  // SIGTERM.  The task has no completion marker, so it is safe to put it back
+  // into the fixed-slot queue.  Partial-prefix failures are handled first and
+  // intentionally remain quarantined for a fresh-prefix recovery.
+  return failure.type === "TaskProcessExit"
+    && failure.message.includes("task process exited with code -15");
 }
 
 function isRetryableTaskFailure(failure: SafeError): boolean {
@@ -303,6 +319,7 @@ function isRetryableTaskFailure(failure: SafeError): boolean {
   return failure.type === "ContainerError"
     || failure.type === "ContainerExit"
     || failure.type === "ContainerUnavailable"
+    || isResumableInterruptedTaskFailure(failure)
     || message.includes("network connection lost")
     || message.includes("container connectivity was lost")
     || message.includes("common crawl https read failed")
@@ -673,6 +690,75 @@ export class GrowthSentStandard1RegionalRampCoordinator extends DurableObject<Ra
     return { launch, active_tasks: activeTasks };
   }
 
+  async resumeInterruptedTask(): Promise<{ accepted: boolean; run_id: string; region: string; task_index?: number; local_task_number?: number; reason?: string }> {
+    const record = await this.ctx.storage.get<RegionalRampRecord>(COORDINATOR_KEY);
+    const settings = regionSettings(this.env);
+    const terminal = record?.terminal_failure;
+    if (record?.state !== "task_failed" || terminal === undefined || !isResumableInterruptedTaskFailure(terminal.failure)) {
+      return { accepted: false, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, reason: "the lane is not stopped on the reviewed SIGTERM task-process failure" };
+    }
+    if (terminal.task_index !== taskIndexForLocalNumber(this.env, terminal.local_task_number)) {
+      throw new Error("terminal task identity is outside this regional lane");
+    }
+    if (record.in_flight.some((task) => task.task_index === terminal.task_index || task.local_task_number === terminal.local_task_number)) {
+      throw new Error("terminal task is already present in the fixed-slot queue");
+    }
+    const occupiedSlots = new Set(record.in_flight.map((task) => task.container_slot));
+    const containerSlot = Array.from({ length: settings.maxConcurrent }, (_, index) => index + 1).find((slot) => !occupiedSlots.has(slot));
+    if (containerSlot === undefined) throw new Error("there is no free fixed slot for the interrupted task");
+    const { terminal_failure: _terminalFailure, ...withoutTerminalFailure } = record;
+    const resumed: RegionalRampRecord = {
+      ...withoutTerminalFailure,
+      state: "launching",
+      in_flight: [...record.in_flight, {
+        task_index: terminal.task_index,
+        local_task_number: terminal.local_task_number,
+        container_slot: containerSlot,
+        attempts: 1,
+        accepted_at: now(),
+      }],
+      retry: null,
+      updated_at: now(),
+    };
+    await this.persistAndSchedule(resumed, 1);
+    console.warn(JSON.stringify({ event: "standard1_regional_interrupted_task_resumed", run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, task_index: terminal.task_index, local_task_number: terminal.local_task_number, container_slot: containerSlot }));
+    return { accepted: true, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, task_index: terminal.task_index, local_task_number: terminal.local_task_number };
+  }
+
+  async resumeQuarantinedPartialTask(): Promise<{ accepted: boolean; run_id: string; region: string; task_index?: number; local_task_number?: number; reason?: string }> {
+    const record = await this.ctx.storage.get<RegionalRampRecord>(COORDINATOR_KEY);
+    const settings = regionSettings(this.env);
+    const terminal = record?.terminal_failure;
+    if (record?.state !== "task_failed" || terminal === undefined || !isRecoverablePartialPrefixFailure(terminal.failure)) {
+      return { accepted: false, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, reason: "the lane is not stopped on a quarantinable immutable-prefix failure" };
+    }
+    if (terminal.task_index !== taskIndexForLocalNumber(this.env, terminal.local_task_number)) {
+      throw new Error("terminal partial task identity is outside this regional lane");
+    }
+    // The failed task must never be started in this prefix again.  Existing
+    // payloads remain immutable evidence; an exact fresh-prefix recovery is
+    // prepared only after this source lane reaches a terminal state.
+    const state = record.next_local_task_number > settings.regionalTaskCount && record.in_flight.length === 0
+      ? "completed_with_recoverable_failures"
+      : "launching";
+    const { terminal_failure: _terminalFailure, ...withoutTerminalFailure } = record;
+    const resumed: RegionalRampRecord = {
+      ...withoutTerminalFailure,
+      state,
+      recoverable_failed_count: (record.recoverable_failed_count ?? 0) + 1,
+      last_recoverable_failure: terminal,
+      retry: null,
+      updated_at: now(),
+    };
+    console.warn(JSON.stringify({ event: "standard1_regional_partial_task_quarantined_on_resume", run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, task_index: terminal.task_index, local_task_number: terminal.local_task_number }));
+    if (state === "completed_with_recoverable_failures") {
+      await this.ctx.storage.put<RegionalRampRecord>(COORDINATOR_KEY, resumed);
+    } else {
+      await this.persistAndSchedule(resumed, 1);
+    }
+    return { accepted: true, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, task_index: terminal.task_index, local_task_number: terminal.local_task_number };
+  }
+
   private async failTask(record: RegionalRampRecord, completedCount: number, remaining: InFlightTask[], task: Pick<InFlightTask, "task_index" | "local_task_number">, failure: SafeError): Promise<void> {
     await this.ctx.storage.put<RegionalRampRecord>(COORDINATOR_KEY, {
       ...record,
@@ -929,6 +1015,28 @@ export default {
       } catch (error) {
         const diagnostic = safeError(error);
         console.error(JSON.stringify({ event: "standard1_regional_ramp_schedule_failed", run_id: env.GROWTHSENT_RAMP_ID, region: values.region, ...diagnostic }));
+        return response({ accepted: false, run_id: env.GROWTHSENT_RAMP_ID, region: values.region, error: diagnostic.message }, 503);
+      }
+    }
+    if (request.method === "POST" && path === "/_growthsent_standard1_regional_ramp/resume-interrupted-task") {
+      if (!(await hasControlToken(request, env.RAMP_TRIGGER_TOKEN))) return new Response("not found", { status: 404, headers: { "cache-control": "no-store" } });
+      try {
+        const result = await coordinator.resumeInterruptedTask();
+        return response(result, result.accepted ? 202 : 409);
+      } catch (error) {
+        const diagnostic = safeError(error);
+        console.error(JSON.stringify({ event: "standard1_regional_interrupted_task_resume_failed", run_id: env.GROWTHSENT_RAMP_ID, region: values.region, ...diagnostic }));
+        return response({ accepted: false, run_id: env.GROWTHSENT_RAMP_ID, region: values.region, error: diagnostic.message }, 503);
+      }
+    }
+    if (request.method === "POST" && path === "/_growthsent_standard1_regional_ramp/resume-quarantined-partial-task") {
+      if (!(await hasControlToken(request, env.RAMP_TRIGGER_TOKEN))) return new Response("not found", { status: 404, headers: { "cache-control": "no-store" } });
+      try {
+        const result = await coordinator.resumeQuarantinedPartialTask();
+        return response(result, result.accepted ? 202 : 409);
+      } catch (error) {
+        const diagnostic = safeError(error);
+        console.error(JSON.stringify({ event: "standard1_regional_partial_task_resume_failed", run_id: env.GROWTHSENT_RAMP_ID, region: values.region, ...diagnostic }));
         return response({ accepted: false, run_id: env.GROWTHSENT_RAMP_ID, region: values.region, error: diagnostic.message }, 503);
       }
     }

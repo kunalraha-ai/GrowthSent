@@ -162,6 +162,12 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("GROWTHSENT_R2_OUTPUT_PREFIX", entrypoint)
         self.assertIn("r2_output_prefix=prefix", entrypoint)
         self.assertIn('"GROWTHSENT_R2_OUTPUT_PREFIX": f"production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}/lane={lane.lower()}"', builder)
+        self.assertIn("isResumableInterruptedTaskFailure", worker)
+        self.assertIn("resumeInterruptedTask", worker)
+        self.assertIn("/_growthsent_standard1_regional_ramp/resume-interrupted-task", worker)
+        self.assertIn("destination conflict:", worker)
+        self.assertIn("resumeQuarantinedPartialTask", worker)
+        self.assertIn("/_growthsent_standard1_regional_ramp/resume-quarantined-partial-task", worker)
 
     def test_builder_and_policy_are_explicitly_launch_disabled(self):
         builder = (SELF_RECOVERY / "build_self_recovery_bundles.py").read_text(encoding="utf-8")

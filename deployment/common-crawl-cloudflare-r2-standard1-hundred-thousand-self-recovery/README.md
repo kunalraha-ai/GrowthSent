@@ -53,6 +53,21 @@ the staged admission and recovery
 controls remain necessary because those limits do not eliminate transient
 regional pool allocation failures or create a start-rate reservation.
 
+## Lane-local failure handling
+
+The coordinator retries an interrupted task subprocess (`SIGTERM`, exit
+`-15`) in its fixed lane queue: the absence of `TASK-COMPLETED.json` makes the
+retry safe. If a task has already published one immutable payload and a retry
+observes a destination conflict, it is quarantined rather than overwritten;
+that lane continues with its remaining WATs. Once the lane is terminal, the
+quarantined source identities are recovered in a fresh prefix and included in
+the final completion-marker aggregate.
+
+The operator-only `resume-final-89k-failed-lane-wsl.sh` tool is restricted to
+one explicitly named terminal lane. It deploys the recovery behavior only to
+that lane and accepts only these two diagnosed conditions. It never deploys,
+stops, or reconfigures a sibling lane.
+
 ## Local final gate
 
 The gate needs the secret-free artifacts from the verified runs. It only reads
