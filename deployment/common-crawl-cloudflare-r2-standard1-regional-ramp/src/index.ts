@@ -298,6 +298,14 @@ function isRecoverablePartialPrefixFailure(failure: SafeError): boolean {
       // second writer is intentionally rejected instead of replacing it.
       // The same fresh-prefix recovery rule applies to this explicit conflict.
       || failure.message.includes("destination conflict:")
+      // A duplicate runner can finish just ahead of its sibling and publish
+      // the immutable completion marker first.  The sibling must not attempt
+      // to replace that marker; quarantine its task and let the final marker
+      // inventory decide whether it is already complete.
+      || (
+        failure.message.includes("R2 immutable JSON PutObject failed for")
+        && failure.message.includes("/TASK-COMPLETED.json")
+      )
     );
 }
 

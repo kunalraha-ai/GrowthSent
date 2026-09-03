@@ -103,7 +103,14 @@ if status.get("run_id") != run_id or status.get("region") != lane or status.get(
     raise SystemExit("The selected lane state changed during repair preparation; refusing to touch it.")
 if "task process exited with code -15" in message:
     print("resume-interrupted-task")
-elif "partial immutable task prefix requires isolated recovery" in message or "destination conflict:" in message:
+elif (
+    "partial immutable task prefix requires isolated recovery" in message
+    or "destination conflict:" in message
+    or (
+        "R2 immutable JSON PutObject failed for" in message
+        and "/TASK-COMPLETED.json" in message
+    )
+):
     print("resume-quarantined-partial-task")
 else:
     raise SystemExit("The selected failure is not safe for this in-place repair.")
