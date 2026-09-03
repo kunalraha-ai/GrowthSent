@@ -1,0 +1,18 @@
+{
+  "format_version": 1,
+  "kind": "growthsent-cloudflare-r2-standard1-enam-recovery-contract-v1",
+  "crawl": "CC-MAIN-2026-30",
+  "source_manifest_sha256": "9399dcdf3bee5e05dfbc58b814d0ea8d529698453fe6aeb62fc82914503ffdfb",
+  "source_manifest_claim_sha256": "233ee2754b44d02eaedeb0c8dbee088e57a651707f86575dce18b16e28aebda8",
+  "source_shard_id": 0,
+  "source_run_id": "cc-main-2026-30-20260831t121855z-standard1-regional-8381964f",
+  "source_task_count": 100,
+  "source_selected_inputs_sha256": "61daad2a83ffae35d0ff4dc63136b11e02cfd9feeb201c026c9b20b822b9c8a4",
+  "source_region": "ENAM",
+  "source_region_index": 1,
+  "source_region_count": 4,
+  "failed_source_index": 25,
+  "recovery_task_count": 18,
+  "recovery_source_indexes": [25, 33, 37, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77, 81, 85, 89, 93, 97],
+  "rationale": "One ENAM task ended with a transient truncated gzip EOF; its following seventeen ENAM tasks were never scheduled after the lane entered task_failed."
+}

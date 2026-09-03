@@ -1,0 +1,28 @@
+{
+  "format_version": 1,
+  "kind": "growthsent-cloudflare-r2-standard1-incomplete-recovery-contract-v1",
+  "crawl": "CC-MAIN-2026-30",
+  "source_run_id": "cc-main-2026-30-20260831t155030z-standard1-regional-220a5d98",
+  "source_context_sha256": "814de2b86a2719d5982c4509ab09e5628e3f88e13f98f5e557ecc899b5344297",
+  "source_plan_sha256": "876b4543a1fb1ddaee93d66d421c1c384ac3510aca7ef74da8c7ccf98ea99d72",
+  "source_manifest_sha256": "9399dcdf3bee5e05dfbc58b814d0ea8d529698453fe6aeb62fc82914503ffdfb",
+  "source_manifest_claim_sha256": "233ee2754b44d02eaedeb0c8dbee088e57a651707f86575dce18b16e28aebda8",
+  "source_shard_id": 0,
+  "source_task_count": 1000,
+  "source_selected_inputs_sha256": "220d65e0ef9aa1c6d1b12ac408e2c3feb71e063abaddc0f89f6040aa18e09ff5",
+  "inventory": {
+    "method": "Cloudflare R2 List Objects API; completion-marker-last proof",
+    "listed_at": "2026-09-01T01:46:00Z",
+    "object_count": 4144,
+    "completion_marker_count": 592,
+    "incomplete_task_count": 408,
+    "region_completion_counts": {"APAC": 163, "ENAM": 250, "WNAM": 167, "WEUR": 12}
+  },
+  "recovery_task_count": 408,
+  "recovery_source_index_ranges": [
+    {"source_region": "WEUR", "start": 51, "end": 999, "step": 4},
+    {"source_region": "APAC", "start": 652, "end": 996, "step": 4},
+    {"source_region": "WNAM", "start": 670, "end": 998, "step": 4}
+  ],
+  "provenance": "The original run is read-only. Each index is absent from its original TASK-COMPLETED.json set and is processed only under a fresh immutable recovery prefix."
+}

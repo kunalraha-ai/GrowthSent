@@ -54,13 +54,16 @@ The application and ingestion planes are deliberately separate. The public app u
 
 The historic 10K materials remain a bounded reference implementation, but its original golden raw artifacts are unavailable. New Cloudflare runs therefore use explicitly labelled **public-source semantic baselines**, not a claim of golden-artifact equivalence.
 
-The current Cloudflare validation milestone is complete:
+The current Cloudflare validation evidence includes:
 
 - 50 `CC-MAIN-2026-30` WATs were processed as five independent ten-WAT semantic-v2 shards.
 - Every completed shard passed its exact 43-object R2 contract, full object integrity checks, semantic equivalence checks, and completion-marker-last validation.
 - The temporary Workers used for those verified runs were retired; immutable R2 output remains preserved.
+- A regional `standard-1` capacity checkpoint processed and verified 50 WATs across four constrained lanes (APAC, ENAM, WNAM, and WEUR), with immutable per-task outputs and read-only post-run verification.
+- The regional runner now owns its complete bundle inputs and has an explicit isolated recovery path for an interrupted lane; recovery never receives write access to the original run prefix.
+- The final self-recovery control plane processes the remaining 89,000 locked inputs only after validating immutable completion evidence for indexes `0..10,999`; it uses fresh R2 prefixes, bounded child credentials, paced admission, and completion-marker-last recovery.
 
-There is no approved 1,000- or 100,000-WAT production launch in this repository. The next stage requires Cloudflare confirmation of concurrent Container admission and account capacity; scale only through measured, approved batches.
+The final 89K control plane is deliberately not a clean-slate 100K launcher. It is reusable only when the same verified 11K prefix exists. A new corpus campaign must first build an explicit, independently verified reuse proof (or a new all-input plan) before any remote launch. Scale only through measured, approved batches with fresh prefixes, bounded credentials, and read-only verification.
 
 ## Repository layout
 
@@ -77,6 +80,10 @@ deployment/common-crawl-cloudflare-r2-10-wat-canary/
                                       Reusable one-container, ten-WAT Cloudflare canary
 deployment/common-crawl-cloudflare-r2-50-wat-canary/
                                       Five-shard baseline, verification, and Worker retirement helpers
+deployment/common-crawl-cloudflare-r2-standard1-regional-ramp/
+                                      Self-contained regional standard-1 capacity and recovery runner
+deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recovery/
+                                      Final 89K self-recovery control plane after verified 11K reuse
 ```
 
 ## Local development

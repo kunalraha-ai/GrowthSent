@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Build and compile four regional Container Worker bundles locally only.
+set -euo pipefail
+
+TASK_COUNT="${GROWTHSENT_REGIONAL_RAMP_TASK_COUNT:-50}"
+SOURCE_MANIFEST="${GROWTHSENT_REGIONAL_SOURCE_MANIFEST:-deployment/common-crawl-production-v2/manifests/cc-main-2026-30-first-100000-shards/shard-00000-of-00100.json}"
+WSL_NODE_BIN="${GROWTHSENT_WSL_NODE_BIN:-$HOME/.local/share/growthsent-tools/node-v22.23.2-linux-x64/bin}"
+
+if [[ $# -ne 0 ]]; then
+  echo "Usage: $0" >&2
+  exit 2
+fi
+[[ "$TASK_COUNT" =~ ^[0-9]+$ ]] && (( TASK_COUNT >= 1 && TASK_COUNT <= 1000 )) || { echo "GROWTHSENT_REGIONAL_RAMP_TASK_COUNT must be 1..1000." >&2; exit 2; }
+[[ -x "$WSL_NODE_BIN/node" && -x "$WSL_NODE_BIN/npm" && -x "$WSL_NODE_BIN/npx" ]] || { echo "The reviewed native Ubuntu Node runtime is unavailable: $WSL_NODE_BIN" >&2; exit 1; }
+export PATH="$WSL_NODE_BIN:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+for command in node npm npx python3 docker; do command -v "$command" >/dev/null 2>&1 || { echo "Missing required Ubuntu command: $command" >&2; exit 1; }; done
+docker version >/dev/null 2>&1 || { echo "Docker Engine is not reachable from Ubuntu WSL." >&2; exit 1; }
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
+if [[ "$SOURCE_MANIFEST" != /* ]]; then SOURCE_MANIFEST="$ROOT/$SOURCE_MANIFEST"; fi
+[[ -f "$SOURCE_MANIFEST" ]] || { echo "Missing locked source shard manifest: $SOURCE_MANIFEST" >&2; exit 1; }
+NONCE="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ | tr '[:upper:]' '[:lower:]')"
+RUN_ID="cc-main-2026-30-${TIMESTAMP}-standard1-regional-${NONCE}"
+TEMP_ROOT="$(mktemp -d -t "growthsent-cloudflare-standard1-regional-${RUN_ID}-XXXXXX")"
+OUTPUT_ROOT="$TEMP_ROOT/bundle"
+
+echo "GrowthSent regional standard-1 ramp compilation gate (Ubuntu/WSL native)"
+echo "Run ID: $RUN_ID"
+echo "Selected task count: $TASK_COUNT"
+echo "Source shard manifest: $SOURCE_MANIFEST"
+echo "Scope: build four region-constrained Workers and run Wrangler --dry-run for each."
+echo "No Cloudflare API call, R2 object, Worker deployment, Container start, or credential mint occurs."
+read -r -p "Press Enter to continue: " _
+
+python3 "$SCRIPT_DIR/build_bundles.py" --run-id "$RUN_ID" --source-manifest "$SOURCE_MANIFEST" --task-count "$TASK_COUNT" --output-dir "$OUTPUT_ROOT"
+
+# The host WSL Python intentionally does not need the Container-only pyarrow
+# dependency. Run the focused Python contract suite in the reviewed image that
+# the Wrangler dry-runs compile below.
+TEST_IMAGE="growthsent-standard1-regional-gate-${NONCE}"
+docker build --tag "$TEST_IMAGE" "$OUTPUT_ROOT/bundles/apac" >/dev/null
+docker run --rm --entrypoint python -v "$ROOT:/source:ro" -w /source "$TEST_IMAGE" \
+  tests/common_crawl_cloudflare_r2_standard1_regional_ramp.test.py
+
+for REGION in apac enam wnam weur; do
+  BUNDLE="$OUTPUT_ROOT/bundles/$REGION"
+  npm --prefix "$BUNDLE" install --no-package-lock --ignore-scripts --omit=dev --no-audit --no-fund >/dev/null
+  npx --offline --yes wrangler@4.126.0 deploy --dry-run --config "$BUNDLE/wrangler.jsonc"
+done
+
+python3 - "$OUTPUT_ROOT/RUN-PLAN.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assert plan["kind"] == "growthsent-cloudflare-r2-standard1-regional-ramp-plan"
+assert 1 <= plan["task_count"] <= 1000
+assert plan["max_concurrent_total"] == min(plan["task_count"], 16)
+assert [item["region"] for item in plan["regions"]] == ["APAC", "ENAM", "WNAM", "WEUR"]
+assert sum(item["regional_task_count"] for item in plan["regions"]) == plan["task_count"]
+assert all(item["max_instances"] == item["max_concurrent"] + 2 for item in plan["regions"])
+print("regional standard-1 ramp local plan gate passed")
+PY
+
+echo "SUCCESS: four regional standard-1 bundles compiled locally."
+echo "Secret-free run plan: $OUTPUT_ROOT/RUN-PLAN.json"
+echo "Remote deployment and start remain disabled until separately approved after capacity review."

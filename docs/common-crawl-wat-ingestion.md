@@ -3,13 +3,14 @@
 `tools/common_crawl_wat_ingest.py` converts Common Crawl WAT files directly to
 Snappy-compressed Parquet. It has no MongoDB import or deployment path.
 
-For the local acceptance sample:
+For a single public Common Crawl WAT key:
 
 ```powershell
 python tools/common_crawl_wat_ingest.py `
   --crawl CC-MAIN-2026-30 `
-  --input sample.warc.wat.gz `
-  --output-dir artifacts/common-crawl
+  --input crawl-data/CC-MAIN-2026-30/segments/.../wat/CC-MAIN-....warc.wat.gz `
+  --output-dir artifacts/common-crawl `
+  --resume
 ```
 
 For a listed Common Crawl object key, install
@@ -51,7 +52,7 @@ cloud benchmark safe to restart without duplicate parts.
 ```powershell
 python tools/common_crawl_wat_ingest.py `
   --crawl CC-MAIN-2026-30 `
-  --input-list wat.paths.gz `
+  --input-list cc-main-2026-30.wat.paths.gz `
   --max-inputs 100 `
   --workers 4 `
   --files-per-batch 16 `

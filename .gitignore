@@ -24,6 +24,7 @@ build
 *.sln
 *.sw?
 *.zip
+/cloudflare-workers-types-*.tgz
 my-clerk-app
 
 .vercel
@@ -51,6 +52,8 @@ my-clerk-app
 /sample*.jsonl
 /sample.warc.wat.gz
 /wat.paths.gz
+/ssm-*.json
+/scratch/
 *.log
 
 # Superseded local GCP/R2 release; the reviewed -v2 archive is tracked.

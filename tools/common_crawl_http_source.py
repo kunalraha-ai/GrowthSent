@@ -137,6 +137,12 @@ def _status_from_error(error: Exception) -> int | None:
 def is_retryable_error(error: Exception) -> bool:
     if isinstance(error, CommonCrawlSourceError) and isinstance(error.__cause__, Exception):
         return is_retryable_error(error.__cause__)
+    # ``gzip.GzipFile`` reports a prematurely truncated compressed response as
+    # EOFError while the parser is consuming the stream.  Treat that transport
+    # integrity failure like a reset so the bounded full-WAT retry loop can
+    # restart from byte zero rather than publish any partial artifacts.
+    if isinstance(error, EOFError):
+        return True
     status = _status_from_error(error)
     if status is not None:
         return status in RETRYABLE_HTTP_STATUSES
@@ -222,8 +228,9 @@ class CommonCrawlHttpSource:
                 if status in RETRYABLE_HTTP_STATUSES:
                     telemetry.retryable_http_statuses.append(status)
                 if not is_retryable_error(error) or index == attempts - 1:
+                    status_text = f" HTTP {status}" if status is not None else ""
                     raise CommonCrawlSourceError(
-                        f"Common Crawl HTTPS read failed after {index + 1} attempt(s) for {key}: {type(error).__name__}",
+                        f"Common Crawl HTTPS read failed after {index + 1} attempt(s) for {key}: {type(error).__name__}{status_text}",
                         telemetry=telemetry,
                     ) from error
                 telemetry.retries += 1

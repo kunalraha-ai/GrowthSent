@@ -93,9 +93,12 @@ class HttpSourceTests(unittest.TestCase):
             opener=SequencedOpener([HTTPError("https://data.commoncrawl.org/x", 404, "missing", {}, None)]),
             sleep=lambda _: self.fail("must not retry 404"),
         )
-        with self.assertRaises(source.CommonCrawlSourceError):
+        with self.assertRaisesRegex(source.CommonCrawlSourceError, r"HTTPError HTTP 404"):
             with reader.open_gzip(KEY):
                 pass
+
+    def test_truncated_gzip_eof_is_retryable_at_the_full_wat_layer(self):
+        self.assertTrue(source.is_retryable_error(EOFError("Compressed file ended before the end-of-stream marker was reached")))
 
     def test_source_key_validation_rejects_url_rewriting_or_traversal(self):
         with self.assertRaises(source.CommonCrawlSourceError):

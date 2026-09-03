@@ -1,5 +1,6 @@
 import argparse
 from contextlib import contextmanager
+import gzip
 import io
 import json
 import sys
@@ -97,6 +98,32 @@ class RecoveringSource:
         return 2.0
 
 
+class TruncatedGzipSource:
+    """Expose a truncated gzip stream once, then a valid full WAT stream."""
+
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = 0
+        self.waits = []
+
+    @contextmanager
+    def open_gzip(self, source, *, max_attempts):
+        self.calls += 1
+        self.asserted_attempt_limit = max_attempts
+        telemetry = http_source.SourceTelemetry(source_key=source, source_url="https://data.commoncrawl.org/" + source)
+        telemetry.attempts = 1
+        telemetry.response_status = 200
+        compressed = gzip.compress(self.payload)
+        delivered = compressed[:-8] if self.calls == 1 else compressed
+        telemetry.downloaded_bytes = len(delivered)
+        with gzip.GzipFile(fileobj=io.BytesIO(delivered), mode="rb") as stream:
+            yield stream, telemetry
+
+    def sleep_before_retry(self, index):
+        self.waits.append(index)
+        return 2.0
+
+
 class GcpR2RunnerTests(unittest.TestCase):
     def test_raw_paths_are_deterministic_and_never_target_golden_or_canary_prefixes(self):
         source = checked_contract().inputs[0]
@@ -141,6 +168,24 @@ class GcpR2RunnerTests(unittest.TestCase):
         self.assertEqual(report["input"], source)
         self.assertEqual(report["source_transport"]["processing_retries"], 1)
         self.assertEqual(report["artifacts"][0]["key"], contract_tools.raw_part_key("pages", source))
+
+    def test_raw_truncated_gzip_eof_retries_the_whole_wat_without_partial_artifacts(self):
+        source = checked_contract().inputs[0]
+        payload = {
+            "Envelope": {
+                "WARC-Header-Metadata": {"WARC-Target-URI": "https://example.com/", "WARC-Date": "2026-07-10T00:00:00Z"},
+                "Payload-Metadata": {"HTTP-Response-Metadata": {"Response-Message": {"Status": 200}, "Headers": {"Content-Type": ["text/html"]}, "HTML-Metadata": {"Links": []}}},
+            }
+        }
+        encoded = json.dumps(payload).encode("utf-8")
+        wat = b"WARC/1.0\r\nContent-Type: application/json\r\nContent-Length: " + str(len(encoded)).encode("ascii") + b"\r\n\r\n" + encoded + b"\r\n"
+        reader = TruncatedGzipSource(wat)
+        with tempfile.TemporaryDirectory() as tmp:
+            report = raw._write_one(source, Path(tmp), source_reader=reader, batch_size=1, source_max_attempts=2)
+        self.assertEqual(reader.calls, 2)
+        self.assertEqual(reader.waits, [0])
+        self.assertEqual(report["source_transport"]["processing_retries"], 1)
+        self.assertEqual(len(report["source_transport"]["prior_attempts"]), 1)
 
     def test_missing_bucket_directory_is_rejected_by_the_approved_validator(self):
         with tempfile.TemporaryDirectory() as tmp:

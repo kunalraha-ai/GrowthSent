@@ -5,7 +5,7 @@ processing, MongoDB changes, or deployment.
 
 ## Scope and baseline
 
-The only production scope is the first 1,000 ordered paths from `wat.paths.gz`.
+The only production scope is the first 1,000 ordered paths from `cc-main-2026-30.wat.paths.gz`.
 Its immutable scope lock is:
 
 ```text
@@ -208,7 +208,7 @@ environment, check out the reviewed repository revision, and run:
 ```bash
 python tools/common_crawl_wat_ingest.py \
   --crawl CC-MAIN-2026-30 \
-  --input-list wat.paths.gz \
+  --input-list cc-main-2026-30.wat.paths.gz \
   --max-inputs 1000 \
   --expected-inputs-sha256 6ce2c0c06612de9d8816d6075a25b15929209504f346305dae8ee9ced03b3b7a \
   --require-source-prefix crawl-data/CC-MAIN-2026-30/ \

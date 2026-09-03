@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "account_id": "4a30e8ac877d9f65ee9a0ecc5df16146",
+  "name": "growthsent-regional-cleanup-placeholder",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "workers_dev": true,
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "GrowthSentStandard1RegionalRampContainer",
+        "GrowthSentStandard1RegionalRampCoordinator"
+      ]
+    },
+    {
+      "tag": "v2",
+      "deleted_classes": [
+        "GrowthSentStandard1RegionalRampContainer",
+        "GrowthSentStandard1RegionalRampCoordinator"
+      ]
+    }
+  ]
+}
