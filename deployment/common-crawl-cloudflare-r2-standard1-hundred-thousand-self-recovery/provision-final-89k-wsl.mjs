@@ -172,6 +172,19 @@ function planDigest(plan) {
   return createHash("sha256").update(canonicalJson(payload)).digest("hex");
 }
 
+// JSON object property order is not part of the recovery-plan contract.  The
+// Python builder writes canonical (alphabetically ordered) JSON while the
+// reviewed lane list is grouped in operational placement order.  Compare the
+// maps semantically so a valid sparse recovery plan is not rejected merely
+// because those two safe orderings differ.
+function sameIntegerMap(left, right) {
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object" || Array.isArray(left) || Array.isArray(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length && leftKeys.every((key, index) => key === rightKeys[index]
+    && Number.isInteger(left[key]) && Number.isInteger(right[key]) && left[key] === right[key]);
+}
+
 function validatePlan(plan) {
   const recovery = plan?.kind === RECOVERY_PLAN_KIND;
   if (!((plan?.kind === PLAN_KIND && plan?.execution_profile === EXECUTION_PROFILE) || (recovery && plan?.execution_profile === RECOVERY_PROFILE)) || !SHA256.test(plan?.plan_sha256 ?? "") || plan.plan_sha256 !== planDigest(plan)) fail("The local final 89K plan digest or identity is invalid.");
@@ -190,7 +203,7 @@ function validatePlan(plan) {
     const expectedConcurrent = Math.min(32, expectedRegional);
     if (lane?.lane_index !== index || lane?.lane_count !== plan.lanes.length || lane?.source_index_start !== (recovery ? 0 : 11000) || lane?.regional_task_count !== expectedRegional || lane?.max_concurrent !== expectedConcurrent || lane?.max_instances !== 32 || !SHA256.test(lane?.release_sha256 ?? "") || (lane?.selected_inputs_sha256 !== undefined && !SHA256.test(lane.selected_inputs_sha256)) || typeof lane?.bundle !== "string" || typeof lane?.worker_name !== "string" || typeof lane?.lane !== "string") fail("A final 89K lane is not a reviewed immutable deployment bundle.");
   }
-  if ((!recovery && (plan.lanes.length !== 45 || JSON.stringify(groupCounts) !== JSON.stringify(EXPECTED_GROUP_LANES))) || (recovery && (Object.keys(groupCounts).some((group) => !Object.prototype.hasOwnProperty.call(EXPECTED_GROUP_LANES, group) || groupCounts[group] > EXPECTED_GROUP_LANES[group]) || JSON.stringify(groupCounts) !== JSON.stringify(plan.topology.placement_group_lane_counts) || plan.topology.max_concurrent_total !== plan.lanes.reduce((total, lane) => total + lane.max_concurrent, 0)))) fail("The final 89K placement-group lane allocation is invalid.");
+  if ((!recovery && (plan.lanes.length !== 45 || !sameIntegerMap(groupCounts, EXPECTED_GROUP_LANES))) || (recovery && (Object.keys(groupCounts).some((group) => !Object.prototype.hasOwnProperty.call(EXPECTED_GROUP_LANES, group) || groupCounts[group] > EXPECTED_GROUP_LANES[group]) || !sameIntegerMap(groupCounts, plan.topology.placement_group_lane_counts) || plan.topology.max_concurrent_total !== plan.lanes.reduce((total, lane) => total + lane.max_concurrent, 0)))) fail("The final 89K placement-group lane allocation is invalid.");
   if (![
     "disabled; a separately reviewed launcher and explicit approval are required",
     "disabled; capacity approval and a separately reviewed launcher are required",

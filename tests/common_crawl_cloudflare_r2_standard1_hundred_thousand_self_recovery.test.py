@@ -23,6 +23,7 @@ FINAL_PROVISIONER_WRAPPER = SELF_RECOVERY / "provision-final-89k-wsl.sh"
 FINAL_RECOVERY_BUILDER = SELF_RECOVERY / "build_final_89k_recovery_bundles.py"
 FINAL_RECOVERY_PREPARER = SELF_RECOVERY / "prepare-final-89k-recovery-wsl.mjs"
 FINAL_RECOVERY_WRAPPER = SELF_RECOVERY / "recover-final-89k-wsl.sh"
+FINAL_RECOVERY_RESUME_WRAPPER = SELF_RECOVERY / "resume-final-89k-recovery-wsl.sh"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
@@ -235,6 +236,8 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("max_instances_per_lane !== 32", provisioner)
         self.assertIn("FINAL-89K-SAFE-LOGS", provisioner)
         self.assertIn("Safe diagnostic:", provisioner)
+        self.assertIn("sameIntegerMap", provisioner)
+        self.assertNotIn("JSON.stringify(groupCounts) !== JSON.stringify(plan.topology.placement_group_lane_counts)", provisioner)
         self.assertLess(provisioner.index("all_final_89k_lanes_preflighted"), provisioner.index("final_89k_admission_worker_ready"))
         self.assertIn("GROWTHSENT_FINAL_89K_PLAN", wrapper)
         self.assertIn("boto3.__version__ == \"1.43.67\"", wrapper)
@@ -262,6 +265,15 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("prepare-final-89k-recovery-wsl.mjs", wrapper)
         self.assertIn("FINAL-89K-RECOVERY-RUN-PLAN.json", wrapper)
         self.assertLess(wrapper.index("prepare-final-89k-recovery-wsl.mjs"), wrapper.index("build_final_89k_recovery_bundles.py"))
+
+    def test_prepared_final_recovery_can_resume_without_reinventory(self):
+        wrapper = FINAL_RECOVERY_RESUME_WRAPPER.read_text(encoding="utf-8")
+        self.assertIn("--approved-final-89k-recovery-provision", wrapper)
+        self.assertIn("GROWTHSENT_FINAL_89K_RECOVERY_PLAN", wrapper)
+        self.assertIn("growthsent-cloudflare-r2-standard1-final-89k-recovery-plan-v1", wrapper)
+        self.assertIn("growthsent-cloudflare-r2-standard1-final-89k-recovery-contract-v1", wrapper)
+        self.assertIn("does not repeat the 89K completion-marker inventory", wrapper)
+        self.assertIn("--approved-final-89k-run", wrapper)
 
 
 if __name__ == "__main__":

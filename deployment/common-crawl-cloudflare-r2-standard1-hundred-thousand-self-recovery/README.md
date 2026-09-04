@@ -111,3 +111,19 @@ If the inventory finds zero missing identities, it exits before any Worker or
 Container deployment. Otherwise, it locally builds and dry-runs a recovery
 bundle before deploying fresh recovery Workers. It never stops, deploys over,
 or reconfigures the original lanes.
+
+If the read-only inventory and local bundle build have already passed but the
+provisioner fails **before it requests a parent token, mints a child
+credential, or preflights a recovery prefix**, use the prepared-plan resume
+tool rather than repeating the large marker inventory. It validates the plan
+and its immutable contract locally, performs one representative local dry-run,
+then retains the normal fresh-prefix preflights before deployment:
+
+```bash
+GROWTHSENT_FINAL_89K_RECOVERY_PLAN=/tmp/.../bundle/FINAL-89K-RECOVERY-RUN-PLAN.json \
+bash deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recovery/resume-final-89k-recovery-wsl.sh \
+  --approved-final-89k-recovery-provision
+```
+
+Use this only when the prior safe output explicitly established that no
+credential mint, R2 preflight, Worker deployment, or Container start occurred.
