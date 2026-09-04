@@ -20,6 +20,8 @@ const TERMINAL_STATES = new Set(["completed", "completed_with_recoverable_failur
 const SHA256 = /^[0-9a-f]{64}$/;
 const MAX_LIST_PAGES = 2048;
 const JSON_CONCURRENCY = 16;
+const LIST_CONCURRENCY = 8;
+const R2_READ_ATTEMPTS = 8;
 const STATUS_CONCURRENCY = 8;
 const STATUS_ATTEMPTS = 4;
 const STATUS_TIMEOUT_MS = 30_000;
@@ -45,6 +47,11 @@ function transportReason(error) {
   return (cause instanceof Error ? cause.message : String(cause)).replace(/[A-Za-z0-9_-]{40,}/g, "[redacted]").slice(0, 256);
 }
 function sleep(milliseconds) { return new Promise((done) => setTimeout(done, milliseconds)); }
+function r2ErrorDetail(bytes) {
+  const text = bytes.toString("utf8").slice(0, 4_096);
+  const code = /<Code>([^<]{1,128})<\/Code>/.exec(text)?.[1];
+  return code === undefined ? "" : ` (${code})`;
+}
 
 async function stdinText() { const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk); return Buffer.concat(chunks).toString("utf8").trim(); }
 async function cloudflareFetch(path, token, options = {}) {
@@ -71,29 +78,36 @@ async function concurrentMap(items, limit, mapper) {
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return output;
 }
-async function getJson(client, key) {
-  let last = null;
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await client.fetch(`${endpoint()}/${encodeURIComponent(BUCKET)}/${encodedKey(key)}`, { method: "GET" });
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (response.ok) {
-      if (bytes.length > MAX_JSON_BYTES) fail(`Completion marker exceeds the JSON bound: ${key}`);
-      try { return JSON.parse(bytes.toString("utf8")); } catch { fail(`Completion marker is not valid JSON: ${key}`); }
+async function r2FetchWithRetry(client, { label, url }) {
+  let last = "unknown R2 transport error";
+  for (let attempt = 1; attempt <= R2_READ_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await client.fetch(url, { method: "GET" });
+      if (![403, 408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === R2_READ_ATTEMPTS) return response;
+      const bytes = Buffer.from(await response.arrayBuffer());
+      last = `HTTP ${response.status}${r2ErrorDetail(bytes)}`;
+    } catch (error) {
+      last = transportReason(error);
     }
-    last = `R2 GetObject completion marker failed with HTTP ${response.status}.`;
-    if (![429, 500, 502, 503].includes(response.status) || attempt === 5) break;
-    await new Promise((done) => setTimeout(done, (attempt + 1) * 1000));
+    if (attempt < R2_READ_ATTEMPTS) await sleep(Math.min(15_000, attempt * 1_000));
   }
-  fail(`${last} (${key})`);
+  fail(`${label} failed after ${R2_READ_ATTEMPTS} attempts: ${last}`);
+}
+async function getJson(client, key) {
+  const response = await r2FetchWithRetry(client, { label: "R2 GetObject completion marker", url: `${endpoint()}/${encodeURIComponent(BUCKET)}/${encodedKey(key)}` });
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!response.ok) fail(`R2 GetObject completion marker failed with HTTP ${response.status}${r2ErrorDetail(bytes)}. (${key})`);
+  if (bytes.length > MAX_JSON_BYTES) fail(`Completion marker exceeds the JSON bound: ${key}`);
+  try { return JSON.parse(bytes.toString("utf8")); } catch { fail(`Completion marker is not valid JSON: ${key}`); }
 }
 async function inventoryMarkerKeys(client, root, keyInfo) {
   const markers = []; const partial = new Set(); const seen = new Set(); let continuation = null; let objectCount = 0;
   for (let page = 0; page < MAX_LIST_PAGES; page += 1) {
     const query = new URLSearchParams({ "list-type": "2", prefix: root, "max-keys": "1000" });
     if (continuation !== null) query.set("continuation-token", continuation);
-    const response = await client.fetch(`${endpoint()}/${encodeURIComponent(BUCKET)}?${query}`, { method: "GET" });
+    const response = await r2FetchWithRetry(client, { label: "R2 ListObjectsV2", url: `${endpoint()}/${encodeURIComponent(BUCKET)}?${query}` });
     const xml = await response.text();
-    if (!response.ok) fail(`R2 ListObjectsV2 failed with HTTP ${response.status}.`);
+    if (!response.ok) fail(`R2 ListObjectsV2 failed with HTTP ${response.status}${r2ErrorDetail(Buffer.from(xml, "utf8"))}.`);
     for (const match of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
       objectCount += 1;
       const raw = xmlValue(match[1], "Key"); if (raw === null) fail("R2 inventory key was malformed.");
@@ -171,14 +185,20 @@ async function main() {
     const sourceWorkers = await terminalLaneChecks(context);
     const parent = await verifyParent(parentToken); const credentials = await mintReadChild(parentToken, parent, context.r2_root);
     const client = new AwsClient({ accessKeyId: credentials.accessKeyId, secretAccessKey: credentials.secretAccessKey, sessionToken: credentials.sessionToken, service: "s3", region: "auto" });
-    const inventory = await inventoryMarkerKeys(client, context.r2_root, (key) => {
+    const keyInfo = (key) => {
       const match = new RegExp(`^${escaped(context.r2_root)}lane=([a-z0-9-]+)/tasks/task-(\\d+)/(.+)$`).exec(key);
       if (match === null) fail(`R2 inventory contains an unexpected object key: ${key}`);
       const lane = laneByLower.get(match[1]); const taskIndex = Number(match[2]) - 1;
       if (lane === undefined || !Number.isInteger(taskIndex) || !lane.byTask.has(taskIndex)) fail(`R2 inventory task key is outside its reviewed source lane: ${key}`);
       return { key, lane: lane.lane, task_index: taskIndex, source_index: taskIndex, input: lane.byTask.get(taskIndex), leaf: match[3] };
-    });
-    emit({ stage: "final_89k_completion_markers_listed", object_count: inventory.object_count, completion_marker_count: inventory.markers.length });
+    };
+    const laneInventories = await concurrentMap(context.lanes, LIST_CONCURRENCY, async (lane) => inventoryMarkerKeys(client, `${context.r2_root}lane=${lane.lane.toLowerCase()}/`, keyInfo));
+    const inventory = {
+      markers: laneInventories.flatMap((item) => item.markers),
+      partial: new Set(laneInventories.flatMap((item) => [...item.partial])),
+      object_count: laneInventories.reduce((total, item) => total + item.object_count, 0),
+    };
+    emit({ stage: "final_89k_completion_markers_listed", object_count: inventory.object_count, completion_marker_count: inventory.markers.length, lane_list_concurrency: LIST_CONCURRENCY });
     let validatedMarkerCount = 0;
     const completedIndexes = await concurrentMap(inventory.markers, JSON_CONCURRENCY, async (marker) => {
       const value = await getJson(client, marker.key);
