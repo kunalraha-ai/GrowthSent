@@ -20,6 +20,9 @@ const TERMINAL_STATES = new Set(["completed", "completed_with_recoverable_failur
 const SHA256 = /^[0-9a-f]{64}$/;
 const MAX_LIST_PAGES = 2048;
 const JSON_CONCURRENCY = 16;
+const STATUS_CONCURRENCY = 8;
+const STATUS_ATTEMPTS = 4;
+const STATUS_TIMEOUT_MS = 30_000;
 const READ_CHILD_TTL_SECONDS = 3600;
 const MAX_JSON_BYTES = 2_000_000;
 
@@ -37,6 +40,11 @@ function xmlValue(xml, name) { return new RegExp(`<${name}>([\\s\\S]*?)</${name}
 function decodeXml(value) { return value.replace(/&(?:amp|lt|gt|quot|apos);/g, (item) => ({ "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&apos;": "'" })[item] ?? item); }
 function escaped(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function safeError(error) { return (error instanceof Error ? error.message : String(error)).replace(/[A-Za-z0-9_-]{40,}/g, "[redacted]").slice(0, 512); }
+function transportReason(error) {
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+  return (cause instanceof Error ? cause.message : String(cause)).replace(/[A-Za-z0-9_-]{40,}/g, "[redacted]").slice(0, 256);
+}
+function sleep(milliseconds) { return new Promise((done) => setTimeout(done, milliseconds)); }
 
 async function stdinText() { const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk); return Buffer.concat(chunks).toString("utf8").trim(); }
 async function cloudflareFetch(path, token, options = {}) {
@@ -101,14 +109,37 @@ async function inventoryMarkerKeys(client, root, keyInfo) {
   fail(`R2 inventory exceeded the ${String(MAX_LIST_PAGES)}-page bound.`);
 }
 async function terminalLaneChecks(context) {
-  const checks = await Promise.all(context.lanes.map(async (lane) => {
-    const response = await fetch(`${lane.worker_url}/_growthsent_standard1_regional_ramp/status`, { headers: { "User-Agent": "curl/8.5.0", Accept: "application/json" } });
-    if (!response.ok) fail(`${lane.lane} Worker status failed with HTTP ${response.status}.`);
-    const status = await response.json(); const state = status?.launch?.state;
-    const active = status?.active_tasks;
-    const safe = status?.run_id === context.run_id && status?.region === lane.lane && status?.control_secret_configured === true && TERMINAL_STATES.has(state) && Array.isArray(active) && active.length === 0;
-    return { lane: lane.lane, launch_state: state, active_task_count: Array.isArray(active) ? active.length : null, safely_inactive: safe };
-  }));
+  const checks = await concurrentMap(context.lanes, STATUS_CONCURRENCY, async (lane) => {
+    let last = "unknown transport error";
+    for (let attempt = 1; attempt <= STATUS_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), STATUS_TIMEOUT_MS);
+      try {
+        const response = await fetch(`${lane.worker_url}/_growthsent_standard1_regional_ramp/status`, { headers: { "User-Agent": "GrowthSent-final-recovery-inventory/1.0", Accept: "application/json" }, signal: controller.signal });
+        if (response.ok) {
+          const status = await response.json(); const state = status?.launch?.state;
+          const active = status?.active_tasks;
+          const safe = status?.run_id === context.run_id && status?.region === lane.lane && status?.control_secret_configured === true && TERMINAL_STATES.has(state) && Array.isArray(active) && active.length === 0;
+          return { lane: lane.lane, launch_state: state, active_task_count: Array.isArray(active) ? active.length : null, safely_inactive: safe };
+        }
+        last = `HTTP ${response.status}`;
+        await response.arrayBuffer();
+        if (![408, 429, 500, 502, 503, 504].includes(response.status)) break;
+      } catch (error) {
+        last = transportReason(error);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (attempt < STATUS_ATTEMPTS) await sleep(attempt * 1_000);
+    }
+    fail(`${lane.lane} Worker status fetch failed after ${STATUS_ATTEMPTS} attempts: ${last}`);
+  });
+  emit({ stage: "final_89k_source_lanes_terminal", lane_count: checks.length, status_fetch_concurrency: STATUS_CONCURRENCY });
+  for (const check of checks) {
+    const state = check.launch_state;
+    const active = check.active_task_count;
+    if (!TERMINAL_STATES.has(state) || active !== 0 || !check.safely_inactive) fail(`Source lane ${check.lane} is not terminal and inactive for recovery.`);
+  }
   if (!checks.every((item) => item.safely_inactive)) fail("Every final 89K source lane must be terminal and inactive before recovery inventory.");
   return checks;
 }
@@ -147,9 +178,13 @@ async function main() {
       if (lane === undefined || !Number.isInteger(taskIndex) || !lane.byTask.has(taskIndex)) fail(`R2 inventory task key is outside its reviewed source lane: ${key}`);
       return { key, lane: lane.lane, task_index: taskIndex, source_index: taskIndex, input: lane.byTask.get(taskIndex), leaf: match[3] };
     });
+    emit({ stage: "final_89k_completion_markers_listed", object_count: inventory.object_count, completion_marker_count: inventory.markers.length });
+    let validatedMarkerCount = 0;
     const completedIndexes = await concurrentMap(inventory.markers, JSON_CONCURRENCY, async (marker) => {
       const value = await getJson(client, marker.key);
       if (value?.kind !== COMPLETION_KIND || value?.run_id !== context.run_id || value?.region !== marker.lane.lane || value?.task_index !== marker.task_index || value?.task_number !== marker.task_index + 1 || value?.source_key !== marker.input.source_key || value?.deterministic_suffix !== marker.input.deterministic_suffix || value?.selected_inputs_sha256 !== marker.lane.selected_inputs_sha256 || value?.source_manifest_sha256 !== plan.source_manifest.file_sha256 || value?.input_count !== 1) fail(`Completion marker source identity is invalid: ${marker.key}`);
+      validatedMarkerCount += 1;
+      if (validatedMarkerCount % 1_000 === 0 || validatedMarkerCount === inventory.markers.length) emit({ stage: "final_89k_completion_markers_validated", validated: validatedMarkerCount, total: inventory.markers.length });
       return marker.source_index;
     });
     const completed = new Set(completedIndexes); const missing = [];
