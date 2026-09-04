@@ -24,6 +24,8 @@ FINAL_RECOVERY_BUILDER = SELF_RECOVERY / "build_final_89k_recovery_bundles.py"
 FINAL_RECOVERY_PREPARER = SELF_RECOVERY / "prepare-final-89k-recovery-wsl.mjs"
 FINAL_RECOVERY_WRAPPER = SELF_RECOVERY / "recover-final-89k-wsl.sh"
 FINAL_RECOVERY_RESUME_WRAPPER = SELF_RECOVERY / "resume-final-89k-recovery-wsl.sh"
+FINAL_CONSOLIDATED_RECOVERY_BUILDER = SELF_RECOVERY / "build_final_89k_consolidated_recovery.py"
+FINAL_CONSOLIDATED_RECOVERY_WRAPPER = SELF_RECOVERY / "consolidate-final-89k-recovery-wsl.sh"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
@@ -274,6 +276,18 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("growthsent-cloudflare-r2-standard1-final-89k-recovery-contract-v1", wrapper)
         self.assertIn("does not repeat the 89K completion-marker inventory", wrapper)
         self.assertIn("--approved-final-89k-run", wrapper)
+
+    def test_capacity_neutral_final_recovery_reuses_only_the_prestarted_apac_lane(self):
+        builder = FINAL_CONSOLIDATED_RECOVERY_BUILDER.read_text(encoding="utf-8")
+        wrapper = FINAL_CONSOLIDATED_RECOVERY_WRAPPER.read_text(encoding="utf-8")
+        self.assertIn('REUSED_LANE = "APAC-01"', builder)
+        self.assertIn('REUSED_PLACEMENT_GROUP = "APAC"', builder)
+        self.assertIn("capacity-neutral", builder)
+        self.assertIn("recovery_source_indexes", builder)
+        self.assertIn('lane["max_instances"] != base.SLOTS_PER_LANE', builder)
+        self.assertIn("--approved-final-89k-capacity-neutral-recovery", wrapper)
+        self.assertIn("build_final_89k_consolidated_recovery.py", wrapper)
+        self.assertIn("resume-final-89k-recovery-wsl.sh", wrapper)
 
 
 if __name__ == "__main__":

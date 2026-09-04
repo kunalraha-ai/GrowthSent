@@ -127,3 +127,24 @@ bash deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recov
 
 Use this only when the prior safe output explicitly established that no
 credential mint, R2 preflight, Worker deployment, or Container start occurred.
+
+### Capacity-neutral recovery after a quota-only deployment rejection
+
+The account memory envelope is reserved by a Container application's
+`max_instances`, not only by running Containers. If a prior final campaign is
+terminal, a small recovery that creates additional 32-slot applications can be
+rejected even though its task count is tiny. When the prepared recovery's
+APAC-01 Worker was deployed but explicitly never started, the following tool
+rebuilds the exact missing source identities into that existing 32-slot
+application. It updates **only** APAC-01, retains its reservation, and leaves
+the original campaign, completed output, and sibling recovery Workers alone.
+
+```bash
+GROWTHSENT_FINAL_89K_RECOVERY_PLAN=/tmp/.../bundle/FINAL-89K-RECOVERY-RUN-PLAN.json \
+bash deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recovery/consolidate-final-89k-recovery-wsl.sh \
+  --approved-final-89k-capacity-neutral-recovery
+```
+
+The tool refuses any source plan that does not prove APAC-01 is the reviewed
+32-slot pre-start target. It still performs a fresh-prefix R2 preflight before
+the one updated Worker can receive a start request.
