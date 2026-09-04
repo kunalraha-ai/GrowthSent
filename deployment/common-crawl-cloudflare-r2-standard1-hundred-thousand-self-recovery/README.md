@@ -87,3 +87,27 @@ The generated `SELF-RECOVERY-RUN-PLAN.json` remains explicitly launch-disabled.
 A future launch requires a separately reviewed provisioner, a fresh R2 root,
 six-day lane-scoped child credentials and explicit user
 approval. The parent credential is never installed in a Worker or Container.
+
+## Terminal-run recovery
+
+If a final campaign reaches a terminal state with recoverable failures, do not
+rerun its original launcher. The recovery launcher first proves every original
+lane is inactive, lists the original R2 root with a read-only child credential,
+and validates every `TASK-COMPLETED.json` against the original source key,
+lane, and immutable selected-input binding. It creates a fresh recovery plan
+only for source identities with no valid completion marker.
+
+The original campaign root is never writable during this operation. Recovery
+outputs use a new `cloudflare-r2-final-recoveries` root and fresh lane-scoped
+write-only child credentials.
+
+```bash
+GROWTHSENT_FINAL_89K_RECOVERY_SOURCE_CONTEXT=/tmp/.../FINAL-89K-RUN-CONTEXT.json \
+bash deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recovery/recover-final-89k-wsl.sh \
+  --approved-final-89k-recovery
+```
+
+If the inventory finds zero missing identities, it exits before any Worker or
+Container deployment. Otherwise, it locally builds and dry-runs a recovery
+bundle before deploying fresh recovery Workers. It never stops, deploys over,
+or reconfigures the original lanes.

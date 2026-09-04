@@ -18,6 +18,8 @@ const ACCOUNT_ID = "4a30e8ac877d9f65ee9a0ecc5df16146";
 const BUCKET = "growthsent-data-lake";
 const PLAN_KIND = "growthsent-cloudflare-r2-standard1-remaining-eighty-nine-thousand-self-recovery-plan-v1";
 const EXECUTION_PROFILE = "regional-1440-remaining-eighty-nine-thousand-self-recovery";
+const RECOVERY_PLAN_KIND = "growthsent-cloudflare-r2-standard1-final-89k-recovery-plan-v1";
+const RECOVERY_PROFILE = "regional-1440-final-eighty-nine-thousand-recovery";
 const CREDENTIAL_POLICY = { id: "regional-six-day-v1", child_ttl_seconds: 518400, start_guard_seconds: 10800 };
 const SHA256 = /^[0-9a-f]{64}$/;
 const WRANGLER = ["--offline", "--yes", "wrangler@4.126.0"];
@@ -171,23 +173,30 @@ function planDigest(plan) {
 }
 
 function validatePlan(plan) {
-  if (plan?.kind !== PLAN_KIND || plan?.execution_profile !== EXECUTION_PROFILE || !SHA256.test(plan?.plan_sha256 ?? "") || plan.plan_sha256 !== planDigest(plan)) fail("The local final 89K plan digest or identity is invalid.");
-  if (plan?.source_manifest?.input_count !== 100000 || plan?.processing_window?.source_index_start !== 11000 || plan?.processing_window?.source_index_end_exclusive !== 100000 || plan?.processing_window?.task_count !== 89000) fail("The local final 89K source window is not the reviewed globally disjoint range.");
+  const recovery = plan?.kind === RECOVERY_PLAN_KIND;
+  if (!((plan?.kind === PLAN_KIND && plan?.execution_profile === EXECUTION_PROFILE) || (recovery && plan?.execution_profile === RECOVERY_PROFILE)) || !SHA256.test(plan?.plan_sha256 ?? "") || plan.plan_sha256 !== planDigest(plan)) fail("The local final 89K plan digest or identity is invalid.");
+  const taskCount = plan?.processing_window?.task_count;
+  if (!Number.isInteger(taskCount) || taskCount < 1 || taskCount > 89000 || plan?.source_manifest?.input_count !== 100000) fail("The final 89K plan task count is invalid.");
+  if ((!recovery && (plan?.processing_window?.source_index_start !== 11000 || plan?.processing_window?.source_index_end_exclusive !== 100000 || taskCount !== 89000)) || (recovery && (plan?.processing_window?.source_index_start !== 0 || plan?.processing_window?.source_index_end_exclusive !== taskCount || !SHA256.test(plan?.recovery?.contract_sha256 ?? "") || !Array.isArray(plan?.recovery?.recovery_source_indexes) || plan.recovery.recovery_source_indexes.length !== taskCount || plan?.r2_root !== `production/common-crawl/cloudflare-r2-final-recoveries/v1/${plan.run_id}/`))) fail("The final 89K source or recovery window is not reviewed.");
   if (plan?.verified_reuse_proof?.completed_source_count !== 11000 || !SHA256.test(plan?.verified_reuse_proof?.proof_sha256 ?? "")) fail("The local final 89K plan lacks the verified 11K reuse proof binding.");
   if (plan?.credential_policy?.id !== CREDENTIAL_POLICY.id || plan?.credential_policy?.child_ttl_seconds !== CREDENTIAL_POLICY.child_ttl_seconds || plan?.credential_policy?.start_guard_seconds !== CREDENTIAL_POLICY.start_guard_seconds) fail("The final 89K credential policy is not the reviewed six-day policy.");
-  if (plan?.r2_root !== `production/common-crawl/cloudflare-r2-final-campaigns/v1/${plan.run_id}/`) fail("The final 89K R2 root is invalid.");
-  if (plan?.topology?.lane_count !== 45 || plan?.topology?.slots_per_lane !== 32 || plan?.topology?.max_concurrent_total !== 1440 || plan?.topology?.max_instances_per_lane !== 32 || plan?.topology?.admission_interval_seconds_per_placement_group !== 6 || plan?.topology?.admission_max_backoff_seconds !== 300) fail("The final 89K topology differs from the reviewed 1,440-slot policy.");
-  if (!Array.isArray(plan?.lanes) || plan.lanes.length !== 45 || plan.lanes.reduce((total, lane) => total + lane?.regional_task_count, 0) !== 89000) fail("The final 89K lane partition is incomplete.");
+  if (!recovery && plan?.r2_root !== `production/common-crawl/cloudflare-r2-final-campaigns/v1/${plan.run_id}/`) fail("The final 89K R2 root is invalid.");
+  if (plan?.topology?.slots_per_lane !== 32 || plan?.topology?.max_instances_per_lane !== 32 || plan?.topology?.admission_interval_seconds_per_placement_group !== 6 || plan?.topology?.admission_max_backoff_seconds !== 300) fail("The final 89K topology differs from the reviewed standard-1 policy.");
+  if (!Array.isArray(plan?.lanes) || plan.lanes.length < 1 || plan.lanes.length > 45 || plan?.topology?.lane_count !== plan.lanes.length || plan.lanes.reduce((total, lane) => total + lane?.regional_task_count, 0) !== taskCount) fail("The final 89K lane partition is incomplete.");
   const groupCounts = {};
   for (const [index, lane] of plan.lanes.entries()) {
     groupCounts[lane?.placement_group] = (groupCounts[lane?.placement_group] ?? 0) + 1;
-    if (lane?.lane_index !== index || lane?.lane_count !== 45 || lane?.source_index_start !== 11000 || lane?.max_concurrent !== 32 || lane?.max_instances !== 32 || !SHA256.test(lane?.release_sha256 ?? "") || (lane?.selected_inputs_sha256 !== undefined && !SHA256.test(lane.selected_inputs_sha256)) || typeof lane?.bundle !== "string" || typeof lane?.worker_name !== "string" || typeof lane?.lane !== "string") fail("A final 89K lane is not a reviewed immutable deployment bundle.");
+    const expectedRegional = taskCount <= index ? 0 : Math.floor((taskCount - 1 - index) / plan.lanes.length) + 1;
+    const expectedConcurrent = Math.min(32, expectedRegional);
+    if (lane?.lane_index !== index || lane?.lane_count !== plan.lanes.length || lane?.source_index_start !== (recovery ? 0 : 11000) || lane?.regional_task_count !== expectedRegional || lane?.max_concurrent !== expectedConcurrent || lane?.max_instances !== 32 || !SHA256.test(lane?.release_sha256 ?? "") || (lane?.selected_inputs_sha256 !== undefined && !SHA256.test(lane.selected_inputs_sha256)) || typeof lane?.bundle !== "string" || typeof lane?.worker_name !== "string" || typeof lane?.lane !== "string") fail("A final 89K lane is not a reviewed immutable deployment bundle.");
   }
-  if (JSON.stringify(groupCounts) !== JSON.stringify(EXPECTED_GROUP_LANES)) fail("The final 89K placement-group lane allocation is invalid.");
+  if ((!recovery && (plan.lanes.length !== 45 || JSON.stringify(groupCounts) !== JSON.stringify(EXPECTED_GROUP_LANES))) || (recovery && (Object.keys(groupCounts).some((group) => !Object.prototype.hasOwnProperty.call(EXPECTED_GROUP_LANES, group) || groupCounts[group] > EXPECTED_GROUP_LANES[group]) || JSON.stringify(groupCounts) !== JSON.stringify(plan.topology.placement_group_lane_counts) || plan.topology.max_concurrent_total !== plan.lanes.reduce((total, lane) => total + lane.max_concurrent, 0)))) fail("The final 89K placement-group lane allocation is invalid.");
   if (![
     "disabled; a separately reviewed launcher and explicit approval are required",
     "disabled; capacity approval and a separately reviewed launcher are required",
+    "disabled; a separately reviewed recovery launcher and explicit approval are required",
   ].includes(plan?.remote_start)) fail("The plan was not produced by the launch-disabled final builder.");
+  return { recovery, taskCount };
 }
 
 async function main() {
@@ -195,7 +204,7 @@ async function main() {
   if (mode !== "--approved-final-89k-run" || !planPath) fail("Usage: provision-final-89k-wsl.mjs --approved-final-89k-run <SELF-RECOVERY-RUN-PLAN.json>");
   const planFile = resolve(planPath);
   const plan = JSON.parse(await readFile(planFile, "utf8"));
-  validatePlan(plan);
+  const planSettings = validatePlan(plan);
   failureLogDirectory = resolve(planFile, "..", "FINAL-89K-SAFE-LOGS");
   let parentToken = await stdinText();
   if (!parentToken) fail("A parent Cloudflare API token is required.");
@@ -211,14 +220,14 @@ async function main() {
       const container = config?.containers?.[0];
       const bindings = config?.durable_objects?.bindings;
       const validBindings = Array.isArray(bindings) && bindings.some((item) => item?.name === "RAMP_CONTAINER" && item?.class_name === "GrowthSentStandard1RegionalRampContainer") && bindings.some((item) => item?.name === "RAMP_COORDINATOR" && item?.class_name === "GrowthSentStandard1RegionalRampCoordinator") && bindings.some((item) => item?.name === "REGIONAL_ADMISSION" && item?.script_name === plan.admission_worker?.worker_name);
-      if (config?.name !== lanePlan.worker_name || config?.vars?.GROWTHSENT_RAMP_ID !== plan.run_id || config?.vars?.GROWTHSENT_REGION !== lanePlan.lane || config?.vars?.GROWTHSENT_REGION_INDEX !== String(lanePlan.lane_index) || config?.vars?.GROWTHSENT_REGION_COUNT !== "45" || config?.vars?.GROWTHSENT_SOURCE_INDEX_START !== "11000" || config?.vars?.GROWTHSENT_TASK_COUNT !== "89000" || config?.vars?.GROWTHSENT_REGIONAL_TASK_COUNT !== String(lanePlan.regional_task_count) || config?.vars?.GROWTHSENT_SELECTED_INPUTS_SHA256 !== selectedInputsSha256 || config?.vars?.GROWTHSENT_MAX_CONCURRENT !== "32" || config?.vars?.GROWTHSENT_R2_CREDENTIAL_START_GUARD_SECONDS !== "10800" || config?.vars?.GROWTHSENT_HARD_TIMEOUT_SECONDS !== "6600" || container?.instance_type !== "standard-1" || container?.max_instances !== 32 || container?.constraints?.regions?.[0] !== lanePlan.placement_group || !validBindings) fail(`The ${lanePlan.lane} local bundle is not the reviewed final deployment configuration.`);
+      if (config?.name !== lanePlan.worker_name || config?.vars?.GROWTHSENT_RAMP_ID !== plan.run_id || config?.vars?.GROWTHSENT_REGION !== lanePlan.lane || config?.vars?.GROWTHSENT_REGION_INDEX !== String(lanePlan.lane_index) || config?.vars?.GROWTHSENT_REGION_COUNT !== String(plan.lanes.length) || config?.vars?.GROWTHSENT_SOURCE_INDEX_START !== String(planSettings.recovery ? 0 : 11000) || config?.vars?.GROWTHSENT_TASK_COUNT !== String(planSettings.taskCount) || config?.vars?.GROWTHSENT_REGIONAL_TASK_COUNT !== String(lanePlan.regional_task_count) || config?.vars?.GROWTHSENT_SELECTED_INPUTS_SHA256 !== selectedInputsSha256 || config?.vars?.GROWTHSENT_MAX_CONCURRENT !== String(lanePlan.max_concurrent) || config?.vars?.GROWTHSENT_R2_CREDENTIAL_START_GUARD_SECONDS !== "10800" || config?.vars?.GROWTHSENT_HARD_TIMEOUT_SECONDS !== "6600" || container?.instance_type !== "standard-1" || container?.max_instances !== 32 || container?.constraints?.regions?.[0] !== lanePlan.placement_group || !validBindings) fail(`The ${lanePlan.lane} local bundle is not the reviewed final deployment configuration.`);
       const credentials = await mintChild(parentToken, parent, prefix);
       const aws4fetch = await preflightRegion(credentials, prefix);
       const boto3 = await boto3Preflight(bundle, credentials, prefix);
       lanes.push({ ...lanePlan, bundle, prefix, credentials, credential_not_after: new Date(Date.now() + CREDENTIAL_POLICY.child_ttl_seconds * 1000).toISOString() });
       emit({ stage: "final_89k_lane_preflighted", lane: lanePlan.lane, placement_group: lanePlan.placement_group, scope: "object-read-write", ttl_seconds: CREDENTIAL_POLICY.child_ttl_seconds, prefix, child_aws4fetch: aws4fetch, child_boto3: boto3 });
     }
-    emit({ stage: "all_final_89k_lanes_preflighted", lane_count: lanes.length, task_count: 89000, lane_worker_deployed: false, container_started: false });
+    emit({ stage: "all_final_89k_lanes_preflighted", lane_count: lanes.length, task_count: planSettings.taskCount, lane_worker_deployed: false, container_started: false });
 
     const admissionBundle = resolve(plan.admission_worker?.bundle ?? "");
     const admissionConfig = JSON.parse(await readFile(resolve(admissionBundle, "wrangler.jsonc"), "utf8"));
@@ -238,15 +247,15 @@ async function main() {
       emit({ stage: "final_89k_lane_worker_ready", lane: lane.lane, worker: lane.worker_name });
     }
 
-    const contextPath = resolve(planFile, "..", "FINAL-89K-RUN-CONTEXT.json");
-    await writeFile(contextPath, `${JSON.stringify({ kind: plan.kind, execution_profile: plan.execution_profile, run_id: plan.run_id, r2_root: plan.r2_root, task_count: 89000, processing_window: plan.processing_window, verified_reuse_proof: plan.verified_reuse_proof, topology: plan.topology, credential_policy: plan.credential_policy, published_limit_basis: plan.published_limit_basis, parent_token_kind: parent.kind, lanes: lanes.map((lane) => ({ lane: lane.lane, placement_group: lane.placement_group, worker_name: lane.worker_name, worker_url: lane.worker_url, prefix: lane.prefix, credential_not_after: lane.credential_not_after, regional_task_count: lane.regional_task_count, max_concurrent: lane.max_concurrent, max_instances: lane.max_instances, release_sha256: lane.release_sha256 })) }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    const contextPath = resolve(planFile, "..", planSettings.recovery ? "FINAL-89K-RECOVERY-RUN-CONTEXT.json" : "FINAL-89K-RUN-CONTEXT.json");
+    await writeFile(contextPath, `${JSON.stringify({ kind: plan.kind, execution_profile: plan.execution_profile, run_id: plan.run_id, r2_root: plan.r2_root, task_count: planSettings.taskCount, processing_window: plan.processing_window, recovery: plan.recovery, verified_reuse_proof: plan.verified_reuse_proof, topology: plan.topology, credential_policy: plan.credential_policy, published_limit_basis: plan.published_limit_basis, parent_token_kind: parent.kind, lanes: lanes.map((lane) => ({ lane: lane.lane, placement_group: lane.placement_group, worker_name: lane.worker_name, worker_url: lane.worker_url, prefix: lane.prefix, credential_not_after: lane.credential_not_after, regional_task_count: lane.regional_task_count, max_concurrent: lane.max_concurrent, max_instances: lane.max_instances, release_sha256: lane.release_sha256 })) }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     for (const lane of lanes) {
       const start = await fetch(`${lane.worker_url}/_growthsent_standard1_regional_ramp/start`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: lane.trigger_token });
       let body = null; try { body = await start.json(); } catch { /* checked below */ }
       if (start.status !== 202 || body?.accepted !== true || body?.run_id !== plan.run_id || body?.region !== lane.lane) fail(`${lane.lane} schedule was not accepted (HTTP ${start.status}); do not retry this launcher because an earlier lane may be running.`);
       emit({ stage: "final_89k_lane_schedule_accepted", lane: lane.lane, placement_group: lane.placement_group, http_status: 202, task_count: lane.regional_task_count });
     }
-    emit({ status: "live_final_89k_self_recovery_accepted", run_id: plan.run_id, task_count: 89000, max_concurrent_total: 1440, context: contextPath });
+    emit({ status: planSettings.recovery ? "live_final_89k_recovery_accepted" : "live_final_89k_self_recovery_accepted", run_id: plan.run_id, task_count: planSettings.taskCount, max_concurrent_total: plan.topology.max_concurrent_total, context: contextPath });
   } finally {
     parentToken = "";
     for (const lane of lanes) { lane.credentials = null; lane.trigger_token = ""; }

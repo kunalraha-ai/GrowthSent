@@ -231,7 +231,7 @@ def build_admission_bundle(*, run_id: str, output_dir: Path) -> dict[str, Any]:
     return {"bundle": str(bundle), "worker_name": worker_name, "release_sha256": release}
 
 
-def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, placement_group: str, initial_start_delay_seconds: int, lane_index: int, lane_count: int, source_document: Mapping[str, Any], source_file_sha256: str, source_index_start: int, processing_task_count: int, output_dir: Path) -> dict[str, Any]:
+def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, placement_group: str, initial_start_delay_seconds: int, lane_index: int, lane_count: int, source_document: Mapping[str, Any], source_file_sha256: str, source_index_start: int, processing_task_count: int, output_dir: Path, selected_inputs_document: Mapping[str, Any] | None = None, output_root: str | None = None, execution_profile: str = EXECUTION_PROFILE) -> dict[str, Any]:
     suffix = run_id.rsplit("-", 1)[-1]
     worker_name = f"growthsent-h100k-{suffix}-{lane.lower()}"
     if not WORKER_NAME_RE.fullmatch(worker_name):
@@ -242,16 +242,16 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
     for name in LOCAL_STATIC:
         copy_file(RAMP / name, bundle / name, copied)
     copy_file(RAMP / "src" / "index.ts", bundle / "src" / "index.ts", copied)
-    sparse_inputs = sparse_lane_manifest(
+    selected_document = sparse_lane_manifest(
         source_document=source_document,
         source_file_sha256=source_file_sha256,
         source_index_start=source_index_start,
         processing_task_count=processing_task_count,
         lane_index=lane_index,
         lane_count=lane_count,
-    )
+    ) if selected_inputs_document is None else dict(selected_inputs_document)
     selected_path = bundle / "selected-inputs.json"
-    selected_path.write_bytes(canonical_json(sparse_inputs))
+    selected_path.write_bytes(canonical_json(selected_document))
     copied.append(selected_path)
     tools_destination = bundle / "tools"
     tools_destination.mkdir()
@@ -260,6 +260,9 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
     release = release_sha256(copied, bundle)
     lane_inputs_sha256 = sha256_file(selected_path)
     regional_task_count = lane_task_count(processing_task_count, lane_index, lane_count)
+    max_concurrent = min(SLOTS_PER_LANE, regional_task_count)
+    if max_concurrent < 1:
+        raise SystemExit("a deployed recovery lane must own at least one task")
     config = {
         "$schema": "node_modules/wrangler/config-schema.json",
         "account_id": ACCOUNT_ID,
@@ -286,7 +289,7 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
         "vars": {
             "GROWTHSENT_R2_ACCOUNT_ID": ACCOUNT_ID,
             "GROWTHSENT_R2_BUCKET": BUCKET,
-            "GROWTHSENT_R2_OUTPUT_PREFIX": f"production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}/lane={lane.lower()}",
+            "GROWTHSENT_R2_OUTPUT_PREFIX": f"{output_root or f'production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}'}/lane={lane.lower()}",
             "GROWTHSENT_RAMP_ID": run_id,
             "GROWTHSENT_REGION": lane,
             "GROWTHSENT_PLACEMENT_GROUP": placement_group,
@@ -295,7 +298,7 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
             "GROWTHSENT_SOURCE_INDEX_START": str(source_index_start),
             "GROWTHSENT_TASK_COUNT": str(processing_task_count),
             "GROWTHSENT_REGIONAL_TASK_COUNT": str(regional_task_count),
-            "GROWTHSENT_MAX_CONCURRENT": str(SLOTS_PER_LANE),
+            "GROWTHSENT_MAX_CONCURRENT": str(max_concurrent),
             "GROWTHSENT_START_SPACING_SECONDS": str(START_SPACING_SECONDS),
             "GROWTHSENT_INITIAL_START_DELAY_SECONDS": str(initial_start_delay_seconds),
             "GROWTHSENT_RELEASE_SHA256": release,
@@ -309,7 +312,7 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
     release_document = {
         "format_version": 1,
         "kind": LANE_RELEASE_KIND,
-        "execution_profile": EXECUTION_PROFILE,
+        "execution_profile": execution_profile,
         "run_id": run_id,
         "lane": lane,
         "placement_group": placement_group,
@@ -319,12 +322,12 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
         "admission_worker_name": admission_worker_name,
         "source_manifest_claim_sha256": source_document["manifest_sha256"],
         "source_manifest_file_sha256": source_file_sha256,
-        "source_indexes_sha256": hashlib.sha256(canonical_json(sparse_inputs["source_indexes"])).hexdigest(),
+        "source_indexes_sha256": hashlib.sha256(canonical_json(selected_document.get("source_indexes", list(range(processing_task_count))))).hexdigest(),
         "selected_inputs_sha256": lane_inputs_sha256,
         "source_index_start": source_index_start,
         "task_count": processing_task_count,
         "regional_task_count": regional_task_count,
-        "max_concurrent": SLOTS_PER_LANE,
+        "max_concurrent": max_concurrent,
         "max_instances": SLOTS_PER_LANE + LANE_HEADROOM,
         "start_spacing_seconds": START_SPACING_SECONDS,
         "initial_start_delay_seconds": initial_start_delay_seconds,
@@ -342,7 +345,7 @@ def build_lane_bundle(*, run_id: str, admission_worker_name: str, lane: str, pla
         "bundle": str(bundle),
         "regional_task_count": regional_task_count,
         "selected_inputs_sha256": lane_inputs_sha256,
-        "max_concurrent": SLOTS_PER_LANE,
+        "max_concurrent": max_concurrent,
         "max_instances": SLOTS_PER_LANE + LANE_HEADROOM,
         "initial_start_delay_seconds": initial_start_delay_seconds,
         "release_sha256": release,

@@ -20,6 +20,9 @@ FIRST_TEN_THOUSAND_MANIFEST = ROOT / "deployment" / "common-crawl-production-v2"
 SHARD_TEN_MANIFEST = ROOT / "deployment" / "common-crawl-production-v2" / "manifests" / "cc-main-2026-30-first-100000-shards" / "shard-00010-of-00100.json"
 FINAL_PROVISIONER = SELF_RECOVERY / "provision-final-89k-wsl.mjs"
 FINAL_PROVISIONER_WRAPPER = SELF_RECOVERY / "provision-final-89k-wsl.sh"
+FINAL_RECOVERY_BUILDER = SELF_RECOVERY / "build_final_89k_recovery_bundles.py"
+FINAL_RECOVERY_PREPARER = SELF_RECOVERY / "prepare-final-89k-recovery-wsl.mjs"
+FINAL_RECOVERY_WRAPPER = SELF_RECOVERY / "recover-final-89k-wsl.sh"
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
@@ -40,6 +43,18 @@ def load_reuse_preparer():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_final_recovery_builder():
+    sys.path.insert(0, str(SELF_RECOVERY))
+    try:
+        spec = importlib.util.spec_from_file_location("final_89k_recovery_builder", FINAL_RECOVERY_BUILDER)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.path.remove(str(SELF_RECOVERY))
 
 
 class HundredThousandSelfRecoveryTests(unittest.TestCase):
@@ -80,6 +95,26 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertTrue(ramp.selected_input(sparse, task_index=3)["source_key"].endswith("00003.warc.wat.gz"))
         with self.assertRaises(ramp.RegionalRampError):
             ramp.selected_input(sparse, task_index=2)
+
+    def test_final_recovery_manifest_maps_local_tasks_to_exact_missing_sources(self):
+        builder = load_final_recovery_builder()
+        source = {
+            "kind": "common-crawl-v2-base-manifest",
+            "manifest_sha256": "a" * 64,
+            "inputs": [
+                "crawl-data/CC-MAIN-2026-30/segments/1783663951123.52/wat/CC-MAIN-20260710070534-20260710100534-00000.warc.wat.gz",
+                "crawl-data/CC-MAIN-2026-30/segments/1783663951123.52/wat/CC-MAIN-20260710070534-20260710100534-00001.warc.wat.gz",
+                "crawl-data/CC-MAIN-2026-30/segments/1783663951123.52/wat/CC-MAIN-20260710070534-20260710100534-00002.warc.wat.gz",
+                "crawl-data/CC-MAIN-2026-30/segments/1783663951123.52/wat/CC-MAIN-20260710070534-20260710100534-00003.warc.wat.gz",
+            ],
+        }
+        selected = builder.recovery_input_manifest(source_document=source, source_file_sha256="b" * 64, indexes=[1, 3])
+        self.assertEqual(selected["input_count"], 2)
+        self.assertNotIn("source_indexes", selected)
+        self.assertTrue(ramp.selected_input(selected, task_index=0)["source_key"].endswith("00001.warc.wat.gz"))
+        self.assertTrue(ramp.selected_input(selected, task_index=1)["source_key"].endswith("00003.warc.wat.gz"))
+        with self.assertRaises(ramp.RegionalRampError):
+            ramp.selected_input(selected, task_index=2)
 
     def test_verified_reuse_proof_fails_closed_and_excludes_the_completed_prefix(self):
         builder = load_builder()
@@ -161,7 +196,7 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("GROWTHSENT_R2_OUTPUT_PREFIX", worker)
         self.assertIn("GROWTHSENT_R2_OUTPUT_PREFIX", entrypoint)
         self.assertIn("r2_output_prefix=prefix", entrypoint)
-        self.assertIn('"GROWTHSENT_R2_OUTPUT_PREFIX": f"production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}/lane={lane.lower()}"', builder)
+        self.assertIn('"GROWTHSENT_R2_OUTPUT_PREFIX": f"{output_root or f\'production/common-crawl/cloudflare-r2-final-campaigns/v1/{run_id}\'}/lane={lane.lower()}"', builder)
         self.assertIn("isResumableInterruptedTaskFailure", worker)
         self.assertIn("resumeInterruptedTask", worker)
         self.assertIn("/_growthsent_standard1_regional_ramp/resume-interrupted-task", worker)
@@ -205,6 +240,20 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("boto3.__version__ == \"1.43.67\"", wrapper)
         self.assertIn("mkdir -p \"$CONTROLLER_DIRECTORY\"", wrapper)
         self.assertIn("rerun only if it explicitly confirms", wrapper)
+
+    def test_final_recovery_is_source_identity_only_and_inventory_precedes_deployment(self):
+        builder = FINAL_RECOVERY_BUILDER.read_text(encoding="utf-8")
+        preparer = FINAL_RECOVERY_PREPARER.read_text(encoding="utf-8")
+        wrapper = FINAL_RECOVERY_WRAPPER.read_text(encoding="utf-8")
+        self.assertIn("TASK-COMPLETED source-key identity is authoritative", builder)
+        self.assertIn("fresh_prefix_only", builder)
+        self.assertIn("object-read-only", preparer)
+        self.assertIn("Every final 89K source lane must be terminal and inactive", preparer)
+        self.assertIn("Completion marker source identity is invalid", preparer)
+        self.assertIn("--approved-final-89k-recovery", wrapper)
+        self.assertIn("prepare-final-89k-recovery-wsl.mjs", wrapper)
+        self.assertIn("FINAL-89K-RECOVERY-RUN-PLAN.json", wrapper)
+        self.assertLess(wrapper.index("prepare-final-89k-recovery-wsl.mjs"), wrapper.index("build_final_89k_recovery_bundles.py"))
 
 
 if __name__ == "__main__":
