@@ -250,6 +250,7 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("object-read-only", preparer)
         self.assertIn("Every final 89K source lane must be terminal and inactive", preparer)
         self.assertIn("Completion marker source identity is invalid", preparer)
+        self.assertIn("(sourceIndex - 11000) % 45 !== laneIndex", preparer)
         self.assertIn("--approved-final-89k-recovery", wrapper)
         self.assertIn("prepare-final-89k-recovery-wsl.mjs", wrapper)
         self.assertIn("FINAL-89K-RECOVERY-RUN-PLAN.json", wrapper)

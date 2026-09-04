@@ -129,7 +129,7 @@ async function main() {
     const byTask = new Map();
     for (let position = 0; position < selected.source_indexes.length; position += 1) {
       const sourceIndex = selected.source_indexes[position]; const input = selected.inputs[position];
-      if (!Number.isInteger(sourceIndex) || sourceIndex < 11000 || sourceIndex >= 100000 || sourceIndex % 45 !== laneIndex || input?.source_key !== source.inputs[sourceIndex] || typeof input?.deterministic_suffix !== "string" || byTask.has(sourceIndex) || sourceByIndex.has(sourceIndex)) fail(`The ${lane.lane} selected source identity is invalid.`);
+      if (!Number.isInteger(sourceIndex) || sourceIndex < 11000 || sourceIndex >= 100000 || (sourceIndex - 11000) % 45 !== laneIndex || input?.source_key !== source.inputs[sourceIndex] || typeof input?.deterministic_suffix !== "string" || byTask.has(sourceIndex) || sourceByIndex.has(sourceIndex)) fail(`The ${lane.lane} selected source identity is invalid.`);
       byTask.set(sourceIndex, input); sourceByIndex.set(sourceIndex, { lane: lane.lane, selected_inputs_sha256: lane.selected_inputs_sha256, input });
     }
     laneByLower.set(lane.lane.toLowerCase(), { lane, byTask });
