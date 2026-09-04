@@ -298,24 +298,33 @@ function isRecoverablePartialPrefixFailure(failure: SafeError): boolean {
       // second writer is intentionally rejected instead of replacing it.
       // The same fresh-prefix recovery rule applies to this explicit conflict.
       || failure.message.includes("destination conflict:")
+      // A transport failure during an immutable payload upload does not tell
+      // us whether R2 committed the object before the connection failed.
+      // Retrying in this prefix could therefore attempt to replace evidence.
+      // Conservatively quarantine the one task and recover its source under a
+      // fresh prefix after this lane becomes terminal.
+      || failure.message.includes("R2 immutable PutObject failed for")
+      || failure.message.includes("R2 immutable JSON PutObject failed for")
       // A duplicate runner can finish just ahead of its sibling and publish
       // the immutable completion marker first.  The sibling must not attempt
       // to replace that marker; quarantine its task and let the final marker
       // inventory decide whether it is already complete.
-      || (
-        failure.message.includes("R2 immutable JSON PutObject failed for")
-        && failure.message.includes("/TASK-COMPLETED.json")
-      )
     );
 }
 
 function isResumableInterruptedTaskFailure(failure: SafeError): boolean {
+  if (failure.type !== "TaskProcessExit") return false;
   // The runner remains alive when its foreground task subprocess receives
-  // SIGTERM.  The task has no completion marker, so it is safe to put it back
-  // into the fixed-slot queue.  Partial-prefix failures are handled first and
-  // intentionally remain quarantined for a fresh-prefix recovery.
-  return failure.type === "TaskProcessExit"
-    && failure.message.includes("task process exited with code -15");
+  // SIGTERM. The task has no completion marker, so it is safe to put it back
+  // into the fixed-slot queue.
+  if (failure.message.includes("task process exited with code -15")) return true;
+  // This exact R2 ListObjectsV2 throttle occurs in _prepare_task_input before
+  // TASK-INPUT-MANIFEST.json or any payload is written. It is therefore safe
+  // to retry the same task prefix after backoff. Partial-prefix failures are
+  // handled first and intentionally remain quarantined for fresh recovery.
+  return failure.message.includes("ServiceUnavailable")
+    && failure.message.includes("ListObjectsV2")
+    && failure.message.includes("Reduce your concurrent request rate for the same object.");
 }
 
 function isRetryableTaskFailure(failure: SafeError): boolean {

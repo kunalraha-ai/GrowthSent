@@ -166,7 +166,9 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("resumeInterruptedTask", worker)
         self.assertIn("/_growthsent_standard1_regional_ramp/resume-interrupted-task", worker)
         self.assertIn("destination conflict:", worker)
+        self.assertIn("R2 immutable PutObject failed for", worker)
         self.assertIn("R2 immutable JSON PutObject failed for", worker)
+        self.assertIn("Reduce your concurrent request rate for the same object.", worker)
         self.assertIn("resumeQuarantinedPartialTask", worker)
         self.assertIn("/_growthsent_standard1_regional_ramp/resume-quarantined-partial-task", worker)
 

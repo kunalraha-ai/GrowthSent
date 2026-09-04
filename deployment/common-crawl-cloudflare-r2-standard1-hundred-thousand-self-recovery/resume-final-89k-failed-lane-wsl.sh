@@ -101,15 +101,26 @@ failure = ((status.get("launch") or {}).get("terminal_failure") or {}).get("fail
 message = str(failure.get("message"))
 if status.get("run_id") != run_id or status.get("region") != lane or status.get("control_secret_configured") is not True or (status.get("launch") or {}).get("state") != "task_failed" or failure.get("type") != "TaskProcessExit":
     raise SystemExit("The selected lane state changed during repair preparation; refusing to touch it.")
-if "task process exited with code -15" in message:
+if (
+    "task process exited with code -15" in message
+    # The task input preflight lists its unique prefix before it can write a
+    # manifest or payload. This precise R2 throttle is safe to retry in place.
+    or (
+        "ServiceUnavailable" in message
+        and "ListObjectsV2" in message
+        and "Reduce your concurrent request rate for the same object." in message
+    )
+):
     print("resume-interrupted-task")
 elif (
     "partial immutable task prefix requires isolated recovery" in message
     or "destination conflict:" in message
-    or (
-        "R2 immutable JSON PutObject failed for" in message
-        and "/TASK-COMPLETED.json" in message
-    )
+    # An upload transport error is ambiguous: the immutable payload may have
+    # reached R2 even though the runner did not receive confirmation. Never
+    # retry in the original prefix; quarantine this source for fresh-prefix
+    # recovery after the lane drains.
+    or "R2 immutable PutObject failed for" in message
+    or "R2 immutable JSON PutObject failed for" in message
 ):
     print("resume-quarantined-partial-task")
 else:
