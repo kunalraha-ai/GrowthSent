@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resume exactly one SIGTERM-interrupted final-89K lane in place.
+# Repair exactly one final-89K lane in place.
 set -euo pipefail
 
 if [[ $# -ne 1 || "$1" != "--approved-final-89k-lane-resume" ]]; then
@@ -71,9 +71,9 @@ PLACEMENT_GROUP="${LANE_DETAILS[5]}"
 TASK_COUNT="${LANE_DETAILS[6]}"
 [[ -f "$BUNDLE/wrangler.jsonc" && -f "$BUNDLE/src/index.ts" ]] || { echo "The reviewed source lane bundle is unavailable: $BUNDLE" >&2; exit 1; }
 
-echo "GrowthSent final 89K single-lane SIGTERM resume (Ubuntu/WSL native)"
+echo "GrowthSent final 89K single-lane coordinator repair (Ubuntu/WSL native)"
 echo "Lane: $LANE ($WORKER)"
-echo "Scope: deploy only this terminal lane's coordinator repair, retain its existing R2 prefix, and either retry a SIGTERM-interrupted task or quarantine an immutable partial task while the remaining queue continues. No healthy lane Worker, Container, or R2 prefix is contacted."
+echo "Scope: deploy only this selected lane's coordinator repair. It may retry a reviewed pre-publication failure, quarantine an immutable partial task, or finish a proven stale drained queue. No healthy lane Worker, Container, or R2 prefix is contacted."
 read -r -p "Press Enter to continue: " _
 
 STATUS_JSON="$(curl --fail-with-body --silent --show-error --max-time 30 "$WORKER_URL/_growthsent_standard1_regional_ramp/status")" || { echo "The selected lane status endpoint was unavailable; no deployment was made." >&2; exit 1; }
@@ -86,22 +86,41 @@ status = json.loads(document)
 failure = ((status.get("launch") or {}).get("terminal_failure") or {}).get("failure") or {}
 if status.get("run_id") != run_id or status.get("region") != lane or status.get("control_secret_configured") is not True:
     raise SystemExit("The selected Worker status is not bound to the reviewed final lane.")
-if (status.get("launch") or {}).get("state") != "task_failed":
-    raise SystemExit("The selected lane is not terminally failed; refusing to touch it.")
-if failure.get("type") != "TaskProcessExit":
+state = (status.get("launch") or {}).get("state")
+if state not in {"task_failed", "launching"}:
+    raise SystemExit("The selected lane is not in a reviewed repairable state; refusing to touch it.")
+if state == "task_failed" and failure.get("type") != "TaskProcessExit":
     raise SystemExit("The selected lane did not fail with a reviewed task-process condition; use an isolated recovery plan instead.")
 PY
-REPAIR_ENDPOINT="$(python3 - "$RUN_ID" "$LANE" "$STATUS_JSON" <<'PY'
+REPAIR_ENDPOINT="$(python3 - "$RUN_ID" "$LANE" "$TASK_COUNT" "$STATUS_JSON" <<'PY'
 import json
 import sys
 
-run_id, lane, document = sys.argv[1:]
+run_id, lane, task_count, document = sys.argv[1:]
+task_count = int(task_count)
 status = json.loads(document)
+launch = status.get("launch") or {}
 failure = ((status.get("launch") or {}).get("terminal_failure") or {}).get("failure") or {}
 message = str(failure.get("message"))
-if status.get("run_id") != run_id or status.get("region") != lane or status.get("control_secret_configured") is not True or (status.get("launch") or {}).get("state") != "task_failed" or failure.get("type") != "TaskProcessExit":
+if status.get("run_id") != run_id or status.get("region") != lane or status.get("control_secret_configured") is not True:
     raise SystemExit("The selected lane state changed during repair preparation; refusing to touch it.")
-if (
+if launch.get("state") == "launching":
+    in_flight = launch.get("in_flight") or []
+    active = status.get("active_tasks") or []
+    if not isinstance(launch.get("next_local_task_number"), int) or launch["next_local_task_number"] <= task_count:
+        raise SystemExit("The selected lane still has unscheduled work; refusing stale-slot quarantine.")
+    if launch.get("retry") is not None or not in_flight or len(active) != len(in_flight):
+        raise SystemExit("The selected lane is not a fully observed drained stale queue.")
+    by_task = {item.get("task_index"): item.get("status") or {} for item in active if isinstance(item, dict)}
+    for task in in_flight:
+        observed = by_task.get(task.get("task_index"))
+        runner = observed.get("runner") if isinstance(observed, dict) else None
+        if not isinstance(runner, dict) or runner.get("state") == "running" or runner.get("task_index") == task.get("task_index"):
+            raise SystemExit("The selected lane has live or matching task work; refusing stale-slot quarantine.")
+    print("quarantine-stale-in-flight-tasks")
+elif launch.get("state") != "task_failed" or failure.get("type") != "TaskProcessExit":
+    raise SystemExit("The selected lane state changed during repair preparation; refusing to touch it.")
+elif (
     "task process exited with code -15" in message
     # The task input preflight lists its unique prefix before it can write a
     # manifest or payload. This precise R2 throttle is safe to retry in place.
@@ -155,7 +174,7 @@ npx --offline --yes wrangler@4.126.0 deploy --config "$REPAIR_BUNDLE/wrangler.js
 TRIGGER_TOKEN="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
 printf '%s' "$TRIGGER_TOKEN" | npx --offline --yes wrangler@4.126.0 secret put RAMP_TRIGGER_TOKEN --name "$WORKER" --config "$REPAIR_BUNDLE/wrangler.jsonc" >/dev/null
 
-RESULT_FILE="$REPAIR_ROOT/resume-response.json"
+RESULT_FILE="$REPAIR_ROOT/repair-response.json"
 RESULT=""
 for attempt in $(seq 1 15); do
   if ! STATUS_CODE="$(curl --silent --show-error --max-time 30 --request POST --header 'Content-Type: application/octet-stream' --data-binary "$TRIGGER_TOKEN" --output "$RESULT_FILE" --write-out '%{http_code}' "$WORKER_URL/_growthsent_standard1_regional_ramp/$REPAIR_ENDPOINT")"; then
@@ -175,16 +194,24 @@ for attempt in $(seq 1 15); do
   sleep 2
 done
 unset TRIGGER_TOKEN
-python3 - "$RUN_ID" "$LANE" "$RESULT" "$REPAIR_ROOT/FINAL-89K-LANE-RESUME-CONTEXT.json" <<'PY'
+python3 - "$RUN_ID" "$LANE" "$REPAIR_ENDPOINT" "$RESULT" "$REPAIR_ROOT/FINAL-89K-LANE-RESUME-CONTEXT.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-run_id, lane, document, output = sys.argv[1:]
+run_id, lane, endpoint, document, output = sys.argv[1:]
 result = json.loads(document)
-if result.get("accepted") is not True or result.get("run_id") != run_id or result.get("region") != lane or not isinstance(result.get("task_index"), int):
-    raise SystemExit("The selected lane declined the targeted interrupted-task resume.")
-Path(output).write_text(json.dumps({"run_id": run_id, "lane": lane, "resumed_task_index": result["task_index"], "resumed_local_task_number": result.get("local_task_number")}, sort_keys=True) + "\n", encoding="utf-8")
+if result.get("accepted") is not True or result.get("run_id") != run_id or result.get("region") != lane:
+    raise SystemExit("The selected lane declined the targeted coordinator repair.")
+if endpoint == "quarantine-stale-in-flight-tasks":
+    if not isinstance(result.get("quarantined_task_count"), int) or result["quarantined_task_count"] < 1:
+        raise SystemExit("The stale drained lane did not report a quarantined task count.")
+    detail = {"quarantined_task_count": result["quarantined_task_count"]}
+else:
+    if not isinstance(result.get("task_index"), int):
+        raise SystemExit("The selected lane did not report its repaired task identity.")
+    detail = {"repaired_task_index": result["task_index"], "repaired_local_task_number": result.get("local_task_number")}
+Path(output).write_text(json.dumps({"run_id": run_id, "lane": lane, "repair_endpoint": endpoint, **detail}, sort_keys=True) + "\n", encoding="utf-8")
 PY
 
-echo "SUCCESS: only $LANE was patched and its interrupted task was returned to its existing 32-slot queue. Existing immutable completion markers remain authoritative."
+echo "SUCCESS: only $LANE was patched and its selected coordinator repair was accepted. Existing immutable completion markers remain authoritative."

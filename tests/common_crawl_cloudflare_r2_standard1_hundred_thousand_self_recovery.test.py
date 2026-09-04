@@ -171,6 +171,8 @@ class HundredThousandSelfRecoveryTests(unittest.TestCase):
         self.assertIn("Reduce your concurrent request rate for the same object.", worker)
         self.assertIn("resumeQuarantinedPartialTask", worker)
         self.assertIn("/_growthsent_standard1_regional_ramp/resume-quarantined-partial-task", worker)
+        self.assertIn("quarantineStaleInFlightTasks", worker)
+        self.assertIn("/_growthsent_standard1_regional_ramp/quarantine-stale-in-flight-tasks", worker)
 
     def test_builder_and_policy_are_explicitly_launch_disabled(self):
         builder = (SELF_RECOVERY / "build_self_recovery_bundles.py").read_text(encoding="utf-8")

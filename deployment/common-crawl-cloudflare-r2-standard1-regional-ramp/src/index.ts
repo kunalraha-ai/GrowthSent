@@ -776,6 +776,46 @@ export class GrowthSentStandard1RegionalRampCoordinator extends DurableObject<Ra
     return { accepted: true, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, task_index: terminal.task_index, local_task_number: terminal.local_task_number };
   }
 
+  async quarantineStaleInFlightTasks(): Promise<{ accepted: boolean; run_id: string; region: string; quarantined_task_count?: number; reason?: string }> {
+    const record = await this.ctx.storage.get<RegionalRampRecord>(COORDINATOR_KEY);
+    const settings = regionSettings(this.env);
+    // This is intentionally narrower than a general "force finish" command.
+    // It is available only after a lane has scheduled every source task and
+    // has no pending retry. Each recorded slot must expose a non-running
+    // runner for a *different* task identity, proving the coordinator record
+    // is stale rather than describing live work.
+    if (record?.state !== "launching" || record.next_local_task_number <= settings.regionalTaskCount || record.retry !== null || record.in_flight.length === 0) {
+      return { accepted: false, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, reason: "the lane is not a drained queue with stale in-flight records" };
+    }
+    const observed = await Promise.all(record.in_flight.map(async (task) => ({
+      task,
+      status: await this.containerSlot(settings, task.container_slot).status(),
+    })));
+    if (observed.some(({ task, status }) => status.runner === null || status.runner.state === "running" || status.runner.task_index === task.task_index)) {
+      return { accepted: false, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, reason: "an in-flight record may still describe live or matching container work" };
+    }
+    const last = record.in_flight[record.in_flight.length - 1];
+    const next: RegionalRampRecord = {
+      ...record,
+      state: "completed_with_recoverable_failures",
+      recoverable_failed_count: (record.recoverable_failed_count ?? 0) + record.in_flight.length,
+      in_flight: [],
+      retry: null,
+      last_recoverable_failure: {
+        task_index: last.task_index,
+        local_task_number: last.local_task_number,
+        failure: {
+          type: "StaleSlotReconciliation",
+          message: "fixed-slot runner no longer matched drained coordinator task records; source identities were quarantined for immutable completion-marker recovery",
+        },
+      },
+      updated_at: now(),
+    };
+    await this.ctx.storage.put<RegionalRampRecord>(COORDINATOR_KEY, next);
+    console.warn(JSON.stringify({ event: "standard1_regional_stale_slots_quarantined", run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, quarantined_task_count: record.in_flight.length, task_indexes: record.in_flight.map((task) => task.task_index) }));
+    return { accepted: true, run_id: this.env.GROWTHSENT_RAMP_ID, region: settings.region, quarantined_task_count: record.in_flight.length };
+  }
+
   private async failTask(record: RegionalRampRecord, completedCount: number, remaining: InFlightTask[], task: Pick<InFlightTask, "task_index" | "local_task_number">, failure: SafeError): Promise<void> {
     await this.ctx.storage.put<RegionalRampRecord>(COORDINATOR_KEY, {
       ...record,
@@ -1054,6 +1094,17 @@ export default {
       } catch (error) {
         const diagnostic = safeError(error);
         console.error(JSON.stringify({ event: "standard1_regional_partial_task_resume_failed", run_id: env.GROWTHSENT_RAMP_ID, region: values.region, ...diagnostic }));
+        return response({ accepted: false, run_id: env.GROWTHSENT_RAMP_ID, region: values.region, error: diagnostic.message }, 503);
+      }
+    }
+    if (request.method === "POST" && path === "/_growthsent_standard1_regional_ramp/quarantine-stale-in-flight-tasks") {
+      if (!(await hasControlToken(request, env.RAMP_TRIGGER_TOKEN))) return new Response("not found", { status: 404, headers: { "cache-control": "no-store" } });
+      try {
+        const result = await coordinator.quarantineStaleInFlightTasks();
+        return response(result, result.accepted ? 202 : 409);
+      } catch (error) {
+        const diagnostic = safeError(error);
+        console.error(JSON.stringify({ event: "standard1_regional_stale_slot_quarantine_failed", run_id: env.GROWTHSENT_RAMP_ID, region: values.region, ...diagnostic }));
         return response({ accepted: false, run_id: env.GROWTHSENT_RAMP_ID, region: values.region, error: diagnostic.message }, 503);
       }
     }
