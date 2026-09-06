@@ -35,6 +35,7 @@ exec "$PYTHON" "$ROOT/tools/common_crawl_gcp_secret_runtime.py" \
   --r2-credential-prefix GROWTHSENT_R2_INPUT_READ_ -- \
   "$PYTHON" "$ROOT/tools/common_crawl_link_index_materialize_v1.py" \
   --source-manifest "$ROOT/manifests/cc-main-2026-30-first-100000.json" \
+  --source-roots "$ROOT/config/source-roots.v1.json" \
   --gcs-bucket "$GROWTHSENT_GCS_BUCKET" \
   --catalog-object "$GROWTHSENT_CATALOG_OBJECT" \
   --run-id "$GROWTHSENT_INDEX_RUN_ID" \

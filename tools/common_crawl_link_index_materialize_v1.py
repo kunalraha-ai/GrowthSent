@@ -136,13 +136,52 @@ def _load_source_manifest(path: Path) -> tuple[str, str, int]:
         raise MaterializeError("source manifest has the wrong immutable contract")
     crawl = _required_string(document, "crawl")
     digest = _required_string(document, "manifest_sha256")
+    check_document = dict(document)
+    check_document.pop("manifest_sha256", None)
+    inputs = document.get("inputs")
     count = document.get("input_count")
-    if len(digest) != 64 or not isinstance(count, int) or count <= 0:
+    if (
+        len(digest) != 64
+        or digest != _sha256_bytes(_canonical_json(check_document))
+        or not isinstance(count, int)
+        or count <= 0
+        or not isinstance(inputs, list)
+        or len(inputs) != count
+        or not all(isinstance(item, str) and item for item in inputs)
+        or len(set(inputs)) != len(inputs)
+        or document.get("inputs_sha256") != _sha256_bytes("\n".join(inputs).encode("utf-8"))
+    ):
         raise MaterializeError("source manifest contract is invalid")
     return crawl, digest, count
 
 
-def _load_catalog(*, bucket_name: str, object_name: str, source_manifest_sha256: str, source_count: int) -> dict[str, Any]:
+def _load_source_roots(path: Path, *, crawl: str) -> tuple[str, tuple[str, ...]]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise MaterializeError("source roots contract cannot be read") from error
+    if not isinstance(document, dict) or document.get("kind") != "growthsent-cc-main-2026-30-completion-marker-roots-v1":
+        raise MaterializeError("source roots contract is invalid")
+    if document.get("crawl") != crawl:
+        raise MaterializeError("source roots crawl does not match the locked source manifest")
+    roots = document.get("roots")
+    if not isinstance(roots, list) or not roots:
+        raise MaterializeError("source roots must be a non-empty list")
+    prefixes: list[str] = []
+    for root in roots:
+        if not isinstance(root, Mapping):
+            raise MaterializeError("source root is invalid")
+        prefix = r2.normalize_prefix(_required_string(root, "prefix"))
+        if prefix in prefixes:
+            raise MaterializeError("source roots contain a duplicate prefix")
+        prefixes.append(prefix)
+    return _sha256_bytes(_canonical_json(document)), tuple(prefixes)
+
+
+def _load_catalog(
+    *, bucket_name: str, object_name: str, source_manifest_sha256: str, source_count: int,
+    source_roots_sha256: str, source_prefixes: tuple[str, ...]
+) -> dict[str, Any]:
     try:
         from google.cloud import storage
     except ImportError as error:
@@ -159,7 +198,11 @@ def _load_catalog(*, bucket_name: str, object_name: str, source_manifest_sha256:
     check_document.pop("catalog_sha256", None)
     if not isinstance(recorded_digest, str) or recorded_digest != _sha256_bytes(_canonical_json(check_document)):
         raise MaterializeError("catalog SHA-256 is invalid")
-    if document.get("source_manifest_sha256") != source_manifest_sha256 or document.get("source_identity_count") != source_count:
+    if (
+        document.get("source_manifest_sha256") != source_manifest_sha256
+        or document.get("source_roots_sha256") != source_roots_sha256
+        or document.get("source_identity_count") != source_count
+    ):
         raise MaterializeError("catalog does not match the locked source manifest")
     entries = document.get("entries")
     if not isinstance(entries, list) or len(entries) != source_count:
@@ -167,6 +210,12 @@ def _load_catalog(*, bucket_name: str, object_name: str, source_manifest_sha256:
     for expected_index, entry in enumerate(entries):
         if not isinstance(entry, Mapping) or entry.get("source_index") != expected_index:
             raise MaterializeError("catalog entry indexes do not partition the source range")
+        links = entry.get("links")
+        if not isinstance(links, Mapping):
+            raise MaterializeError("catalog links artifact is invalid")
+        key = _required_string(links, "key")
+        if not any(key.startswith(prefix) for prefix in source_prefixes):
+            raise MaterializeError("catalog links artifact lies outside the reviewed source roots")
     return document
 
 
@@ -341,12 +390,13 @@ def _copy_partitioned_tables(*, connection: Any, links_relation: str, host_map: 
 
 
 def materialize(
-    *, source_manifest: Path, gcs_bucket: str, catalog_object: str, run_id: str, output_prefix: str,
+    *, source_manifest: Path, source_roots: Path, gcs_bucket: str, catalog_object: str, run_id: str, output_prefix: str,
     source_start: int, source_count: int, shard_id: int, shard_count: int, work_dir: Path
 ) -> dict[str, Any]:
     if not run_id or source_start < 0 or source_count <= 0 or shard_id < 0 or shard_count <= 0:
         raise MaterializeError("task parameters are invalid")
     crawl, manifest_sha256, total_sources = _load_source_manifest(source_manifest)
+    roots_sha256, allowed_prefixes = _load_source_roots(source_roots, crawl=crawl)
     if source_start + source_count > total_sources:
         raise MaterializeError("source selection exceeds the locked catalog range")
     try:
@@ -366,20 +416,12 @@ def materialize(
         object_name=catalog_object,
         source_manifest_sha256=manifest_sha256,
         source_count=total_sources,
+        source_roots_sha256=roots_sha256,
+        source_prefixes=allowed_prefixes,
     )
     selected_entries = catalog["entries"][source_start : source_start + source_count]
     if len(selected_entries) != source_count:
         raise MaterializeError("catalog source selection is incomplete")
-    r2_prefixes = tuple(
-        r2.normalize_prefix(str(root["prefix"]))
-        for root in json.loads(catalog.get("source_roots_json", "[]"))
-    ) if False else tuple()
-    # The catalog stores object keys from independently verified campaign roots.
-    # R2Store still needs an explicit bounded allow-list. Derive the unique
-    # first four path components only after validating each selected key below.
-    allowed_prefixes = sorted({"/".join(_required_string(entry["links"], "key").split("/")[:7]) + "/" for entry in selected_entries})
-    if not allowed_prefixes:
-        raise MaterializeError("catalog selected no R2 Links artifacts")
     store = r2.R2Store.from_environment(allowed_prefixes=allowed_prefixes, credential_prefix="GROWTHSENT_R2_INPUT_READ_")
     temporary_root = work_dir / f"shard-{shard_id:05d}"
     shutil.rmtree(temporary_root, ignore_errors=True)
@@ -431,6 +473,7 @@ def materialize(
             "catalog_object": catalog_object,
             "catalog_sha256": catalog["catalog_sha256"],
             "source_manifest_sha256": manifest_sha256,
+            "source_roots_sha256": roots_sha256,
             "source_start": source_start,
             "source_count": source_count,
             "source_end_exclusive": source_start + source_count,
@@ -462,6 +505,7 @@ def materialize(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-manifest", required=True, type=Path)
+    parser.add_argument("--source-roots", required=True, type=Path)
     parser.add_argument("--gcs-bucket", required=True)
     parser.add_argument("--catalog-object", required=True)
     parser.add_argument("--run-id", required=True)
@@ -475,6 +519,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = materialize(
             source_manifest=args.source_manifest,
+            source_roots=args.source_roots,
             gcs_bucket=args.gcs_bucket,
             catalog_object=args.catalog_object,
             run_id=args.run_id,

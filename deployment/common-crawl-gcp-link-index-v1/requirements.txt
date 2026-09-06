@@ -1,5 +1,6 @@
 boto3==1.43.67
 botocore==1.43.67
+duckdb==1.2.2
 google-auth==2.38.0
 google-cloud-secret-manager==2.26.0
 google-cloud-storage==2.19.0

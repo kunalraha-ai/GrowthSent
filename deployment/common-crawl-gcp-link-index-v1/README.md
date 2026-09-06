@@ -47,6 +47,17 @@ one-task catalog job with those exact values:
 Review its Cloud Logging output and the immutable GCS catalog before enabling
 link-materialization tasks.
 
+From WSL, prove the published catalog is internally hashed and partitions the
+reviewed 100,000 source identities exactly before any materialization work:
+
+```bash
+bash deployment/common-crawl-gcp-link-index-v1/scripts/verify-catalog-wsl.sh
+```
+
+The expected result has `"status":"verified"`,
+`"source_identity_count":100000`, and
+`"distinct_links_artifact_count":100000`. This is read-only.
+
 ## Materialization and compaction
 
 `batch/materialize-canary-job.template.json` deliberately processes only 100
