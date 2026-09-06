@@ -191,6 +191,32 @@ If it fails, diagnose first—do not blindly resubmit:
 bash deployment/common-crawl-gcp-link-index-v1/scripts/diagnose-catalog-wsl.sh growthsent-link-index-catalog-v1-20260906042911
 ```
 
+### Prepared but not launched: 1,000-source cost probe
+
+The original production templates requested a 375-GB Local SSD for every
+materialization and compaction worker. The current `us-central1`
+`LOCAL_SSD_TOTAL_GB` quota is only 100 GB, so that topology cannot start. The
+templates were changed locally to use 375-GB `pd-balanced` scratch disks instead.
+
+Before any full materialization launch, rebuild the image and run the dedicated
+one-task, 1,000-source cost probe. It has production CPU, memory, disk, and
+source-count shape, but a distinct immutable output prefix. Its summary records
+elapsed time, verified input bytes, output bytes, and scratch-filesystem
+high-water usage. The launcher refuses to submit unless the catalog exists and
+there is at least 375 GB of available `SSD_TOTAL_GB` quota.
+
+The probe is intentionally **not launched** while the catalog job is active or
+before its immutable catalog object is verified.
+
+After the probe reports `SUCCEEDED`, run the read-only verifier:
+
+```bash
+bash deployment/common-crawl-gcp-link-index-v1/scripts/verify-materialize-cost-probe-wsl.sh JOB_ID OUTPUT_PREFIX
+```
+
+It accepts only the single expected 1,000-source task manifest and prints the
+measured runtime, input/output bytes, scratch high-water mark, and row counts.
+
 ## Prior catalog failures and fixes already made
 
 These must not be reintroduced.

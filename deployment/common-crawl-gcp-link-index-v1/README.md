@@ -56,6 +56,28 @@ current 200-vCPU project quota. Every task writes target-domain partitions with
 a stable bucket: the first three hex characters of `SHA-256(domain)`, shifted
 right by two, giving 1,024 buckets.
 
+Before full materialization, run the separate 1,000-source
+`materialize-cost-probe-job.template.json`. It uses the same 4-vCPU, 30-GiB,
+375-GB `pd-balanced` scratch topology as production and records elapsed time,
+input/output bytes, and scratch-filesystem high-water usage in its immutable
+task manifest. This is the cost and disk-sizing gate; do not infer production
+cost from the 100-source functional canary alone. The companion WSL launcher
+refuses to start until the immutable catalog exists and regional `SSD_TOTAL_GB`
+quota has at least 375 GB available.
+
+`pd-balanced` is intentionally used for scratch rather than Local SSD because
+the project currently has only 100 GB Local SSD quota while one Local SSD
+allocation is 375 GiB. The scratch disk is transient task workspace only; all
+durable output is written with immutable preconditions to GCS. Audit Batch disk
+resources after every terminal job and remove any unexpected orphaned disks.
+
+After a successful probe, validate its immutable task manifest and print the
+measured high-water data without changing GCS, R2, or Batch:
+
+```bash
+bash deployment/common-crawl-gcp-link-index-v1/scripts/verify-materialize-cost-probe-wsl.sh JOB_ID OUTPUT_PREFIX
+```
+
 After every materialization task has a valid immutable task manifest,
 `batch/compact-production-job.template.json` compacts each target bucket into
 the private serving tables: domain summaries, referring domains, anchor text,

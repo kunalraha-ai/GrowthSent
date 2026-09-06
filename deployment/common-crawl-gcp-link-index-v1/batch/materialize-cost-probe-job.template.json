@@ -1,15 +1,15 @@
 {
   "labels": {
     "system": "growthsent-link-index",
-    "stage": "materialize",
+    "stage": "materialize-cost-probe",
     "crawl": "cc-main-2026-30"
   },
   "taskGroups": [
     {
-      "taskCount": 100,
-      "parallelism": 25,
+      "taskCount": 1,
+      "parallelism": 1,
       "taskSpec": {
-        "maxRetryCount": 1,
+        "maxRetryCount": 0,
         "maxRunDuration": "43200s",
         "runnables": [
           {
@@ -39,7 +39,8 @@
             "GROWTHSENT_INDEX_RUN_ID": "REPLACE_WITH_NEW_INDEX_RUN_ID",
             "GROWTHSENT_OUTPUT_PREFIX": "REPLACE_WITH_FRESH_OUTPUT_PREFIX",
             "GROWTHSENT_WORK_DIR": "/work/growthsent",
-            "GROWTHSENT_SOURCE_COUNT_PER_TASK": "1000"
+            "GROWTHSENT_SOURCE_START": "REPLACE_WITH_SOURCE_START",
+            "GROWTHSENT_SOURCE_COUNT": "1000"
           }
         }
       }

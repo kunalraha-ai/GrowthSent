@@ -16,6 +16,8 @@ import hashlib
 import ipaddress
 import json
 import shutil
+import threading
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,68 @@ TABLES = (
 
 class MaterializeError(RuntimeError):
     """The immutable catalog, source artifact, or serving output is invalid."""
+
+
+class ScratchUsageSampler:
+    """Record scratch-filesystem high-water usage without retaining task data.
+
+    A Batch task has one scratch filesystem. Sampling its used capacity lets a
+    representative production-sized probe establish the necessary disk size
+    before the full materialization job provisions hundreds of worker disks.
+    """
+
+    def __init__(self, directory: Path, interval_seconds: float = 1.0) -> None:
+        self._directory = directory
+        self._interval_seconds = interval_seconds
+        self._stop_event = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._total_bytes: int | None = None
+        self._baseline_used_bytes: int | None = None
+        self._peak_used_bytes: int | None = None
+        self._final_used_bytes: int | None = None
+        self._sample_count = 0
+
+    def _sample(self) -> None:
+        try:
+            usage = shutil.disk_usage(self._directory)
+        except OSError:
+            return
+        with self._lock:
+            self._total_bytes = usage.total
+            self._baseline_used_bytes = usage.used if self._baseline_used_bytes is None else self._baseline_used_bytes
+            self._peak_used_bytes = max(usage.used, self._peak_used_bytes or usage.used)
+            self._final_used_bytes = usage.used
+            self._sample_count += 1
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(self._interval_seconds):
+            self._sample()
+
+    def start(self) -> None:
+        self._sample()
+        self._thread = threading.Thread(target=self._run, name="growthsent-scratch-sampler", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self._interval_seconds * 2)
+            self._thread = None
+        self._sample()
+
+    def report(self) -> dict[str, int]:
+        with self._lock:
+            baseline = self._baseline_used_bytes or 0
+            peak = self._peak_used_bytes or baseline
+            return {
+                "filesystem_total_bytes": self._total_bytes or 0,
+                "baseline_used_bytes": baseline,
+                "peak_used_bytes": peak,
+                "peak_incremental_bytes": max(0, peak - baseline),
+                "final_used_bytes": self._final_used_bytes or baseline,
+                "sample_count": self._sample_count,
+            }
 
 
 def _canonical_json(value: Mapping[str, Any]) -> bytes:
@@ -321,7 +385,12 @@ def materialize(
     shutil.rmtree(temporary_root, ignore_errors=True)
     links_dir = temporary_root / "links"
     local_output = temporary_root / "output"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    scratch_sampler = ScratchUsageSampler(work_dir)
+    started_at = time.monotonic()
+    scratch_sampler.start()
     try:
+        source_links_bytes = sum(int(entry["links"]["bytes"]) for entry in selected_entries)
         paths = _download_inputs(store=store, entries=selected_entries, directory=links_dir)
         files_sql = "[" + ",".join(_sql_literal(str(path)) for path in paths) + "]"
         connection = duckdb.connect(str(temporary_root / "index.duckdb"))
@@ -349,6 +418,11 @@ def materialize(
                     raise MaterializeError("target bucket is out of range")
                 destination = f"{normalized_output}/intermediate/table={table_name}/target_bucket={target_bucket:04d}/source_shard={shard_id:05d}/part.parquet"
                 artifacts[table_name].append(_immutable_upload(bucket=bucket, object_name=destination, path=parquet_file))
+        scratch_sampler.stop()
+        artifact_bytes_by_table = {
+            table_name: sum(int(artifact["bytes"]) for artifact in table_artifacts)
+            for table_name, table_artifacts in artifacts.items()
+        }
         summary: dict[str, Any] = {
             "format_version": 1,
             "kind": TASK_KIND,
@@ -367,6 +441,13 @@ def materialize(
                 "method": "registrable-domain comparison",
                 "psl": "tldextract bundled snapshot; private suffixes enabled; no network PSL fetch"
             },
+            "resource_observation": {
+                "elapsed_seconds": round(time.monotonic() - started_at, 3),
+                "source_links_bytes": source_links_bytes,
+                "artifact_bytes_by_table": artifact_bytes_by_table,
+                "artifact_total_bytes": sum(artifact_bytes_by_table.values()),
+                "scratch": scratch_sampler.report(),
+            },
             "table_row_counts": table_counts,
             "artifacts": artifacts,
         }
@@ -374,6 +455,7 @@ def materialize(
         summary_result = _immutable_json_upload(bucket=bucket, object_name=summary_key, document=summary)
         return {"status": "published", "task_summary": summary_result, "source_count": source_count, "table_row_counts": table_counts}
     finally:
+        scratch_sampler.stop()
         shutil.rmtree(temporary_root, ignore_errors=True)
 
 

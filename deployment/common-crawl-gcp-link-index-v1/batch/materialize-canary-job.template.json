@@ -63,7 +63,7 @@
             {
               "newDisk": {
                 "sizeGb": 375,
-                "type": "local-ssd"
+                "type": "pd-balanced"
               },
               "deviceName": "scratch"
             }
