@@ -14,6 +14,10 @@
   --soft: #eeeeea;
   --card-dark: #20211e;
   --card-dark-border: #383a35;
+  --sidebar-bg: #0d0f0a;
+  --sidebar-border: #22251d;
+  --sidebar-active: #c6ff3d;
+  --sidebar-active-ink: #12160b;
 }
 
 * {
@@ -1588,8 +1592,8 @@ a {
 
 .dashboard-sidebar {
   width: 68px;
-  background: #1b1c19;
-  border-right: 1px solid #343631;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
   padding: 20px 10px;
   display: flex;
   flex-direction: column;
@@ -1665,8 +1669,8 @@ a {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #a4ef51;
-  color: #171817;
+  background: var(--sidebar-active);
+  color: var(--sidebar-active-ink);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1704,6 +1708,10 @@ a {
 
 .dashboard-sidebar:hover .sidebar-brand-wrapper {
   justify-content: space-between;
+}
+
+.dashboard-sidebar .brand-mark i:nth-child(3) {
+  background: var(--sidebar-active);
 }
 
 .sidebar-nav {
@@ -1757,10 +1765,11 @@ a {
 }
 
 .nav-item.active {
-  background: rgba(164, 239, 81, 0.12);
-  color: #ffffff;
-  border: 1px solid rgba(164, 239, 81, 0.25);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.2);
+  background: var(--sidebar-active);
+  color: var(--sidebar-active-ink);
+  border: 1px solid var(--sidebar-active);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  transform: none;
 }
 
 .nav-item .icon {
@@ -1774,7 +1783,24 @@ a {
 }
 
 .nav-item.active .icon {
-  color: #a4ef51;
+  color: var(--sidebar-active-ink);
+}
+
+@media (min-width: 769px) {
+  .dashboard-sidebar:not(:hover) .nav-item {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    align-self: center;
+    transform: none;
+  }
+
+  .dashboard-sidebar:hover .nav-item {
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+  }
 }
 
 .badge-count {
