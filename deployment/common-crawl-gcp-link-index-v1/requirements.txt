@@ -1,0 +1,9 @@
+boto3==1.43.67
+botocore==1.43.67
+google-auth==2.38.0
+google-cloud-secret-manager==2.26.0
+google-cloud-storage==2.19.0
+jmespath==1.1.0
+pyarrow==19.0.1
+s3transfer==0.19.2
+tldextract==5.1.3

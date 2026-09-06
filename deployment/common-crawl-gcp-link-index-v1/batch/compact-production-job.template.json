@@ -1,0 +1,75 @@
+{
+  "labels": {
+    "system": "growthsent-link-index",
+    "stage": "compact",
+    "crawl": "cc-main-2026-30"
+  },
+  "taskGroups": [
+    {
+      "taskCount": 1024,
+      "parallelism": 25,
+      "taskSpec": {
+        "maxRetryCount": 1,
+        "maxRunDuration": "21600s",
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "REPLACE_WITH_DIGEST_PINNED_ARTIFACT_REGISTRY_IMAGE",
+              "entrypoint": "/opt/growthsent/runners/compact-bucket-task.sh"
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "deviceName": "scratch",
+            "mountPath": "/work",
+            "mountOptions": "rw,async"
+          }
+        ],
+        "computeResource": {
+          "cpuMilli": 4000,
+          "memoryMib": 30000
+        },
+        "environment": {
+          "variables": {
+            "GROWTHSENT_RELEASE_SHA256": "REPLACE_WITH_RELEASE_SHA256",
+            "GROWTHSENT_GCS_BUCKET": "growthsent-link-index-498930285709",
+            "GROWTHSENT_COMPACTION_RUN_ID": "REPLACE_WITH_NEW_COMPACTION_RUN_ID",
+            "GROWTHSENT_INPUT_PREFIX": "REPLACE_WITH_COMPLETE_MATERIALIZATION_PREFIX",
+            "GROWTHSENT_OUTPUT_PREFIX": "REPLACE_WITH_FRESH_SERVING_PREFIX",
+            "GROWTHSENT_WORK_DIR": "/work/growthsent"
+          }
+        }
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "serviceAccount": {
+      "email": "growthsent-link-index-runner@growthsent-link-index.iam.gserviceaccount.com"
+    },
+    "instances": [
+      {
+        "policy": {
+          "machineType": "n2-highmem-4",
+          "provisioningModel": "STANDARD",
+          "bootDisk": {
+            "sizeGb": 50,
+            "type": "pd-balanced"
+          },
+          "disks": [
+            {
+              "newDisk": {
+                "sizeGb": 375,
+                "type": "local-ssd"
+              },
+              "deviceName": "scratch"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "logsPolicy": {
+    "destination": "CLOUD_LOGGING"
+  }
+}

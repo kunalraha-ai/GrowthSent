@@ -1,0 +1,17 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - deployment/common-crawl-gcp-link-index-v1/container/Dockerfile
+      - --build-arg
+      - PYTHON_IMAGE=${_PYTHON_IMAGE}
+      - --build-arg
+      - GROWTHSENT_RELEASE_SHA256=${_GROWTHSENT_RELEASE_SHA256}
+      - --tag
+      - ${_IMAGE_URI}
+      - .
+images:
+  - ${_IMAGE_URI}
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,78 @@
+{
+  "labels": {
+    "system": "growthsent-link-index",
+    "stage": "materialize-canary",
+    "crawl": "cc-main-2026-30"
+  },
+  "taskGroups": [
+    {
+      "taskCount": 1,
+      "parallelism": 1,
+      "taskSpec": {
+        "maxRetryCount": 0,
+        "maxRunDuration": "21600s",
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "REPLACE_WITH_DIGEST_PINNED_ARTIFACT_REGISTRY_IMAGE",
+              "entrypoint": "/opt/growthsent/runners/materialize-task.sh"
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "deviceName": "scratch",
+            "mountPath": "/work",
+            "mountOptions": "rw,async"
+          }
+        ],
+        "computeResource": {
+          "cpuMilli": 4000,
+          "memoryMib": 30000
+        },
+        "environment": {
+          "variables": {
+            "GROWTHSENT_RELEASE_SHA256": "REPLACE_WITH_RELEASE_SHA256",
+            "GROWTHSENT_R2_INPUT_READ_SECRET_VERSION": "projects/growthsent-link-index/secrets/r2-link-index-input-read/versions/latest",
+            "GROWTHSENT_GCS_BUCKET": "growthsent-link-index-498930285709",
+            "GROWTHSENT_CATALOG_OBJECT": "catalogs/v1/cc-main-2026-30/source-links-catalog.json",
+            "GROWTHSENT_INDEX_RUN_ID": "cc-main-2026-30-index-canary-v1",
+            "GROWTHSENT_OUTPUT_PREFIX": "link-index/v1/canary",
+            "GROWTHSENT_WORK_DIR": "/work/growthsent",
+            "GROWTHSENT_SOURCE_START": "0",
+            "GROWTHSENT_SOURCE_COUNT": "100"
+          }
+        }
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "serviceAccount": {
+      "email": "growthsent-link-index-runner@growthsent-link-index.iam.gserviceaccount.com"
+    },
+    "instances": [
+      {
+        "policy": {
+          "machineType": "n2-highmem-4",
+          "provisioningModel": "STANDARD",
+          "bootDisk": {
+            "sizeGb": 50,
+            "type": "pd-balanced"
+          },
+          "disks": [
+            {
+              "newDisk": {
+                "sizeGb": 375,
+                "type": "local-ssd"
+              },
+              "deviceName": "scratch"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "logsPolicy": {
+    "destination": "CLOUD_LOGGING"
+  }
+}

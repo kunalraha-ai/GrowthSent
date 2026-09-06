@@ -1,0 +1,35 @@
+{
+  "format_version": 1,
+  "kind": "growthsent-cc-main-2026-30-completion-marker-roots-v1",
+  "crawl": "CC-MAIN-2026-30",
+  "roots": [
+    {
+      "id": "first-ten-thousand-original",
+      "prefix": "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-20260902t021855z-s1-256-e3cbfc2f/"
+    },
+    {
+      "id": "first-ten-thousand-failed-lanes-a",
+      "prefix": "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-20260902t065907z-s1-256lane-be9f028c/"
+    },
+    {
+      "id": "first-ten-thousand-failed-lanes-b",
+      "prefix": "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-20260902t152808z-s1-256lane-b40e1e01/"
+    },
+    {
+      "id": "source-indexes-ten-thousand-to-ten-thousand-nine-hundred-ninety-nine",
+      "prefix": "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-20260901t151022z-standard1-regional-7e6a8887/"
+    },
+    {
+      "id": "source-indexes-ten-thousand-to-ten-thousand-nine-hundred-ninety-nine-recovery",
+      "prefix": "production/common-crawl/cloudflare-r2-regional-ramps/v1/cc-main-2026-30-20260901t173835z-standard1-128rcvr-caa9f4fb/"
+    },
+    {
+      "id": "final-eighty-nine-thousand-original",
+      "prefix": "production/common-crawl/cloudflare-r2-final-campaigns/v1/cc-main-2026-30-20260903t075508z-s1-89kprep-0b64d2c1/"
+    },
+    {
+      "id": "final-eighty-nine-thousand-recovery",
+      "prefix": "production/common-crawl/cloudflare-r2-final-recoveries/v1/cc-main-2026-30-20260904t151133z-s1-89rcvr-55c545a1/"
+    }
+  ]
+}
