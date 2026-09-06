@@ -160,7 +160,7 @@ function TurnstileWidget({
 }) {
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetIdRef = useRef<string>();
+  const widgetIdRef = useRef<string | undefined>(undefined);
   const onTokenRef = useRef(onToken);
   const onErrorRef = useRef(onError);
 

@@ -1,56 +1,49 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from "react"
+import { type FormEvent, useEffect, useState } from "react"
 
-type LinkWorkspace = "explorer" | "rating" | "pages" | "anchors" | "broken" | "gap"
+type Workspace = "explorer" | "rating" | "pages" | "anchors" | "broken" | "gap"
 
 interface LinkIntelligenceViewProps {
   initialDomain?: string
 }
 
 const WORKSPACES: Array<{
-  id: LinkWorkspace
+  id: Workspace
   label: string
-  eyebrow: string
   description: string
 }> = [
   {
     id: "explorer",
     label: "Backlink Explorer",
-    eyebrow: "OVERVIEW",
     description:
       "Inspect link equity, referring domains, and anchor coverage for one domain.",
   },
   {
     id: "rating",
     label: "Domain Rating",
-    eyebrow: "AUTHORITY",
     description:
       "A link-graph authority score calculated from the processed backlink corpus.",
   },
   {
     id: "pages",
     label: "Top Linked Pages",
-    eyebrow: "PAGES",
-    description: "Discover the URLs attracting the most external link equity.",
+    description:
+      "Discover the URLs attracting the most external link equity, ranked by inbound backlinks and unique referring domains.",
   },
   {
     id: "anchors",
     label: "Anchor Text",
-    eyebrow: "ANCHORS",
-    description:
-      "Understand the language other sites use when linking to a domain.",
+    description: "Understand the language other sites use when linking to this domain.",
   },
   {
     id: "broken",
     label: "Broken Backlinks",
-    eyebrow: "OPPORTUNITIES",
-    description: "Find inbound links whose target URL returns an error.",
+    description:
+      "Find inbound links whose target URL returns an error, so that equity can be recovered.",
   },
   {
     id: "gap",
     label: "Competitor Gap",
-    eyebrow: "COMPETITION",
-    description:
-      "Compare two domains to identify referring domains you have not earned.",
+    description: "Compare two domains to find referring domains you have not earned.",
   },
 ]
 
@@ -61,580 +54,340 @@ function SearchIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth="2"
     >
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4.5 4.5" />
+      <circle cx="11" cy="11" r="7" />
+      <path d="m21 21-4.35-4.35" strokeLinecap="round" />
     </svg>
   )
 }
 
-function LinkIcon() {
+function ToolIcon({ tool }: { tool: Workspace }) {
+  if (tool === "rating") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M4 19V9M12 19V5M20 19v-7" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (tool === "pages") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+        <path d="M9 12h6M9 16h6" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (tool === "anchors") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="12" cy="5" r="2" />
+        <path d="M12 7v9M6 14a6 6 0 0 0 12 0" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (tool === "broken") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="m9 6 6 12M15 6 9 18" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (tool === "gap") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="7" cy="12" r="4" />
+        <circle cx="17" cy="12" r="4" />
+      </svg>
+    )
+  }
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="M10.2 13.8a4 4 0 0 0 5.65.05l2.6-2.6a4 4 0 0 0-5.65-5.65l-1.48 1.47" />
-      <path d="M13.8 10.2a4 4 0 0 0-5.65-.05l-2.6 2.6a4 4 0 0 0 5.65 5.65l1.47-1.47" />
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5" strokeLinecap="round" />
+      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5" strokeLinecap="round" />
     </svg>
   )
 }
 
-function GaugeIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="M4 17a8 8 0 0 1 16 0" />
-      <path d="m12 13 3.4-3.4" />
-      <path d="M12 17h.01" />
-    </svg>
-  )
-}
-
-function PageIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="M6 3h8l4 4v14H6z" />
-      <path d="M14 3v5h5" />
-      <path d="M9 13h6M9 17h6" />
-    </svg>
-  )
-}
-
-function AnchorIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <circle cx="12" cy="6" r="3" />
-      <path d="M12 9v11M5 13h14M7.5 20h9" />
-    </svg>
-  )
-}
-
-function BrokenIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <path d="m9 3 6 18M5 6l2 2M17 16l2 2" />
-      <path d="m7.5 14.5-2 2a3 3 0 0 0 4.24 4.24l2-2M16.5 9.5l2-2a3 3 0 0 0-4.24-4.24l-2 2" />
-    </svg>
-  )
-}
-
-function GapIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-    >
-      <circle cx="7" cy="12" r="3" />
-      <circle cx="17" cy="12" r="3" />
-      <path d="M10 12h4" />
-    </svg>
-  )
-}
-
-function WorkspaceIcon({ workspace }: { workspace: LinkWorkspace }) {
-  if (workspace === "rating") return <GaugeIcon />
-  if (workspace === "pages") return <PageIcon />
-  if (workspace === "anchors") return <AnchorIcon />
-  if (workspace === "broken") return <BrokenIcon />
-  if (workspace === "gap") return <GapIcon />
-  return <LinkIcon />
-}
-
-function MetricPlaceholder({
-  label,
-  description,
-}: {
-  label: string
-  description: string
-}) {
-  return (
-    <div className="link-intelligence-metric">
-      <p>{label}</p>
-      <strong>—</strong>
-      <span>{description}</span>
-    </div>
-  )
-}
-
-function EmptyDataState({
+function EmptyState({
+  tool,
   title,
   description,
-  icon = <LinkIcon />,
+  action = true,
 }: {
+  tool: Workspace
   title: string
   description: string
-  icon?: ReactNode
+  action?: boolean
 }) {
   return (
-    <div className="link-intelligence-empty-state">
-      <div className="link-intelligence-empty-icon">{icon}</div>
+    <div className="li-empty-state">
+      <div className="li-empty-icon">
+        <ToolIcon tool={tool} />
+      </div>
       <h4>{title}</h4>
       <p>{description}</p>
-      <span className="link-intelligence-pending-chip">
-        Awaiting link-index connection
-      </span>
+      {action && (
+        <button type="button" className="li-ghost-button" disabled>
+          Index preparing
+        </button>
+      )}
     </div>
   )
 }
 
-function DomainContext({ domain }: { domain: string }) {
+function MetricCard({ label, help }: { label: string; help: string }) {
   return (
-    <div className="link-intelligence-domain-context">
-      <span>DOMAIN CONTEXT</span>
-      <strong>{domain || "Choose a domain to explore"}</strong>
-    </div>
+    <article className="li-metric-card">
+      <p>{label}</p>
+      <strong>—</strong>
+      <span>{help}</span>
+      <svg aria-hidden="true" className="li-flatline" viewBox="0 0 54 20" fill="none">
+        <path d="M0 14h54" stroke="currentColor" strokeWidth="2" strokeDasharray="3 4" strokeLinecap="round" />
+      </svg>
+    </article>
+  )
+}
+
+function PanelHeader({ workspace }: { workspace: Workspace }) {
+  const active = WORKSPACES.find((item) => item.id === workspace) ?? WORKSPACES[0]
+  return (
+    <header className="li-panel-header">
+      <h2>{active.label}</h2>
+      <p>{active.description}</p>
+    </header>
   )
 }
 
 function ExplorerPanel({ domain }: { domain: string }) {
+  const domainLabel = domain || "this domain"
   return (
     <>
-      <section
-        className="link-intelligence-metric-grid"
-        aria-label="Backlink explorer metrics"
-      >
-        <MetricPlaceholder
-          label="Domain Rating"
-          description="Graph authority score"
-        />
-        <MetricPlaceholder
-          label="Referring domains"
-          description="Unique external domains"
-        />
-        <MetricPlaceholder
-          label="Total backlinks"
-          description="External inbound links"
-        />
-        <MetricPlaceholder
-          label="Anchor phrases"
-          description="Distinct anchor text"
-        />
+      <section className="li-metric-grid" aria-label="Backlink metrics">
+        <MetricCard label="Domain rating" help="Graph authority score" />
+        <MetricCard label="Referring domains" help="Unique external domains" />
+        <MetricCard label="Total backlinks" help="External inbound links" />
+        <MetricCard label="Anchor phrases" help="Distinct anchor text" />
       </section>
-      <div className="link-intelligence-two-column">
-        <section className="link-intelligence-card">
-          <div className="link-intelligence-card-heading">
-            <div>
-              <p>REFERRING DOMAINS</p>
-              <h4>Earned link sources</h4>
-            </div>
-            <span>Top domains</span>
-          </div>
-          <EmptyDataState
-            title="No referring-domain rollup yet"
-            description={
-              domain
-                ? `The link graph has not been connected for ${domain}.`
-                : "Search a domain to prepare this report."
-            }
+      <section className="li-card-grid">
+        <article className="li-info-card">
+          <h3>Earned link sources</h3>
+          <p className="li-info-sub">The domains sending this site the most link equity.</p>
+          <EmptyState
+            tool="explorer"
+            title="No referring domains yet"
+            description={`This list fills in once the link index connects for ${domainLabel}.`}
           />
-        </section>
-        <section className="link-intelligence-card">
-          <div className="link-intelligence-card-heading">
-            <div>
-              <p>ANCHOR MIX</p>
-              <h4>How the web describes you</h4>
-            </div>
-            <span>Distribution</span>
-          </div>
-          <div className="link-intelligence-anchor-preview">
-            <div className="link-intelligence-anchor-ring">
-              <span>—</span>
-              <small>phrases</small>
-            </div>
-            <div>
-              <strong>Anchor text distribution will appear here.</strong>
-              <p>
-                Branded, topical, URL, and other anchor categories are
-                calculated from the link graph.
-              </p>
-            </div>
-          </div>
-        </section>
-      </div>
+        </article>
+        <article className="li-info-card">
+          <h3>How the web describes you</h3>
+          <p className="li-info-sub">The anchor text other sites use when linking here.</p>
+          <EmptyState
+            tool="anchors"
+            title="No anchor phrases yet"
+            description="Phrase size will reflect backlink frequency once the index is connected."
+          />
+        </article>
+      </section>
     </>
   )
 }
 
 function RatingPanel({ domain }: { domain: string }) {
   return (
-    <section className="link-intelligence-rating-layout">
-      <div className="link-intelligence-rating-card">
-        <p>DOMAIN RATING</p>
-        <div className="link-intelligence-rating-gauge">
-          <div>
-            <strong>—</strong>
-            <span>/ 100</span>
-          </div>
-        </div>
-        <h4>{domain || "Select a domain"}</h4>
+    <section className="li-card-grid">
+      <article className="li-rating-card">
+        <p>Domain rating</p>
+        <svg aria-label="Domain Rating pending" className="li-rating-gauge" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="58" fill="none" stroke="rgba(18,22,11,.15)" strokeWidth="10" />
+          <circle cx="70" cy="70" r="58" fill="none" stroke="#12160B" strokeWidth="10" strokeDasharray="20 4" strokeLinecap="round" transform="rotate(-90 70 70)" />
+          <text x="70" y="66" textAnchor="middle">—</text>
+          <text className="li-rating-out-of" x="70" y="86" textAnchor="middle">/ 100</text>
+        </svg>
+        <strong>{domain || "Select a domain"}</strong>
         <span>Calculated from the processed link graph</span>
-      </div>
-      <div className="link-intelligence-card link-intelligence-rating-explainer">
-        <div className="link-intelligence-card-heading">
-          <div>
-            <p>HOW IT WORKS</p>
-            <h4>Authority without a black box</h4>
-          </div>
-        </div>
-        <div className="link-intelligence-explainer-list">
-          <div>
-            <span>01</span>
-            <p>
-              Referring domains establish the breadth of a domain’s link
-              profile.
-            </p>
-          </div>
-          <div>
-            <span>02</span>
-            <p>
-              Link quality and the authority of each referring domain shape
-              score propagation.
-            </p>
-          </div>
-          <div>
-            <span>03</span>
-            <p>
-              Scores are recalculated as the link graph grows, so no value is
-              shown until the index is connected.
-            </p>
-          </div>
-        </div>
-      </div>
+      </article>
+      <article className="li-info-card li-rating-explainer">
+        <h3>How a score is built</h3>
+        <p className="li-info-sub">Authority without a black box.</p>
+        <ol className="li-step-list">
+          <li>
+            <span>1</span>
+            <div>
+              <h4>Discover referring domains</h4>
+              <p>Every unique domain linking here establishes the breadth of the link profile.</p>
+            </div>
+          </li>
+          <li>
+            <span>2</span>
+            <div>
+              <h4>Weight by link quality</h4>
+              <p>Each referring domain’s authority shapes how much equity it passes on.</p>
+            </div>
+          </li>
+          <li>
+            <span>3</span>
+            <div>
+              <h4>Recalculate as the graph grows</h4>
+              <p>Scores update automatically when the index is ready.</p>
+            </div>
+          </li>
+        </ol>
+      </article>
     </section>
   )
 }
 
-function LinkedPagesPanel({ domain }: { domain: string }) {
+function PagesPanel() {
   return (
-    <section className="link-intelligence-card">
-      <div className="link-intelligence-card-heading">
-        <div>
-          <p>TOP LINKED PAGES</p>
-          <h4>Pages attracting external authority</h4>
-          <span>
-            Ranked by inbound backlink count and unique referring domains.
-          </span>
-        </div>
-        <DomainContext domain={domain} />
+    <section className="li-table-card">
+      <div className="li-table-header">
+        <span>Page</span>
+        <span>Backlinks</span>
+        <span>Referring domains</span>
+        <span>Share of equity</span>
       </div>
-      <div className="link-intelligence-table-shell">
-        <div className="link-intelligence-table-head">
-          <span>Page</span>
-          <span>Backlinks</span>
-          <span>Referring domains</span>
-          <span>Share of equity</span>
-        </div>
-        <EmptyDataState
-          title="Page-level links are not connected yet"
-          description="This table will rank URLs once the processed WAT link graph is available."
-          icon={<PageIcon />}
-        />
-      </div>
+      <EmptyState
+        tool="pages"
+        title="Page-level links are not connected yet"
+        description="This table ranks URLs as soon as the processed WAT link graph is available."
+      />
     </section>
   )
 }
 
 function AnchorsPanel({ domain }: { domain: string }) {
   return (
-    <div className="link-intelligence-two-column link-intelligence-anchor-layout">
-      <section className="link-intelligence-card">
-        <div className="link-intelligence-card-heading">
-          <div>
-            <p>ANCHOR TEXT CLOUD</p>
-            <h4>Language around {domain || "this domain"}</h4>
-          </div>
-        </div>
-        <EmptyDataState
-          title="No anchor terms to display"
-          description="Phrase size will represent relative backlink frequency, while colors will distinguish anchor categories."
-          icon={<AnchorIcon />}
-        />
-      </section>
-      <section className="link-intelligence-card">
-        <div className="link-intelligence-card-heading">
-          <div>
-            <p>ANCHOR DISTRIBUTION</p>
-            <h4>Profile balance</h4>
-          </div>
-        </div>
-        <div className="link-intelligence-distribution-placeholder">
+    <section className="li-card-grid">
+      <article className="li-info-card">
+        <h3>Language around {domain || "this domain"}</h3>
+        <p className="li-info-sub">Phrase size reflects backlink frequency; color marks the anchor category.</p>
+        <EmptyState tool="anchors" title="No anchor terms to display" description="Terms appear here once the link index is connected." />
+      </article>
+      <article className="li-info-card">
+        <h3>Profile balance</h3>
+        <p className="li-info-sub">How anchor text splits across categories.</p>
+        <div className="li-anchor-list">
           {["Branded", "Topical", "URL", "Generic", "Other"].map((label) => (
             <div key={label}>
               <span>{label}</span>
-              <i />
+              <i aria-hidden="true" />
               <b>—</b>
             </div>
           ))}
         </div>
-        <p className="link-intelligence-card-note">
-          Percentages remain blank until link graph data is connected.
-        </p>
-      </section>
-    </div>
+        <p className="li-card-note">Percentages fill in once link graph data is connected.</p>
+      </article>
+    </section>
   )
 }
 
-function BrokenPanel({
-  domain,
-  onDomainChange,
-}: {
-  domain: string
-  onDomainChange: (value: string) => void
-}) {
+function BrokenPanel({ domain }: { domain: string }) {
   return (
-    <section className="link-intelligence-card link-intelligence-tool-card">
-      <div className="link-intelligence-card-heading">
-        <div>
-          <p>BROKEN BACKLINKS FINDER</p>
-          <h4>Recover lost link equity</h4>
-          <span>
-            Compare backlink targets against crawl and HTTP-status evidence.
-          </span>
-        </div>
-        <div className="link-intelligence-tool-icon">
-          <BrokenIcon />
-        </div>
+    <section className="li-info-card li-tool-card">
+      <h3>Recover lost link equity</h3>
+      <p className="li-info-sub">Compares backlink targets against crawl and HTTP-status evidence.</p>
+      <div className="li-input-row">
+        <input value={domain} readOnly placeholder="yourdomain.com" aria-label="Domain to inspect" />
+        <button type="button" className="li-ghost-button" disabled>Index required</button>
       </div>
-      <label
-        className="link-intelligence-input-label"
-        htmlFor="broken-backlink-domain"
-      >
-        Domain to inspect
-      </label>
-      <div className="link-intelligence-input-row">
-        <input
-          id="broken-backlink-domain"
-          value={domain}
-          onChange={(event) => onDomainChange(event.target.value)}
-          placeholder="yourdomain.com"
-          inputMode="url"
-        />
-        <button
-          type="button"
-          disabled
-          title="Available after the link index is connected"
-        >
-          Index required
-        </button>
-      </div>
-      <EmptyDataState
-        title="Broken-link checks will run once data is connected"
+      <EmptyState
+        tool="broken"
+        title="Broken-link checks run once data is connected"
         description="Results will include the linking page, destination URL, observed status, and recovery opportunity."
-        icon={<BrokenIcon />}
+        action={false}
       />
+      <div className="li-tag-row" aria-label="Future broken backlink fields">
+        {['Linking page', 'Destination URL', 'Status', 'Opportunity'].map((tag) => <span key={tag}>{tag}</span>)}
+      </div>
     </section>
   )
 }
 
-function GapPanel({
-  domain,
-  competitor,
-  onCompetitorChange,
-}: {
-  domain: string
-  competitor: string
-  onCompetitorChange: (value: string) => void
-}) {
+function GapPanel({ domain, competitor, onCompetitorChange }: { domain: string; competitor: string; onCompetitorChange: (value: string) => void }) {
   return (
-    <section className="link-intelligence-card link-intelligence-tool-card">
-      <div className="link-intelligence-card-heading">
-        <div>
-          <p>COMPETITOR GAP ANALYSIS</p>
-          <h4>Find domains linking to competitors, not you</h4>
-          <span>
-            Compare referring-domain sets without treating every backlink as
-            equal.
-          </span>
-        </div>
-        <div className="link-intelligence-tool-icon">
-          <GapIcon />
-        </div>
+    <section className="li-info-card li-tool-card">
+      <h3>Find domains linking to competitors, not you</h3>
+      <p className="li-info-sub">Compares referring-domain sets without treating every backlink as equal.</p>
+      <div className="li-input-row li-gap-input-row">
+        <input value={domain} readOnly placeholder="yourdomain.com" aria-label="Your domain" />
+        <span>vs</span>
+        <input value={competitor} onChange={(event) => onCompetitorChange(event.target.value)} placeholder="competitor.com" aria-label="Competitor domain" inputMode="url" />
+        <button type="button" className="li-ghost-button" disabled>Index required</button>
       </div>
-      <div className="link-intelligence-gap-inputs">
-        <label>
-          <span>Your domain</span>
-          <input value={domain} readOnly placeholder="yourdomain.com" />
-        </label>
-        <span className="link-intelligence-versus">VS</span>
-        <label>
-          <span>Competitor domain</span>
-          <input
-            value={competitor}
-            onChange={(event) => onCompetitorChange(event.target.value)}
-            placeholder="competitor.com"
-            inputMode="url"
-          />
-        </label>
-        <button
-          type="button"
-          disabled
-          title="Available after the link index is connected"
-        >
-          Index required
-        </button>
+      <div className="li-gap-metrics">
+        <MetricCard label="Unique to you" help="Referring domains" />
+        <MetricCard label="Shared" help="Referring domains" />
+        <MetricCard label="Gap opportunities" help="Referring domains" />
       </div>
-      <div className="link-intelligence-gap-columns">
-        <div>
-          <p>UNIQUE TO YOU</p>
-          <strong>—</strong>
-          <span>Referring domains</span>
-        </div>
-        <div>
-          <p>SHARED</p>
-          <strong>—</strong>
-          <span>Referring domains</span>
-        </div>
-        <div>
-          <p>GAP OPPORTUNITIES</p>
-          <strong>—</strong>
-          <span>Referring domains</span>
-        </div>
-      </div>
-      <EmptyDataState
+      <EmptyState
+        tool="gap"
         title="Comparison data is not available yet"
-        description="Enter a competitor now; the comparison will become available when the link graph is connected."
-        icon={<GapIcon />}
+        description="Enter a competitor domain — the comparison activates once the link index connects."
+        action={false}
       />
     </section>
   )
 }
 
-export default function LinkIntelligenceView({
-  initialDomain = "",
-}: LinkIntelligenceViewProps) {
-  const [activeWorkspace, setActiveWorkspace] =
-    useState<LinkWorkspace>("explorer")
+export default function LinkIntelligenceView({ initialDomain = "" }: LinkIntelligenceViewProps) {
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace>("explorer")
   const [domainInput, setDomainInput] = useState(initialDomain)
-  const [selectedDomain, setSelectedDomain] = useState(initialDomain)
+  const [domain, setDomain] = useState(initialDomain)
   const [competitor, setCompetitor] = useState("")
 
   useEffect(() => {
-    if (!domainInput && initialDomain) {
+    if (initialDomain && !domainInput) {
       setDomainInput(initialDomain)
-      setSelectedDomain(initialDomain)
+      setDomain(initialDomain)
     }
   }, [domainInput, initialDomain])
 
-  const activeMeta =
-    WORKSPACES.find((workspace) => workspace.id === activeWorkspace) ??
-    WORKSPACES[0]
-  const domain = selectedDomain.trim()
-
   const submitDomain = (event: FormEvent) => {
     event.preventDefault()
-    setSelectedDomain(domainInput.trim())
+    setDomain(domainInput.trim())
   }
 
-  const renderWorkspace = () => {
+  const renderPanel = () => {
     if (activeWorkspace === "rating") return <RatingPanel domain={domain} />
-    if (activeWorkspace === "pages") return <LinkedPagesPanel domain={domain} />
+    if (activeWorkspace === "pages") return <PagesPanel />
     if (activeWorkspace === "anchors") return <AnchorsPanel domain={domain} />
-    if (activeWorkspace === "broken")
-      return (
-        <BrokenPanel domain={domainInput} onDomainChange={setDomainInput} />
-      )
-    if (activeWorkspace === "gap")
-      return (
-        <GapPanel
-          domain={domainInput}
-          competitor={competitor}
-          onCompetitorChange={setCompetitor}
-        />
-      )
+    if (activeWorkspace === "broken") return <BrokenPanel domain={domain} />
+    if (activeWorkspace === "gap") return <GapPanel domain={domain} competitor={competitor} onCompetitorChange={setCompetitor} />
     return <ExplorerPanel domain={domain} />
   }
 
   return (
-    <section className="link-intelligence-view">
-      <div className="console-title link-intelligence-title">
+    <section className="link-intelligence-view li-workbench">
+      <header className="li-top-row">
         <div>
-          <p>LINK INTELLIGENCE</p>
-          <h3>Understand your place in the web’s link graph</h3>
+          <h1>Understand your place in the web’s link graph</h1>
+          <p>Every tool below reads from the same processed Common Crawl link index for the domain above.</p>
         </div>
-        <span className="link-intelligence-status">
-          <i /> Link index preparing
-        </span>
-      </div>
+        <span className="li-status"><i />Link index preparing</span>
+      </header>
 
-      <form className="link-intelligence-search" onSubmit={submitDomain}>
-        <div className="link-intelligence-search-icon">
-          <SearchIcon />
-        </div>
+      <form className="li-search-bar" onSubmit={submitDomain}>
+        <SearchIcon />
         <label htmlFor="link-intelligence-domain">Explore a domain</label>
-        <input
-          id="link-intelligence-domain"
-          value={domainInput}
-          onChange={(event) => setDomainInput(event.target.value)}
-          placeholder="yourdomain.com"
-          autoComplete="url"
-          inputMode="url"
-        />
+        <input id="link-intelligence-domain" value={domainInput} onChange={(event) => setDomainInput(event.target.value)} placeholder="yourdomain.com" autoComplete="url" inputMode="url" />
         <button type="submit">Open workspace</button>
       </form>
-      <p className="link-intelligence-connection-note">
-        The interface is ready. Metrics and tables will populate from the
-        processed Common Crawl link graph once its data connection is enabled.
-      </p>
+      <p className="li-helper-line">Scores and tables activate automatically once the link index finishes processing — nothing to configure.</p>
 
-      <div className="link-intelligence-layout">
-        <nav
-          className="link-intelligence-nav"
-          aria-label="Link intelligence tools"
-        >
+      <div className="li-content-layout">
+        <nav className="li-subnav" aria-label="Link intelligence tools">
           {WORKSPACES.map((workspace) => (
-            <button
-              key={workspace.id}
-              type="button"
-              className={activeWorkspace === workspace.id ? "is-active" : ""}
-              onClick={() => setActiveWorkspace(workspace.id)}
-            >
-              <WorkspaceIcon workspace={workspace.id} />
+            <button key={workspace.id} type="button" className={activeWorkspace === workspace.id ? "is-active" : ""} onClick={() => setActiveWorkspace(workspace.id)}>
+              <ToolIcon tool={workspace.id} />
               <span>{workspace.label}</span>
             </button>
           ))}
         </nav>
-        <div className="link-intelligence-content">
-          <header className="link-intelligence-workspace-heading">
-            <div>
-              <p>{activeMeta.eyebrow}</p>
-              <h4>{activeMeta.label}</h4>
-              <span>{activeMeta.description}</span>
-            </div>
-            <DomainContext domain={domain} />
-          </header>
-          {renderWorkspace()}
-        </div>
+        <main className="li-panels">
+          <PanelHeader workspace={activeWorkspace} />
+          {renderPanel()}
+        </main>
       </div>
     </section>
   )

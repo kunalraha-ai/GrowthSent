@@ -246,7 +246,7 @@ export interface SidebarProps {
 
   onSelectTab: (tab: string) => void
 
-  websites: { _id?: string hostname: string displayName?: string }[]
+  websites: { _id?: string; hostname: string; displayName?: string }[]
 
   activeSite: string
 
@@ -256,11 +256,11 @@ export interface SidebarProps {
 
   onLogout?: () => void
 
-  user?: { name?: string email: string }
+  user?: { name?: string; email: string }
 
   onBackToLanding?: () => void
 
-  onDeleteWebsite?: (site: { _id?: string hostname: string }) => void
+  onDeleteWebsite?: (site: { _id?: string; hostname: string }) => void
 
   isOpenMobile?: boolean
 
