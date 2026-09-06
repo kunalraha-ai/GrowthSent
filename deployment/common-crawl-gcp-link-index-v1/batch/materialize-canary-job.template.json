@@ -22,7 +22,7 @@
         "volumes": [
           {
             "deviceName": "scratch",
-            "mountPath": "/work",
+            "mountPath": "/mnt/disks/scratch",
             "mountOptions": "rw,async"
           }
         ],
@@ -38,7 +38,7 @@
             "GROWTHSENT_CATALOG_OBJECT": "catalogs/v1/cc-main-2026-30/source-links-catalog.json",
             "GROWTHSENT_INDEX_RUN_ID": "cc-main-2026-30-index-canary-v1",
             "GROWTHSENT_OUTPUT_PREFIX": "link-index/v1/canary",
-            "GROWTHSENT_WORK_DIR": "/work/growthsent",
+            "GROWTHSENT_WORK_DIR": "/mnt/disks/scratch/growthsent",
             "GROWTHSENT_SOURCE_START": "0",
             "GROWTHSENT_SOURCE_COUNT": "100"
           }

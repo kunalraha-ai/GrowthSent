@@ -81,6 +81,9 @@ the project currently has only 100 GB Local SSD quota while one Local SSD
 allocation is 375 GiB. The scratch disk is transient task workspace only; all
 durable output is written with immutable preconditions to GCS. Audit Batch disk
 resources after every terminal job and remove any unexpected orphaned disks.
+Batch mounts that disk at `/mnt/disks/scratch`; do not substitute a root-level
+path such as `/work`, because the Container-Optimized OS host filesystem is
+read-only outside its supported mount locations.
 
 After a successful probe, validate its immutable task manifest and print the
 measured high-water data without changing GCS, R2, or Batch:

@@ -92,6 +92,13 @@ if grep -q 'REPLACE_WITH_' "${CONFIG}"; then
   printf 'Cost-probe job template still has an unresolved placeholder.\n' >&2
   exit 1
 fi
+jq -e '
+  .taskGroups[0].taskSpec.volumes == [{"deviceName":"scratch","mountPath":"/mnt/disks/scratch","mountOptions":"rw,async"}] and
+  .taskGroups[0].taskSpec.environment.variables.GROWTHSENT_WORK_DIR == "/mnt/disks/scratch/growthsent"
+' "${CONFIG}" >/dev/null || {
+  printf 'Cost-probe scratch disk must mount at the reviewed Batch path.\n' >&2
+  exit 1
+}
 
 gcloud batch jobs submit "${JOB_ID}" \
   --project "${PROJECT_ID}" \

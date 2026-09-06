@@ -22,7 +22,7 @@
         "volumes": [
           {
             "deviceName": "scratch",
-            "mountPath": "/work",
+            "mountPath": "/mnt/disks/scratch",
             "mountOptions": "rw,async"
           }
         ],
@@ -37,7 +37,7 @@
             "GROWTHSENT_COMPACTION_RUN_ID": "REPLACE_WITH_NEW_COMPACTION_RUN_ID",
             "GROWTHSENT_INPUT_PREFIX": "REPLACE_WITH_COMPLETE_MATERIALIZATION_PREFIX",
             "GROWTHSENT_OUTPUT_PREFIX": "REPLACE_WITH_FRESH_SERVING_PREFIX",
-            "GROWTHSENT_WORK_DIR": "/work/growthsent"
+            "GROWTHSENT_WORK_DIR": "/mnt/disks/scratch/growthsent"
           }
         }
       }
