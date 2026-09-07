@@ -1,8 +1,36 @@
-# GrowthSent
+<h1 align="center">
+  <img src="public/logo-transparent.svg" width="42" alt="GrowthSent logo mark" valign="middle" />
+  GrowthSent
+</h1>
+
+<p align="center">
+  <strong>Simple SEO &amp; Website Analytics for Developers</strong>
+</p>
+
+<p align="center">
+  <a href="https://react.dev/"><img src="https://cdn.simpleicons.org/react/61DAFB" height="24" alt="React" /></a>
+  <a href="https://www.typescriptlang.org/"><img src="https://cdn.simpleicons.org/typescript/3178C6" height="24" alt="TypeScript" /></a>
+  <a href="https://vite.dev/"><img src="https://cdn.simpleicons.org/vite/646CFF" height="24" alt="Vite" /></a>
+  <a href="https://tailwindcss.com/"><img src="https://cdn.simpleicons.org/tailwindcss/06B6D4" height="24" alt="Tailwind CSS" /></a>
+  <a href="https://www.mongodb.com/"><img src="https://cdn.simpleicons.org/mongodb/47A248" height="24" alt="MongoDB" /></a>
+  <a href="https://vercel.com/"><img src="https://cdn.simpleicons.org/vercel/000000" height="24" alt="Vercel" /></a>
+  <a href="https://www.cloudflare.com/"><img src="https://cdn.simpleicons.org/cloudflare/F38020" height="24" alt="Cloudflare" /></a>
+  <a href="https://cloud.google.com/"><img src="https://cdn.simpleicons.org/googlecloud/4285F4" height="24" alt="Google Cloud" /></a>
+</p>
 
 GrowthSent is a bounded, evidence-first SEO and search-intelligence application. It helps teams run technical audits, examine verified Google Search Console performance, and explore a clearly labelled Common Crawl link-observation preview.
 
 It is deliberately designed to be credible before it is expansive: an audit only reports checks supported by collected evidence, and link data is never presented as a complete commercial backlink index.
+
+## Start here
+
+- New to the repository: [repository guide](docs/repository-guide.md)
+- Current corpus and index state: [project status](docs/project-status.md)
+- Application and data boundaries: [architecture](docs/architecture.md)
+- Active data-pipeline operator path: [GCP link-index v1](deployment/common-crawl-gcp-link-index-v1/README.md)
+- All deployment packages: [deployment guide](deployment/README.md)
+- Contributor workflow: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Full documentation map: [docs/README.md](docs/README.md)
 
 ## What GrowthSent does
 
@@ -30,40 +58,46 @@ flowchart TB
   API --> Mongo[(MongoDB Atlas<br/>users, audits, leases, state)]
   API --> GSC[Google Search Console<br/>server-side queries]
 
-  subgraph Pipeline[Bounded Common Crawl processing]
-    Operator[Operator in Ubuntu / WSL] --> Baseline[Build or reuse<br/>public-source semantic baseline]
-    Baseline --> AuditR2[(R2 audit prefix<br/>immutable reference manifests)]
-    Operator --> Launcher[Reviewed WSL launcher]
-    Launcher -->|parent API token<br/>stdin only| TempCreds[Cloudflare temporary<br/>credential API]
-    TempCreds -->|prefix-scoped child<br/>credential only| Worker[Temporary Worker]
-    Worker --> DO[One Durable Object<br/>per canary shard]
-    DO --> Container[Cloudflare Container<br/>10 WATs sequentially]
-    CommonCrawl[Common Crawl public HTTPS] --> Container
-    AuditR2 --> Container
-    Container --> CanaryR2[(R2 isolated canary prefix<br/>Pages, Links, metrics, markers)]
-    CanaryR2 --> Verifier[Read-only verifier]
-    Operator --> Verifier
+  subgraph DataPlane[Verified Common Crawl link-index pipeline]
+    Operator[Operator in Ubuntu / WSL] --> Launcher[Reviewed GCP launcher]
+    Launcher --> SecretManager[Google Secret Manager<br/>read-only R2 child credential]
+    R2Corpus[(Cloudflare R2<br/>verified 100K source corpus)] --> Catalog[Catalog job]
+    SecretManager --> Catalog
+    Catalog --> CatalogGCS[(Private GCS<br/>100K artifact catalog)]
+    CatalogGCS --> Materialize[Materialize target-domain buckets]
+    Materialize --> IndexGCS[(Private GCS<br/>materialized link index)]
+    IndexGCS --> Compact[Compaction]
+    Compact --> ServingGCS[(Future serving-index layout)]
   end
 
-  CanaryR2 -. bounded, verified link observations .-> API
+  ServingGCS -. future verified read adapter .-> API
 ```
 
-The application and ingestion planes are deliberately separate. The public app uses MongoDB and Google Search Console through server-side APIs. The Common Crawl pipeline runs only as approved, isolated canaries; it never shares its short-lived storage credential with the app.
+The application and data planes are deliberately separate. The public app uses
+MongoDB and Google Search Console through server-side APIs. The verified
+Common Crawl corpus is read only to the GCP index pipeline, and no UI claim is
+served from that index until a verified read adapter is implemented.
 
 ## Pipeline status
 
-The historic 10K materials remain a bounded reference implementation, but its original golden raw artifacts are unavailable. New Cloudflare runs therefore use explicitly labelled **public-source semantic baselines**, not a claim of golden-artifact equivalence.
+The `CC-MAIN-2026-30` source campaign is complete: all 100,000 locked WAT
+source identities have verified immutable completion evidence. The source corpus
+must be treated as read-only; do not relaunch a historical Cloudflare campaign
+for this dataset.
 
-The current Cloudflare validation evidence includes:
+The current work is GCP link-index materialization:
 
-- 50 `CC-MAIN-2026-30` WATs were processed as five independent ten-WAT semantic-v2 shards.
-- Every completed shard passed its exact 43-object R2 contract, full object integrity checks, semantic equivalence checks, and completion-marker-last validation.
-- The temporary Workers used for those verified runs were retired; immutable R2 output remains preserved.
-- A regional `standard-1` capacity checkpoint processed and verified 50 WATs across four constrained lanes (APAC, ENAM, WNAM, and WEUR), with immutable per-task outputs and read-only post-run verification.
-- The regional runner now owns its complete bundle inputs and has an explicit isolated recovery path for an interrupted lane; recovery never receives write access to the original run prefix.
-- The final self-recovery control plane processes the remaining 89,000 locked inputs only after validating immutable completion evidence for indexes `0..10,999`; it uses fresh R2 prefixes, bounded child credentials, paced admission, and completion-marker-last recovery.
+- The GCS catalog has been verified with exactly 100,000 distinct source
+  identities and link artifacts.
+- A bounded 1,000-source materialization cost probe is the next gate before
+  full production materialization and compaction.
+- Dashboard link-intelligence views are currently UI work only. They are not
+  connected to live materialized index data until a serving adapter and its
+  contract tests exist.
 
-The final 89K control plane is deliberately not a clean-slate 100K launcher. It is reusable only when the same verified 11K prefix exists. A new corpus campaign must first build an explicit, independently verified reuse proof (or a new all-input plan) before any remote launch. Scale only through measured, approved batches with fresh prefixes, bounded credentials, and read-only verification.
+See [project status](docs/project-status.md) for the durable phase-by-phase
+record and [the active GCP package](deployment/common-crawl-gcp-link-index-v1/README.md)
+for reviewed operator instructions.
 
 ## Repository layout
 
@@ -73,8 +107,11 @@ api/                                  Vercel function entrypoint
 lib/                                  API, MongoDB, crawler, audit, GSC, and backlink services
 tests/                                TypeScript and Python regression suites
 tools/                                Common Crawl manifests, ingestion, verification, and derive tooling
+docs/                                 Architecture, operations, status, and product documentation
+deployment/common-crawl-gcp-link-index-v1/
+                                      Active verified-R2 → GCS link-index pipeline
 deployment/common-crawl-production-v2/
-                                      Proven bounded production-v2 release/runbook artifacts
+                                      Historical production-v2 release/runbook artifacts
 deployment/common-crawl-gcp-r2-25k/  Local-only GCP → Cloudflare R2 25K canary preparation
 deployment/common-crawl-cloudflare-r2-10-wat-canary/
                                       Reusable one-container, ten-WAT Cloudflare canary
@@ -83,7 +120,7 @@ deployment/common-crawl-cloudflare-r2-50-wat-canary/
 deployment/common-crawl-cloudflare-r2-standard1-regional-ramp/
                                       Self-contained regional standard-1 capacity and recovery runner
 deployment/common-crawl-cloudflare-r2-standard1-hundred-thousand-self-recovery/
-                                      Final 89K self-recovery control plane after verified 11K reuse
+                                      Historical final 89K recovery control plane supporting the 100K corpus
 ```
 
 ## Local development
@@ -111,7 +148,7 @@ pnpm build
 python tests/common_crawl_wat_ingest.test.py
 ```
 
-The cloud pipeline has additional focused Python tests under `tests/`. They are designed to run locally and do not require production credentials by default.
+The cloud pipeline has additional focused Python tests under `tests/`. They are designed to run locally and do not require production credentials by default. See the [test guide](tests/README.md) for conventions and examples.
 
 ## Configuration and secrets
 
@@ -121,9 +158,10 @@ Cloud-accessed pipeline code is designed around least-privilege, runtime-injecte
 
 Turnstile protects login and signup when configured. `VITE_TURNSTILE_SITE_KEY` is a public browser-side site key; `TURNSTILE_SECRET_KEY` is server-only and belongs in the Vercel environment, never in source control.
 
-## Cloudflare canary runbook
+## Historical Cloudflare canary runbook
 
-The WSL-native canary workflow is intentionally bounded and explicit:
+The WSL-native canary workflow below is retained for approved new scopes and
+historical context. It is not the operator path for the completed 100K corpus:
 
 1. Prepare or reuse a local semantic-v2 baseline for an exact ten-WAT input set.
 2. Publish the baseline to an isolated R2 audit prefix with its completion marker written last.
@@ -148,4 +186,13 @@ Keep changes focused and preserve existing safety contracts. Run the relevant lo
 
 ## License
 
-No license has been declared in this repository.
+GrowthSent is licensed under the [Apache License 2.0](LICENSE). Contributions
+submitted for inclusion are covered by that license unless the contributor
+explicitly states otherwise. Third-party dependencies and external Common Crawl
+data remain subject to their own licenses and terms.
+
+## Open-source community
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security policy](SECURITY.md)

@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an improvement with a clear user problem and success criteria.
+title: "feature: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea. For significant architectural or data-pipeline changes, please discuss the proposal before opening an implementation pull request.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user, their goal, and the current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Explain the behaviour you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

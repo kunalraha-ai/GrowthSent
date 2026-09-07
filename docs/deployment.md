@@ -1,4 +1,10 @@
-# GrowthSent — Local Development & Vercel Deployment Guide
+# GrowthSent application deployment
+
+This document covers deployment of the product application (Vite frontend and
+Vercel API). It does not launch or operate the Common Crawl link-index data
+plane. For that work, use the reviewed
+[GCP link-index package](../deployment/common-crawl-gcp-link-index-v1/README.md)
+and the [deployment package guide](../deployment/README.md).
 
 ## Local Development
 1. Clone repository and install dependencies:
