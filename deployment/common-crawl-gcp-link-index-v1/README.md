@@ -92,6 +92,30 @@ measured high-water data without changing GCS, R2, or Batch:
 bash deployment/common-crawl-gcp-link-index-v1/scripts/verify-materialize-cost-probe-wsl.sh JOB_ID OUTPUT_PREFIX
 ```
 
+### Reviewed WSL probe launch
+
+Use the single wrapper below for the next cost probe. It builds the exact
+current source through Cloud Build, requires a digest-pinned Artifact Registry
+image, checks the catalog and enabled read-only credential, confirms that no
+GrowthSent Batch job is already active, verifies CPU/instance/`pd-balanced`
+quota, and validates the complete one-task Batch configuration before it can
+submit anything. It creates a fresh immutable output prefix on every run.
+
+```bash
+bash deployment/common-crawl-gcp-link-index-v1/scripts/launch-materialize-cost-probe-wsl.sh --approved-materialize-cost-probe
+```
+
+To exercise every remote preflight after publishing a build without allocating
+a Batch VM, pass `--dry-run` to `submit-materialize-cost-probe-wsl.sh` with the
+reviewed `GROWTHSENT_MATERIALIZE_RELEASE_SHA256`. The image build itself also
+proves that the pinned DuckDB release accepts the bounded partition writer.
+
+The materializer keeps all 1,024 target-bucket files open while each table is
+written and requires no more than one local Parquet output per target bucket
+before it uploads. A regression to the old repeated-flush behavior now fails
+on transient scratch storage rather than serially creating an unbounded GCS
+object set.
+
 After every materialization task has a valid immutable task manifest,
 `batch/compact-production-job.template.json` compacts each target bucket into
 the private serving tables: domain summaries, referring domains, anchor text,

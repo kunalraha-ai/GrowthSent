@@ -223,6 +223,14 @@ def _domain_bucket(domain: str) -> int:
     return int(hashlib.sha256(domain.encode("utf-8")).hexdigest()[:3], 16) >> 2
 
 
+def _intermediate_part_key(*, output_prefix: str, table_name: str, target_bucket: int, shard_id: int) -> str:
+    return (
+        f"{output_prefix}/intermediate/table={table_name}/"
+        f"target_bucket={target_bucket:04d}/source_shard={shard_id:05d}/"
+        "part.parquet"
+    )
+
+
 def _registrable_domain_resolver() -> Any:
     try:
         import tldextract
@@ -239,7 +247,9 @@ def _registrable_domain_resolver() -> Any:
         except ValueError:
             pass
         result = extractor(normalized)
-        value = result.top_domain_under_public_suffix
+        value = getattr(result, "top_domain_under_public_suffix", None)
+        if value is None:
+            value = result.registered_domain
         return value.lower() if value else normalized
 
     return resolve
@@ -383,10 +393,42 @@ def _copy_partitioned_tables(*, connection: Any, links_relation: str, host_map: 
             "COPY (SELECT *, "
             "(CAST('0x' || substr(sha256(target_domain), 1, 3) AS BIGINT) >> 2)::INTEGER AS target_bucket "
             f"FROM {aggregate_name}) "
-            f"TO {target_sql} (FORMAT PARQUET, COMPRESSION ZSTD, PARTITION_BY (target_bucket), OVERWRITE_OR_IGNORE TRUE)"
+            f"TO {target_sql} (FORMAT PARQUET, COMPRESSION ZSTD, PARTITION_BY (target_bucket), "
+            "PER_THREAD_OUTPUT FALSE, OVERWRITE_OR_IGNORE TRUE)"
         )
         connection.execute(f"DROP TABLE {aggregate_name}")
     return counts
+
+
+def _partitioned_output_files(table_root: Path) -> list[tuple[int, Path]]:
+    """Return one bounded Parquet part per target bucket, before any upload.
+
+    The production layout deliberately has 1,024 target-domain buckets.  A
+    partition writer that repeatedly closes and reopens a bucket can generate
+    many more local files; uploading those serially is both slow and costly.
+    Treat that as a task failure while all output is still only on transient
+    scratch storage, rather than publishing an unexpectedly large object set.
+    """
+    files_by_bucket: dict[int, Path] = {}
+    for parquet_file in sorted(table_root.rglob("*.parquet")):
+        bucket_directory = parquet_file.parent.name
+        if not bucket_directory.startswith("target_bucket="):
+            raise MaterializeError("DuckDB output lacks target bucket partition")
+        try:
+            target_bucket = int(bucket_directory.split("=", 1)[1])
+        except ValueError as error:
+            raise MaterializeError("DuckDB output has an invalid target bucket partition") from error
+        if target_bucket < 0 or target_bucket >= BUCKET_COUNT:
+            raise MaterializeError("target bucket is out of range")
+        if target_bucket in files_by_bucket:
+            raise MaterializeError(
+                f"partitioned write emitted more than one file for target bucket {target_bucket}; "
+                "refusing to upload an unbounded intermediate object set"
+            )
+        files_by_bucket[target_bucket] = parquet_file
+    if len(files_by_bucket) > BUCKET_COUNT:
+        raise MaterializeError("partitioned write exceeded the reviewed target-bucket bound")
+    return sorted(files_by_bucket.items())
 
 
 def materialize(
@@ -440,6 +482,10 @@ def materialize(
             connection.execute("SET memory_limit='26GB'")
             connection.execute("SET threads=4")
             connection.execute("SET max_temp_directory_size='300GB'")
+            # There are exactly 1,024 target buckets. Keeping all of them open
+            # prevents DuckDB's default 100-file limit from repeatedly flushing
+            # partitions into a very large number of small Parquet files.
+            connection.execute(f"SET partitioned_write_max_open_files={BUCKET_COUNT}")
             links_relation = f"read_parquet({files_sql}, union_by_name=true)"
             host_map = temporary_root / "host-domains.parquet"
             host_count = _write_host_domain_map(connection=connection, links_relation=links_relation, path=host_map)
@@ -451,14 +497,13 @@ def materialize(
             table_root = local_output / table_name
             if not table_root.exists():
                 continue
-            for parquet_file in sorted(table_root.rglob("*.parquet")):
-                bucket_directory = parquet_file.parent.name
-                if not bucket_directory.startswith("target_bucket="):
-                    raise MaterializeError("DuckDB output lacks target bucket partition")
-                target_bucket = int(bucket_directory.split("=", 1)[1])
-                if target_bucket < 0 or target_bucket >= BUCKET_COUNT:
-                    raise MaterializeError("target bucket is out of range")
-                destination = f"{normalized_output}/intermediate/table={table_name}/target_bucket={target_bucket:04d}/source_shard={shard_id:05d}/part.parquet"
+            for target_bucket, parquet_file in _partitioned_output_files(table_root):
+                destination = _intermediate_part_key(
+                    output_prefix=normalized_output,
+                    table_name=table_name,
+                    target_bucket=target_bucket,
+                    shard_id=shard_id,
+                )
                 artifacts[table_name].append(_immutable_upload(bucket=bucket, object_name=destination, path=parquet_file))
         scratch_sampler.stop()
         artifact_bytes_by_table = {
