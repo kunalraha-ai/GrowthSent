@@ -1,0 +1,19 @@
+name = "growthsent-link-intelligence"
+main = "src/index.ts"
+compatibility_date = "2024-09-17"
+account_id = "4a30e8ac877d9f65ee9a0ecc5df16146"
+usage_model = "unbound"
+
+# R2 serving tables for the CC-MAIN-2026-30 link intelligence product.
+[[r2_buckets]]
+binding = "INDEX_BUCKET"
+bucket_name = "growthsent-data-lake"
+
+[vars]
+SOURCE_CRAWL = "CC-MAIN-2026-30"
+SERVING_PREFIX = "production/link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416"
+BUCKET_COUNT = "1024"
+MAX_LIMIT = "500"
+
+# Optional: set API_TOKEN as a secret to require Authorization: Bearer <token>
+# wrangler secret put API_TOKEN

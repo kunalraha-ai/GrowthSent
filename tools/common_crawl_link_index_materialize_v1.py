@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import os
 import shutil
 import threading
 import time
@@ -480,7 +481,8 @@ def materialize(
         connection = duckdb.connect(str(temporary_root / "index.duckdb"))
         try:
             connection.execute("SET memory_limit='26GB'")
-            connection.execute("SET threads=4")
+            duckdb_threads = max(1, int(os.environ.get("GROWTHSENT_DUCKDB_THREADS", "4")))
+            connection.execute(f"SET threads={duckdb_threads}")
             connection.execute("SET max_temp_directory_size='300GB'")
             # There are exactly 1,024 target buckets. Keeping all of them open
             # prevents DuckDB's default 100-file limit from repeatedly flushing

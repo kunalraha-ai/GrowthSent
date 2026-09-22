@@ -13,8 +13,8 @@ time-sensitive terminal history and handoff notes.
 | Common Crawl source processing | Verified complete | 100,000 locked WAT source identities were verified across the original runs and final recovery. Do not relaunch WAT processing for this corpus. |
 | R2 source corpus | Immutable input | Seven verified R2 campaign roots provide the source link artifacts. They are read-only to the GCP index pipeline. |
 | GCP catalog | Verified complete | The catalog contains exactly 100,000 distinct source identities and link artifacts. |
-| Materialization cost probe | In progress / operator-gated | A one-task, 1,000-source probe validates measured time, scratch-disk high-water, and output layout before full materialization. Verify the latest submitted probe rather than relying on a historical Batch job ID. |
-| Production materialization | Not started | Requires a successful, reviewed cost-probe result and an explicit approval. |
+| Materialization cost probe | Verified complete | The 1,000-source probe completed with a valid immutable resource observation: 6,651.816 seconds elapsed and 158.8 GB peak incremental scratch use on a 375-GB disk. |
+| Production materialization | Ready, not started | A reviewed 100-task / 25-way launcher requires a fresh explicit approval after checking the complete catalog, scoped credential, idle Batch control plane, and current CPU/instance/disk quota. |
 | Compaction | Not started | Runs only after every materialization task has a valid immutable task manifest. |
 | Product serving adapter | Not started | The dashboard link-intelligence views remain mock-backed until a read API over the verified compacted index is implemented. |
 

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GrowthSent — Link Intelligence</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #F6F7F1;
+    --card: #FFFFFF;
+    --border: #E4E7DC;
+    --text: #14170F;
+    --text-soft: #676D5D;
+    --text-faint: #9BA08D;
+    --lime: #C6FF3D;
+    --lime-deep: #9FE600;
+    --green-deep: #1E6B32;
+    --green-deep-hover: #165225;
+    --green-soft-bg: #E9F7E2;
+    --green-soft-text: #2A6B2F;
+    --sidebar-bg: #0D0F0A;
+    --sidebar-icon: #7A8071;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 1px 2px rgba(20,23,15,.04), 0 8px 20px rgba(20,23,15,.05);
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  a{ text-decoration:none; color:inherit; }
+  button{ font-family:inherit; cursor:pointer; }
+
+  .app{ display:flex; min-height:100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width: 68px;
+    flex-shrink:0;
+    background: var(--sidebar-bg);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 18px 0 20px;
+  }
+  .logo-mark{
+    width:34px; height:34px;
+    background: var(--lime);
+    border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom: 28px;
+  }
+  .logo-mark svg{ width:16px; height:16px; }
+  .side-nav{
+    display:flex; flex-direction:column; gap:6px;
+    flex:1;
+  }
+  .side-icon{
+    width:38px; height:38px;
+    border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    color: var(--sidebar-icon);
+    background: transparent;
+    border:none;
+  }
+  .side-icon svg{ width:18px; height:18px; }
+  .side-icon.active{
+    background: var(--lime);
+    color: #12160B;
+  }
+  .side-bottom{
+    display:flex; flex-direction:column; gap:6px; align-items:center;
+  }
+
+  /* ---------- Main ---------- */
+  .main{
+    flex:1;
+    padding: 34px 44px 60px;
+    max-width: 1400px;
+  }
+
+  .top-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap: 24px;
+    margin-bottom: 22px;
+  }
+  h1.page-title{
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin: 0 0 6px;
+  }
+  .page-sub{
+    color: var(--text-soft);
+    font-size: 14.5px;
+    margin:0;
+    max-width: 560px;
+  }
+  .status-pill{
+    display:inline-flex; align-items:center; gap:8px;
+    background: var(--green-soft-bg);
+    color: var(--green-soft-text);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 999px;
+    white-space:nowrap;
+  }
+  .status-dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--green-deep);
+  }
+
+  /* Domain search bar */
+  .search-bar{
+    display:flex; align-items:center; gap:12px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .search-bar svg{ width:17px; height:17px; color: var(--text-faint); flex-shrink:0; }
+  .search-label{ font-weight:600; font-size:14.5px; color:var(--text); white-space:nowrap; }
+  .search-domain{
+    font-family: var(--font-mono);
+    font-size: 14px;
+    color: var(--text-soft);
+    flex:1;
+  }
+  .btn-primary{
+    background: var(--green-deep);
+    color: #fff;
+    border:none;
+    font-weight:600;
+    font-size: 13.5px;
+    padding: 10px 18px;
+    border-radius: 999px;
+    transition: background .15s ease;
+    white-space:nowrap;
+  }
+  .btn-primary:hover{ background: var(--green-deep-hover); }
+  .btn-ghost{
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-weight:600;
+    font-size: 13.5px;
+    padding: 9px 16px;
+    border-radius: 999px;
+  }
+  .btn-ghost:hover{ border-color: var(--green-deep); color: var(--green-deep); }
+  .helper-line{
+    color: var(--text-faint);
+    font-size: 13px;
+    margin: 0 0 26px;
+  }
+
+  /* Content layout: subnav + panel */
+  .content-layout{
+    display:flex;
+    gap: 24px;
+    align-items:stretch;
+  }
+  .subnav{
+    width: 216px;
+    flex-shrink:0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px 10px;
+    display:flex; flex-direction:column; gap:4px;
+    align-self:stretch;
+    min-height: 560px;
+  }
+  .subnav button{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border:none; background:transparent;
+    color: var(--text-soft);
+    font-weight: 600;
+    font-size: 14px;
+    text-align:left;
+    width:100%;
+  }
+  .subnav button svg{ width:16px; height:16px; flex-shrink:0; }
+  .subnav button:hover{ background: #F2F3ED; color: var(--text); }
+  .subnav button.active{
+    background: var(--green-soft-bg);
+    color: var(--green-soft-text);
+  }
+
+  .panels{ flex:1; min-width:0; }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .panel-head{ margin-bottom: 18px; }
+  .panel-head h2{
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    letter-spacing: -0.3px;
+  }
+  .panel-head p{
+    margin:0; color: var(--text-soft); font-size: 14px; max-width: 520px;
+  }
+
+  /* Metric cards */
+  .metric-grid{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .metric-card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px;
+    position:relative;
+    overflow:hidden;
+  }
+  .metric-label{ font-size:13px; color:var(--text-soft); font-weight:600; margin-bottom:10px; }
+  .metric-value{ font-size:28px; font-weight:800; color:var(--text-faint); letter-spacing:-0.5px; }
+  .metric-help{ font-size:12px; color:var(--text-faint); margin-top:6px; }
+  .flatline{ position:absolute; right:14px; bottom:14px; opacity:.7; }
+
+  /* Two-up cards */
+  .card-row{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .info-card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 26px;
+  }
+  .info-card h3{ font-size:16px; font-weight:700; margin:0 0 4px; }
+  .info-card .info-sub{ font-size:13px; color:var(--text-soft); margin:0 0 18px; }
+  .empty-state{
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    padding: 26px 10px 6px;
+  }
+  .empty-icon{
+    width:44px; height:44px; border-radius:12px;
+    background: var(--green-soft-bg);
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom:14px;
+  }
+  .empty-icon svg{ width:20px; height:20px; color: var(--green-deep); }
+  .empty-state h4{ font-size:15px; margin:0 0 6px; font-weight:700; }
+  .empty-state p{ font-size:13.5px; color:var(--text-soft); margin:0 0 16px; max-width:320px; }
+
+  /* Dark gauge card (Domain Rating hero) */
+  .gauge-card{
+    background: var(--lime);
+    border-radius: var(--radius);
+    padding: 34px 30px;
+    color: #12160B;
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+  }
+  .gauge-label{ color: #12160B; font-size:13px; font-weight:700; margin-bottom:18px; opacity:.7; }
+  .gauge-value{ font-size:38px; font-weight:800; }
+  .gauge-of{ color: rgba(18,22,11,.55); font-size:13px; margin-top:2px; }
+  .gauge-domain{ font-family: var(--font-mono); font-size:13px; margin-top:18px; color: rgba(18,22,11,.8); }
+  .gauge-help{ font-size:12.5px; color: rgba(18,22,11,.55); margin-top:6px; }
+
+  .steps{ display:flex; flex-direction:column; }
+  .step{
+    display:flex; gap:14px; padding:16px 0;
+    border-bottom:1px solid var(--border);
+  }
+  .step:last-child{ border-bottom:none; padding-bottom:0; }
+  .step-num{
+    width:26px; height:26px; border-radius:8px;
+    background: var(--green-soft-bg); color: var(--green-deep);
+    font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .step-title{ font-weight:700; font-size:14px; margin:0 0 3px; }
+  .step-desc{ font-size:13px; color:var(--text-soft); margin:0; }
+
+  /* Table */
+  .table-card{
+    background: var(--card); border:1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); overflow:hidden;
+  }
+  .table-head{
+    display:grid; grid-template-columns: 2.4fr 1fr 1.3fr 1.3fr;
+    padding: 14px 22px;
+    font-size:12.5px; font-weight:700; color:var(--text-faint);
+    border-bottom:1px solid var(--border);
+  }
+
+  /* Anchor bars */
+  .anchor-row{ display:flex; align-items:center; gap:14px; padding: 11px 0; }
+  .anchor-name{ width:80px; font-size:13.5px; font-weight:600; color:var(--text-soft); flex-shrink:0; }
+  .anchor-track{ flex:1; height:8px; border-radius:6px; background:#EEF0E7; overflow:hidden; }
+  .anchor-fill{ height:100%; width:0%; background: var(--lime-deep); border-radius:6px; }
+  .anchor-pct{ width:24px; text-align:right; font-size:13px; color:var(--text-faint); }
+
+  /* Inputs */
+  .input-row{ display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  .domain-input{
+    flex:1; background:#F3F4EE; border:1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 14px; font-family: var(--font-mono); font-size:13.5px; color: var(--text);
+  }
+  .vs-label{ font-size:13px; font-weight:700; color:var(--text-faint); }
+  .tag{
+    display:inline-flex; align-items:center; gap:6px;
+    background:#F3F4EE; border-radius:999px; padding:5px 12px;
+    font-size:12px; color:var(--text-soft); font-weight:600;
+  }
+  .tag-row{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:6px; }
+
+  @media (max-width: 980px){
+    .metric-grid, .card-row{ grid-template-columns: 1fr 1fr; }
+    .content-layout{ flex-direction:column; }
+    .subnav{ width:100%; flex-direction:row; overflow-x:auto; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo-mark">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M2 12L6 5L9 9L14 2" stroke="#12160B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <nav class="side-nav">
+      <button class="side-icon" title="Dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></button>
+      <button class="side-icon" title="Activity"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3 8 4-16 3 8h4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button class="side-icon" title="Reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M9 12h6M9 16h6" stroke-linecap="round"/></svg></button>
+      <button class="side-icon active" title="Link intelligence"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18" stroke-linecap="round"/></svg></button>
+      <button class="side-icon" title="Alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l10 18H2L12 3z" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01"/></svg></button>
+    </nav>
+    <div class="side-bottom">
+      <button class="side-icon" title="Assist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2 2-5z" stroke-linejoin="round"/></svg></button>
+      <button class="side-icon" title="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.9l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.9-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1-1.6 1.7 1.7 0 00-1.9.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.9 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.9l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.9.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.6 1.7 1.7 0 001.9-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.9V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <div class="top-row">
+      <div>
+        <h1 class="page-title">Understand your place in the web's link graph</h1>
+        <p class="page-sub">Every tool below reads from the same processed Common Crawl link index for the domain above.</p>
+      </div>
+      <span class="status-pill"><span class="status-dot"></span>Link index preparing</span>
+    </div>
+
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35" stroke-linecap="round"/></svg>
+      <span class="search-label">Explore a domain</span>
+      <span class="search-domain" id="domain-display">gemini.google.com</span>
+      <button class="btn-primary">Open workspace</button>
+    </div>
+    <p class="helper-line">Scores and tables activate automatically once the link index finishes processing — nothing to configure.</p>
+
+    <div class="content-layout">
+
+      <!-- SUBNAV -->
+      <nav class="subnav">
+        <button class="active" data-target="panel-explorer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1.5 1.5" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1.5-1.5" stroke-linecap="round"/></svg>
+          Backlink Explorer
+        </button>
+        <button data-target="panel-rating">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V9M12 19V5M20 19v-7" stroke-linecap="round"/></svg>
+          Domain Rating
+        </button>
+        <button data-target="panel-pages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M9 12h6M9 16h6"/></svg>
+          Top Linked Pages
+        </button>
+        <button data-target="panel-anchor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="2"/><path d="M12 7v9M6 14a6 6 0 0012 0"/></svg>
+          Anchor Text
+        </button>
+        <button data-target="panel-broken">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6l6 12M15 6l-6 12" stroke-linecap="round"/></svg>
+          Broken Backlinks
+        </button>
+        <button data-target="panel-gap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="12" r="4"/><circle cx="17" cy="12" r="4"/></svg>
+          Competitor Gap
+        </button>
+      </nav>
+
+      <!-- PANELS -->
+      <div class="panels">
+
+        <!-- 1. BACKLINK EXPLORER -->
+        <section class="panel active" id="panel-explorer">
+          <div class="panel-head">
+            <h2>Backlink Explorer</h2>
+            <p>Inspect link equity, referring domains, and anchor coverage for one domain.</p>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric-card">
+              <div class="metric-label">Domain rating</div>
+              <div class="metric-value">—</div>
+              <div class="metric-help">Graph authority score</div>
+              <svg class="flatline" width="54" height="20" viewBox="0 0 54 20"><path d="M0 14h54" stroke="#DADDD0" stroke-width="2" stroke-dasharray="3 4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Referring domains</div>
+              <div class="metric-value">—</div>
+              <div class="metric-help">Unique external domains</div>
+              <svg class="flatline" width="54" height="20" viewBox="0 0 54 20"><path d="M0 14h54" stroke="#DADDD0" stroke-width="2" stroke-dasharray="3 4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Total backlinks</div>
+              <div class="metric-value">—</div>
+              <div class="metric-help">External inbound links</div>
+              <svg class="flatline" width="54" height="20" viewBox="0 0 54 20"><path d="M0 14h54" stroke="#DADDD0" stroke-width="2" stroke-dasharray="3 4" stroke-linecap="round"/></svg>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Anchor phrases</div>
+              <div class="metric-value">—</div>
+              <div class="metric-help">Distinct anchor text</div>
+              <svg class="flatline" width="54" height="20" viewBox="0 0 54 20"><path d="M0 14h54" stroke="#DADDD0" stroke-width="2" stroke-dasharray="3 4" stroke-linecap="round"/></svg>
+            </div>
+          </div>
+
+          <div class="card-row">
+            <div class="info-card">
+              <h3>Earned link sources</h3>
+              <p class="info-sub">The domains sending this site the most link equity.</p>
+              <div class="empty-state">
+                <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1.5 1.5" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1.5-1.5" stroke-linecap="round"/></svg></div>
+                <h4>No referring domains yet</h4>
+                <p>This list fills in once the link index connects for gemini.google.com.</p>
+                <button class="btn-ghost">Connect link index</button>
+              </div>
+            </div>
+            <div class="info-card">
+              <h3>How the web describes you</h3>
+              <p class="info-sub">The anchor text other sites use when linking here.</p>
+              <div class="empty-state">
+                <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="2"/><path d="M12 7v9M6 14a6 6 0 0012 0"/></svg></div>
+                <h4>No anchor phrases yet</h4>
+                <p>Phrase size will reflect backlink frequency once connected.</p>
+                <button class="btn-ghost">Connect link index</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. DOMAIN RATING -->
+        <section class="panel" id="panel-rating">
+          <div class="panel-head">
+            <h2>Domain Rating</h2>
+            <p>A link-graph authority score calculated from the processed backlink corpus.</p>
+          </div>
+          <div class="card-row">
+            <div class="gauge-card">
+              <div class="gauge-label">Domain rating</div>
+              <svg width="140" height="140" viewBox="0 0 140 140">
+                <circle cx="70" cy="70" r="58" fill="none" stroke="rgba(18,22,11,.15)" stroke-width="10"/>
+                <circle cx="70" cy="70" r="58" fill="none" stroke="#12160B" stroke-width="10" stroke-dasharray="20 4" stroke-linecap="round" transform="rotate(-90 70 70)"/>
+                <text x="70" y="66" text-anchor="middle" fill="#12160B" font-size="26" font-weight="800" font-family="Inter">—</text>
+                <text x="70" y="86" text-anchor="middle" fill="rgba(18,22,11,.55)" font-size="11" font-family="Inter">/ 100</text>
+              </svg>
+              <div class="gauge-domain">gemini.google.com</div>
+              <div class="gauge-help">Calculated from the processed link graph</div>
+            </div>
+            <div class="info-card">
+              <h3>How a score is built</h3>
+              <p class="info-sub">Authority without a black box.</p>
+              <div class="steps">
+                <div class="step">
+                  <div class="step-num">1</div>
+                  <div>
+                    <p class="step-title">Discover referring domains</p>
+                    <p class="step-desc">Every unique domain linking here establishes the breadth of the link profile.</p>
+                  </div>
+                </div>
+                <div class="step">
+                  <div class="step-num">2</div>
+                  <div>
+                    <p class="step-title">Weight by link quality</p>
+                    <p class="step-desc">Each referring domain's own authority shapes how much equity it passes on.</p>
+                  </div>
+                </div>
+                <div class="step">
+                  <div class="step-num">3</div>
+                  <div>
+                    <p class="step-title">Recalculate as the graph grows</p>
+                    <p class="step-desc">Scores update automatically — nothing shows until the index is connected.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. TOP LINKED PAGES -->
+        <section class="panel" id="panel-pages">
+          <div class="panel-head">
+            <h2>Top Linked Pages</h2>
+            <p>Discover the URLs attracting the most external link equity, ranked by inbound backlinks and unique referring domains.</p>
+          </div>
+          <div class="table-card">
+            <div class="table-head">
+              <span>Page</span><span>Backlinks</span><span>Referring domains</span><span>Share of equity</span>
+            </div>
+            <div class="empty-state" style="padding:36px 10px 34px;">
+              <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14a1 1 0 01-1 1H6a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M9 12h6M9 16h6"/></svg></div>
+              <h4>Page-level links aren't connected yet</h4>
+              <p>This table ranks URLs as soon as the processed WAT link graph is available.</p>
+              <button class="btn-ghost">Connect link index</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. ANCHOR TEXT -->
+        <section class="panel" id="panel-anchor">
+          <div class="panel-head">
+            <h2>Anchor Text</h2>
+            <p>Understand the language other sites use when linking to this domain.</p>
+          </div>
+          <div class="card-row">
+            <div class="info-card">
+              <h3>Language around gemini.google.com</h3>
+              <p class="info-sub">Phrase size reflects backlink frequency; color marks the anchor category.</p>
+              <div class="empty-state">
+                <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="2"/><path d="M12 7v9M6 14a6 6 0 0012 0"/></svg></div>
+                <h4>No anchor terms to display</h4>
+                <p>Terms appear here once the link index is connected.</p>
+                <button class="btn-ghost">Connect link index</button>
+              </div>
+            </div>
+            <div class="info-card">
+              <h3>Profile balance</h3>
+              <p class="info-sub">How anchor text splits across categories.</p>
+              <div class="anchor-row"><span class="anchor-name">Branded</span><div class="anchor-track"><div class="anchor-fill"></div></div><span class="anchor-pct">—</span></div>
+              <div class="anchor-row"><span class="anchor-name">Topical</span><div class="anchor-track"><div class="anchor-fill"></div></div><span class="anchor-pct">—</span></div>
+              <div class="anchor-row"><span class="anchor-name">URL</span><div class="anchor-track"><div class="anchor-fill"></div></div><span class="anchor-pct">—</span></div>
+              <div class="anchor-row"><span class="anchor-name">Generic</span><div class="anchor-track"><div class="anchor-fill"></div></div><span class="anchor-pct">—</span></div>
+              <div class="anchor-row"><span class="anchor-name">Other</span><div class="anchor-track"><div class="anchor-fill"></div></div><span class="anchor-pct">—</span></div>
+              <p style="font-size:12px;color:var(--text-faint);margin:14px 0 0;">Percentages fill in once link graph data is connected.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5. BROKEN BACKLINKS -->
+        <section class="panel" id="panel-broken">
+          <div class="panel-head">
+            <h2>Broken Backlinks</h2>
+            <p>Find inbound links whose target URL returns an error, so that equity can be recovered.</p>
+          </div>
+          <div class="info-card">
+            <h3>Recover lost link equity</h3>
+            <p class="info-sub">Compares backlink targets against crawl and HTTP-status evidence.</p>
+            <div class="input-row">
+              <input class="domain-input" value="gemini.google.com" readonly>
+              <button class="btn-ghost" disabled style="opacity:.55;cursor:default;">Index required</button>
+            </div>
+            <div class="empty-state" style="padding-top:6px;">
+              <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6l6 12M15 6l-6 12" stroke-linecap="round"/></svg></div>
+              <h4>Broken-link checks run once data is connected</h4>
+              <p>Results will include the linking page, destination URL, observed status, and recovery opportunity.</p>
+              <div class="tag-row">
+                <span class="tag">Linking page</span>
+                <span class="tag">Destination URL</span>
+                <span class="tag">Status</span>
+                <span class="tag">Opportunity</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6. COMPETITOR GAP -->
+        <section class="panel" id="panel-gap">
+          <div class="panel-head">
+            <h2>Competitor Gap</h2>
+            <p>Compare two domains to find referring domains you haven't earned.</p>
+          </div>
+          <div class="info-card">
+            <h3>Find domains linking to competitors, not you</h3>
+            <p class="info-sub">Compares referring-domain sets without treating every backlink as equal.</p>
+            <div class="input-row">
+              <input class="domain-input" value="gemini.google.com" readonly>
+              <span class="vs-label">vs</span>
+              <input class="domain-input" placeholder="competitor.com">
+              <button class="btn-ghost" disabled style="opacity:.55;cursor:default;">Index required</button>
+            </div>
+            <div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+              <div class="metric-card">
+                <div class="metric-label">Unique to you</div>
+                <div class="metric-value">—</div>
+                <div class="metric-help">Referring domains</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Shared</div>
+                <div class="metric-value">—</div>
+                <div class="metric-help">Referring domains</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Gap opportunities</div>
+                <div class="metric-value">—</div>
+                <div class="metric-help">Referring domains</div>
+              </div>
+            </div>
+            <div class="empty-state">
+              <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="12" r="4"/><circle cx="17" cy="12" r="4"/></svg></div>
+              <h4>Comparison data isn't available yet</h4>
+              <p>Enter a competitor domain — the comparison activates once the link index connects.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.subnav button');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById(btn.dataset.target).classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

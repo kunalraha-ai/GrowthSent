@@ -13,6 +13,7 @@ COPY tools/common_crawl_gcp_secret_runtime.py /opt/growthsent/tools/common_crawl
 COPY tools/common_crawl_link_index_catalog_v1.py /opt/growthsent/tools/common_crawl_link_index_catalog_v1.py
 COPY tools/common_crawl_link_index_materialize_v1.py /opt/growthsent/tools/common_crawl_link_index_materialize_v1.py
 COPY tools/common_crawl_link_index_compact_v1.py /opt/growthsent/tools/common_crawl_link_index_compact_v1.py
+COPY tools/build_domain_json_v1.py /opt/growthsent/tools/build_domain_json_v1.py
 COPY deployment/common-crawl-gcp-link-index-v1/runners/ /opt/growthsent/runners/
 COPY deployment/common-crawl-gcp-link-index-v1/config/ /opt/growthsent/config/
 COPY deployment/common-crawl-production-v2/manifests/cc-main-2026-30-first-100000.json /opt/growthsent/manifests/cc-main-2026-30-first-100000.json

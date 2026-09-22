@@ -6,7 +6,7 @@
 > product. It intentionally contains **no API tokens, R2 credentials, secret
 > values, or customer data**.
 
-Last updated: 2026-09-06 (Asia/Kolkata)
+Last updated: 2026-09-20 (Asia/Kolkata)
 
 ## Read this first
 
@@ -83,6 +83,35 @@ production/common-crawl/cloudflare-r2-final-recoveries/v1/cc-main-2026-30-202609
 The task outputs contain per-WAT Parquet/JSON artifacts. They are not suitable as
 a browser query service and must remain immutable.
 
+### Product storage
+
+- Cloudflare R2 bucket: `growthsent-data-lake`
+- Canonical serving tables for the Link Intelligence product:
+
+```text
+production/link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416/
+```
+
+This prefix contains 7,168 objects (1,024 compaction manifests + 6,144 Parquet
+files across six tables) and is the source of truth for the serving API.
+
+A curated per-domain JSON cache has also been added for fast Worker lookups
+without scanning Parquet:
+
+```text
+production/link-index/v1/domain-json/v1/<base64url(normalized_domain)>.json
+```
+
+It currently covers only a sample list of demo domains (`cloudflare.com`,
+`stripe.com`, `mongodb.org`, `moz.com`, `spotify.com`) and is generated directly
+from R2 using local tooling rather than a new GCP Batch campaign. The Worker
+checks the JSON file first and falls back to Parquet buckets when it is absent.
+
+The legacy GCS serving copy under `link-index/v1/serving/`, the intermediate
+materialization files under `link-index/v1/materializations/`, and all
+`link-index/v1/cost-probes/` prefixes have been removed. GCS now only holds the
+catalog under `catalogs/v1/cc-main-2026-30/source-links-catalog.json`.
+
 ## Why the GCP link-index pipeline exists
 
 The Cloudflare Containers did the WAT parsing and wrote immutable R2 results.
@@ -149,73 +178,161 @@ bash deployment/common-crawl-gcp-link-index-v1/scripts/mint-r2-read-secret-wsl.s
 The script requires `jq`. It prompts for a Cloudflare parent token hidden and
 publishes a new Secret Manager version without logging its value.
 
-## Current state: active catalog job
+## Completed: catalog job
 
-The latest catalog image was built successfully after all known fixes:
+The catalog job finished 100% successfully:
 
 ```json
 {
-  "status": "published",
-  "release_sha256": "47899e4b8b2c371cb88cefffd5b6c3058a88efdb27f52bc62e85ca8faa6a444c",
-  "image": "us-central1-docker.pkg.dev/growthsent-link-index/growthsent-containers/link-index-v1@sha256:fa92224d9a3c6a3f90b1eb14e783aa00fd35297df37e670136940f6393cdd7f4"
+  "status": "verified",
+  "crawl": "CC-MAIN-2026-30",
+  "source_identity_count": 100000,
+  "distinct_links_artifact_count": 100000,
+  "links_artifact_total_bytes": 7646255092642,
+  "report": "/tmp/growthsent-cloudflare-final-100k-verify-8LTxKy/FINAL-100K-VERIFICATION-REPORT.json"
 }
 ```
 
-The latest job was accepted on 2026-09-06:
+Verification run on 2026-09-08 confirmed 100,000 source identities, 7.6 TB of
+`links` artifacts, seven source roots, and the immutable catalog object at:
+
+```text
+catalogs/v1/cc-main-2026-30/source-links-catalog.json
+```
+
+The original GCP catalog job was:
 
 ```text
 Job ID: growthsent-link-index-catalog-v1-20260906042911
 Batch UID: growthsent-link-in-50fd22cb-f96e-40c60
 Stage: catalog
-Initial state: QUEUED
+Final state: SUCCEEDED
 ```
 
-It uses the image above and only 2 vCPU / 8 GiB because it reads completion
-metadata and writes a catalog—not the full link corpus. It is independent of the
-local terminal after submission. Do not submit a duplicate catalog job while this
-one is `QUEUED` or `RUNNING`.
+## Current state
 
-Monitor with:
+### Completed stages
 
-```bash
-gcloud batch jobs describe growthsent-link-index-catalog-v1-20260906042911 --location us-central1 --format='value(status.state)'
+1. **WAT extraction/verification** (Cloudflare) — verified 100,000 WAT source
+   identities; 7.6 TB of `links` artifacts in Cloudflare R2.
+2. **Catalog** — `growthsent-link-index-catalog-v1-20260906042911` succeeded and
+   produced `catalogs/v1/cc-main-2026-30/source-links-catalog.json`.
+3. **Materialization** — `growthsent-link-index-materialize-v1-20260907080000`
+   finished 100/100 tasks with state `SUCCEEDED`:
+
+   ```text
+   Run ID: cc-main-2026-30-index-materialize-20260907080000-17418
+   Output prefix: link-index/v1/materializations/cc-main-2026-30-index-materialize-20260907080000-17418
+   Machine: n2-highmem-4, parallelism 25
+   ```
+
+   All 100 task manifests exist and sample checks show `status: "success"`.
+
+4. **Compaction recovery** — `growthsent-link-index-compact-missing-v3-20260916092000`
+   succeeded and produced the final 5 missing bucket manifests, completing the
+   1,024-bucket serving set.
+
+5. **R2 migration / GCS cleanup** — `growthsent-r2-transfer-v1-20260916175900`
+   copied the 1.36 TiB serving layer to Cloudflare R2 and the legacy GCS copy,
+   intermediate materialization files, and leftover probe outputs were all
+   deleted. GCS now only stores the source catalog.
+6. **Curated per-domain JSON cache** — `growthsent-link-intelligence-api` now
+   checks `production/link-index/v1/domain-json/v1/<base64url(domain)>.json`
+   before falling back to Parquet. Sample precomputed domains:
+   `cloudflare.com`, `stripe.com`, `mongodb.org`, `moz.com`, `spotify.com`.
+
+### Completed: compaction
+
+The 1,024-bucket compaction job finished:
+
+```text
+Job ID: growthsent-link-index-compact-v1-20260910145140
+Run ID: cc-main-2026-30-index-compact-20260910145140-16416
+Final state: SUCCEEDED (after recovering 5 missing buckets via growthsent-link-index-compact-missing-v3-20260916092000)
+Input prefix: link-index/v1/materializations/cc-main-2026-30-index-materialize-20260907080000-17418
+Output prefix: link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416
+Product prefix (R2): production/link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416/
+Manifest count: 1,024 / 1,024
+Objects: 7,168 (1,024 manifests + 6,144 Parquet files)
+Total bytes: 1,494,693,181,609 (~1.36 TiB)
 ```
 
-Expected catalog runtime is approximately 10–12 hours once running. That is based
-on a prior attempt which reached the final upload after about 9.5 hours; the prior
-failure was a GCS client checksum setting, not source-data failure.
+### Remaining work
 
-If it fails, diagnose first—do not blindly resubmit:
+1. **Finish Worker parity / scale the JSON cache:** (in progress)
+   - Implemented a Cloudflare Containers + Durable Objects + Queue pipeline
+     in `workers/growthsent-domain-json/`.
+   - Builder script: `tools/build_domain_json_v1.py` (also copied to worker
+     `tools/`).
+   - Admin endpoints (`/admin/trigger`, `/admin/direct`) are protected by an
+     `ADMIN_SECRET` bearer token stored as a Wrangler secret.
+   - Pool expanded to 50 DO instances (`worker-0` … `worker-49`);
+     `max_instances = 50` on `standard-4` Container instances.
+   - Queue consumer `max_concurrency` raised from 50 to 100; this was the
+     effective change that saturated the 50-instance pool.
+   - DuckDB memory limit default reduced from 26 GB to 10 GB and threads from
+     4 to 3 to fit the 12 GiB `standard-4` container.
+   - Full 1,024-bucket backfill was triggered on 2026-09-19
+     (container app ID `a03ee626-a888-4502-816e-8af6fad08d83`).
+   - Current progress: **758 of 1,024 bucket manifests published**, **49 of 50
+     container instances active**, queue backlog ~322 messages.
+   - After the backfill the Parquet fallback should 503 far less often.
+   - Remaining: wait for the final ~266 buckets to finish, verify all 1,024
+     bucket manifests exist, smoke-test a few domains via
+     `growthsent-link-intelligence-api`, then decommission the container worker
+     and queue.
+2. **Frontend wiring** — connect the existing Link Intelligence dashboard to
+   the API instead of fixtures.
+3. **Optional enrichment** — actual PageRank/graph authority for Domain Rating,
+   and rate-limited HTTP checks to confirm broken backlinks.
+4. **Google support follow-up** — reply reducing the mistaken `CPUS_ALL_REGIONS`
+   request to 300 so the N2 quota case stays open.
 
-```bash
-bash deployment/common-crawl-gcp-link-index-v1/scripts/diagnose-catalog-wsl.sh growthsent-link-index-catalog-v1-20260906042911
-```
+## Serving API (v1)
 
-### Prepared but not launched: 1,000-source cost probe
+Implemented in `workers/growthsent-api/src/index.ts` and deployed to
+`growthsent-link-intelligence-api`.
 
-The original production templates requested a 375-GB Local SSD for every
-materialization and compaction worker. The current `us-central1`
-`LOCAL_SSD_TOTAL_GB` quota is only 100 GB, so that topology cannot start. The
-templates were changed locally to use 375-GB `pd-balanced` scratch disks instead.
+- **Runtime:** Cloudflare Worker (TypeScript, Wrangler).
+- **Storage binding:** `GROWTHSENT_BUCKET` → `growthsent-data-lake`.
+- **Serving prefix:** `production/link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416/serving`
+- **Domain JSON cache:** `production/link-index/v1/domain-json/v1/<base64url(normalized_domain)>.json`
+- **Bucket mapping:** `(hex(sha256(normalized_domain))[0:3] >> 2) % 1024`.
+- **Domain normalization:** lower-case, strip `www.`, protocol, port, trailing
+  slash.
+- **Parquet engine:** `hyparquet` + `hyparquet-compressors` (ZSTD) streaming
+  column chunks via the R2 bucket binding range reads.
+- **Security:** optional bearer token (`API_TOKEN` secret) and CORS headers.
+- **Caching:** successful responses are cached with `Cache-Control: public,
+  max-age=300` and stored in the Cloudflare edge cache.
 
-Before any full materialization launch, rebuild the image and run the dedicated
-one-task, 1,000-source cost probe. It has production CPU, memory, disk, and
-source-count shape, but a distinct immutable output prefix. Its summary records
-elapsed time, verified input bytes, output bytes, and scratch-filesystem
-high-water usage. The launcher refuses to submit unless the catalog exists and
-there is at least 375 GB of available `SSD_TOTAL_GB` quota.
+### Endpoints
 
-The probe is intentionally **not launched** while the catalog job is active or
-before its immutable catalog object is verified.
+| Method | Route | Returns |
+|--------|-------|---------|
+| `GET` | `/api/summary?domain=<domain>` | found flag, inbound links, referring domains |
+| `GET` | `/api/domain-rating?domain=<domain>` | domain rating heuristic, counts |
+| `GET` | `/api/backlinks?domain=<domain>&limit=20` | paginated source domains |
+| `GET` | `/api/anchors?domain=<domain>&limit=20` | paginated anchor text distribution |
+| `GET` | `/api/top-pages?domain=<domain>&limit=20` | paginated top linked pages |
+| `GET` | `/api/broken-backlinks?domain=<domain>&limit=20` | paginated broken-backlink **candidates** |
 
-After the probe reports `SUCCEEDED`, run the read-only verifier:
+### Known v1 limitations
 
-```bash
-bash deployment/common-crawl-gcp-link-index-v1/scripts/verify-materialize-cost-probe-wsl.sh JOB_ID OUTPUT_PREFIX
-```
-
-It accepts only the single expected 1,000-source task manifest and prints the
-measured runtime, input/output bytes, scratch high-water mark, and row counts.
+- **Domain Rating is a heuristic** (`log10(inbound_links + 1) * 10`) until an
+  actual graph-scoring job computes PageRank-style authority.
+- **Broken-backlink candidates are not verified.** The endpoint only returns
+  URLs that were observed as 4xx targets during Common Crawl WAT parsing. A
+  separate, rate-limited HTTP validation phase is required before calling them
+  confirmed broken backlinks.
+- **Large Parquet buckets can still 503.** The Worker checks the per-domain JSON
+  cache first. For cached domains, all endpoints are fast. For uncached domains
+  whose bucket Parquet files are large (`broken_backlink_candidates` ~600 MiB,
+  some `top_pages` buckets), the Parquet fallback can still exceed Worker
+  CPU/memory limits.
+- **Tenant rate limits are basic:** optional bearer-token gating only. For
+  per-tenant quotas, add a KV/Durable Object based rate limiter before a public
+  launch.
 
 ## Prior catalog failures and fixes already made
 

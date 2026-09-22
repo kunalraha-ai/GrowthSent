@@ -39,6 +39,7 @@
             "GROWTHSENT_INDEX_RUN_ID": "REPLACE_WITH_NEW_INDEX_RUN_ID",
             "GROWTHSENT_OUTPUT_PREFIX": "REPLACE_WITH_FRESH_OUTPUT_PREFIX",
             "GROWTHSENT_WORK_DIR": "/mnt/disks/scratch/growthsent",
+            "GROWTHSENT_DUCKDB_THREADS": "8",
             "GROWTHSENT_SOURCE_START": "REPLACE_WITH_SOURCE_START",
             "GROWTHSENT_SOURCE_COUNT": "1000"
           }
@@ -47,13 +48,20 @@
     }
   ],
   "allocationPolicy": {
+    "location": {
+      "allowedLocations": [
+        "zones/us-central1-b",
+        "zones/us-central1-c",
+        "zones/us-central1-f"
+      ]
+    },
     "serviceAccount": {
       "email": "growthsent-link-index-runner@growthsent-link-index.iam.gserviceaccount.com"
     },
     "instances": [
       {
         "policy": {
-          "machineType": "n2-highmem-4",
+          "machineType": "n2-standard-8",
           "provisioningModel": "STANDARD",
           "bootDisk": {
             "sizeGb": 50,

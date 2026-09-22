@@ -1,0 +1,80 @@
+{
+  "labels": {
+    "system": "growthsent-link-index",
+    "stage": "domain-json",
+    "crawl": "cc-main-2026-30"
+  },
+  "taskGroups": [
+    {
+      "taskCount": 1024,
+      "parallelism": 25,
+      "taskSpec": {
+        "maxRetryCount": 1,
+        "maxRunDuration": "43200s",
+        "runnables": [
+          {
+            "container": {
+              "imageUri": "REPLACE_WITH_DIGEST_PINNED_ARTIFACT_REGISTRY_IMAGE",
+              "entrypoint": "/opt/growthsent/runners/domain-json-task.sh"
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "deviceName": "scratch",
+            "mountPath": "/mnt/disks/scratch",
+            "mountOptions": "rw,async"
+          }
+        ],
+        "computeResource": {
+          "cpuMilli": 4000,
+          "memoryMib": 30000
+        },
+        "environment": {
+          "variables": {
+            "GROWTHSENT_RELEASE_SHA256": "REPLACE_WITH_RELEASE_SHA256",
+            "GROWTHSENT_R2_OUTPUT_WRITE_SECRET_VERSION": "projects/growthsent-link-index/secrets/r2-link-index-output-write/versions/latest",
+            "GROWTHSENT_BUCKET": "growthsent-data-lake",
+            "GROWTHSENT_SERVING_PREFIX": "production/link-index/v1/serving/cc-main-2026-30-index-compact-20260910145140-16416/serving",
+            "GROWTHSENT_OUTPUT_PREFIX": "production/link-index/v1/domain-json/v1",
+            "GROWTHSENT_WORK_DIR": "/mnt/disks/scratch/growthsent",
+            "GROWTHSENT_TOP_N": "100",
+            "GROWTHSENT_UPLOAD_THREADS": "64",
+            "GROWTHSENT_BATCH_SIZE": "2048",
+            "GROWTHSENT_DUCKDB_THREADS": "4",
+            "GROWTHSENT_DUCKDB_MEMORY_LIMIT": "26GB"
+          }
+        }
+      }
+    }
+  ],
+  "allocationPolicy": {
+    "serviceAccount": {
+      "email": "growthsent-link-index-runner@growthsent-link-index.iam.gserviceaccount.com"
+    },
+    "instances": [
+      {
+        "policy": {
+          "machineType": "n2-highmem-4",
+          "provisioningModel": "STANDARD",
+          "bootDisk": {
+            "sizeGb": 50,
+            "type": "pd-balanced"
+          },
+          "disks": [
+            {
+              "newDisk": {
+                "sizeGb": 1000,
+                "type": "pd-balanced"
+              },
+              "deviceName": "scratch"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "logsPolicy": {
+    "destination": "CLOUD_LOGGING"
+  }
+}

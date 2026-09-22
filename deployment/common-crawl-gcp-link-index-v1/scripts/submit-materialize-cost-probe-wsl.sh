@@ -109,7 +109,8 @@ require_regional_quota() {
     exit 1
   }
 }
-require_regional_quota "CPUS" 4
+require_regional_quota "CPUS" 8
+require_regional_quota "N2_CPUS" 8
 require_regional_quota "INSTANCES" 1
 require_regional_quota "SSD_TOTAL_GB" 375
 
@@ -142,7 +143,7 @@ jq -e '
   .taskGroups[0].taskSpec.computeResource == {"cpuMilli":4000,"memoryMib":30000} and
   .taskGroups[0].taskSpec.environment.variables.GROWTHSENT_WORK_DIR == "/mnt/disks/scratch/growthsent" and
   .taskGroups[0].taskSpec.environment.variables.GROWTHSENT_SOURCE_COUNT == "1000" and
-  .allocationPolicy.instances[0].policy.machineType == "n2-highmem-4" and
+  .allocationPolicy.instances[0].policy.machineType == "n2-standard-8" and
   .allocationPolicy.instances[0].policy.disks == [{"newDisk":{"sizeGb":375,"type":"pd-balanced"},"deviceName":"scratch"}]
 ' "${CONFIG}" >/dev/null || {
   printf 'Cost-probe configuration does not match the reviewed resource and safety contract.\n' >&2

@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GrowthSent — Professional SEO & Website Analytics Platform</title>
+  <meta name="description" content="GrowthSent is the calm command centre for website SEO health, search performance, and growth analytics." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Three.js for real 3D -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" defer></script>
+
+  <style>
+    :root {
+      --ink: #171817;
+      --paper: #f7f7f3;
+      --line: #deded7;
+      --muted: #777870;
+      --lime: #a4ef51;
+      --lime-glow: rgba(164, 239, 81, 0.28);
+      --soft: #eeeeea;
+      --card-dark: #20211e;
+      --card-dark-border: #383a35;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --success: #22c55e;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.55;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
+    code, .mono, .kicker { font-family: 'DM Mono', monospace; }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; }
+
+    /* Selection */
+    ::selection { background: var(--lime); color: var(--ink); }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--paper); }
+    ::-webkit-scrollbar-thumb { background: #c9c9c1; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #a8a89f; }
+
+    /* ---- SPRING / FRAMER-MOTION UTILITIES ---- */
+    .spring-hover { transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease; }
+    .spring-hover:hover { transform: translateY(-4px); }
+    .spring-active:active { transform: scale(0.97); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(28px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-14px); }
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(164,239,81,0.45); }
+      50% { box-shadow: 0 0 0 8px rgba(164,239,81,0); }
+    }
+    @keyframes sweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .stagger-1 { transition-delay: 60ms; }
+    .stagger-2 { transition-delay: 120ms; }
+    .stagger-3 { transition-delay: 180ms; }
+    .stagger-4 { transition-delay: 240ms; }
+    .stagger-5 { transition-delay: 300ms; }
+
+    /* ---- LAYOUT ---- */
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+    .narrow { max-width: 720px; margin: 0 auto; padding: 0 24px; }
+
+    /* ---- HEADER ---- */
+    header {
+      position: fixed; inset: 0 0 auto 0; z-index: 100;
+      height: 72px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 5vw;
+      background: rgba(247,247,243,0.82);
+      backdrop-filter: blur(18px);
+      border-bottom: 1px solid rgba(222,222,215,0.55);
+      transition: background 0.25s ease, box-shadow 0.25s ease;
+    }
+    header.scrolled { background: rgba(247,247,243,0.96); box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
+
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; letter-spacing: -0.6px; }
+    .brand-mark { width: 22px; height: 22px; display: flex; align-items: flex-end; gap: 3px; }
+    .brand-mark i { background: var(--ink); border-radius: 3px; width: 5px; display: block; }
+    .brand-mark i:nth-child(1) { height: 10px; }
+    .brand-mark i:nth-child(2) { height: 18px; }
+    .brand-mark i:nth-child(3) { height: 14px; background: var(--lime); }
+
+    nav.desktop { display: flex; gap: 32px; font-size: 13.5px; font-weight: 600; color: #5f605a; }
+    nav.desktop a { position: relative; }
+    nav.desktop a::after {
+      content: ''; position: absolute; left: 0; bottom: -4px; width: 0; height: 1.5px;
+      background: var(--lime); transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    nav.desktop a:hover { color: var(--ink); }
+    nav.desktop a:hover::after { width: 100%; }
+
+    .nav-actions { display: flex; gap: 14px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      border: none; border-radius: 10px; padding: 10px 18px; font-size: 13px; font-weight: 700;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-ghost { background: transparent; color: var(--ink); }
+    .btn-ghost:hover { background: rgba(0,0,0,0.04); }
+    .btn-primary { background: var(--ink); color: #fff; }
+    .btn-primary:hover { background: #2d2e2b; transform: translateY(-1px); box-shadow: 0 10px 22px rgba(0,0,0,0.12); }
+    .btn-lime { background: var(--lime); color: var(--ink); }
+    .btn-lime:hover { background: #bdff66; transform: translateY(-1px); box-shadow: 0 10px 26px rgba(164,239,81,0.35); }
+
+    .mobile-menu-btn { display: none; background: transparent; border: none; font-size: 22px; }
+
+    /* ---- HERO ---- */
+    .hero {
+      position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 120px 24px 80px; overflow: hidden;
+      background: radial-gradient(ellipse at 70% 20%, rgba(164,239,81,0.12) 0%, transparent 45%),
+                  linear-gradient(180deg, var(--paper) 0%, #f0f0ea 100%);
+    }
+    .hero-grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 60px; align-items: center; width: 100%; max-width: 1200px; }
+    .hero-content { position: relative; z-index: 2; }
+    .kicker {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; color: #696a64;
+      border: 1px solid var(--line); background: rgba(255,255,255,0.65); padding: 6px 12px; border-radius: 99px;
+    }
+    .kicker-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); animation: pulse 2.2s infinite; }
+    .hero h1 { font-size: clamp(48px, 6vw, 84px); line-height: 0.98; letter-spacing: -0.055em; margin: 22px 0 24px; }
+    .hero h1 em { font-style: normal; color: #888982; }
+    .hero p { font-size: 17px; color: #5c5d57; max-width: 520px; line-height: 1.75; margin: 0 0 34px; }
+
+    .url-bar {
+      display: flex; align-items: center; gap: 12px;
+      background: #fff; border: 1px solid #d8d8d1; border-radius: 16px;
+      padding: 7px 7px 7px 18px; max-width: 600px;
+      box-shadow: 0 20px 45px rgba(18,18,15,0.08), 0 2px 6px rgba(0,0,0,0.03);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .url-bar:focus-within { border-color: #a0a198; box-shadow: 0 20px 45px rgba(18,18,15,0.14), 0 0 0 4px var(--lime-glow); }
+    .url-bar span.lock { font-size: 18px; color: #8d8f87; }
+    .url-bar input { flex: 1; border: 0; outline: 0; font-size: 14.5px; color: #252622; background: transparent; }
+    .url-bar input::placeholder { color: #9a9b94; }
+
+    .hero-3d {
+      position: relative; height: 520px; border-radius: 24px; overflow: hidden;
+      background: rgba(255,255,255,0.35); border: 1px solid rgba(222,222,215,0.6);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 30px 80px rgba(18,18,15,0.1);
+    }
+    #three-canvas { width: 100%; height: 100%; display: block; }
+    .hero-3d-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(circle at 50% 50%, transparent 40%, rgba(247,247,243,0.55) 100%);
+    }
+
+    .reassurance { margin-top: 18px; font-size: 12px; color: #85867f; display: flex; gap: 18px; align-items: center; }
+    .reassurance span { display: inline-flex; align-items: center; gap: 6px; }
+
+    /* ---- SCAN PREVIEW CARD ---- */
+    .scan-section { padding: 0 24px 130px; }
+    .scan-card {
+      max-width: 1100px; margin: -60px auto 0; position: relative; z-index: 10;
+      background: var(--card-dark); color: #f5f5ee; border-radius: 22px;
+      border: 1px solid var(--card-dark-border);
+      box-shadow: 0 40px 90px rgba(18,19,17,0.22);
+      overflow: hidden;
+    }
+    .scan-header {
+      height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 28px;
+      border-bottom: 1px solid #363732; background: #1b1c19; font-size: 11px; letter-spacing: 0.5px; color: #bcbdb5;
+    }
+    .scan-header strong { color: #e5e6df; font-weight: 500; }
+    .scan-header .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lime); animation: pulse 2s infinite; }
+    .scan-body { padding: 32px 40px 28px; }
+    .scan-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .scan-domain { display: flex; align-items: center; gap: 14px; }
+    .domain-dot {
+      width: 44px; height: 44px; border-radius: 12px; background: var(--lime); color: #121c08;
+      display: grid; place-items: center; font-weight: 800; font-size: 18px;
+    }
+    .scan-domain strong { font-size: 17px; letter-spacing: -0.3px; display: block; }
+    .scan-domain small { font-size: 11px; color: #96988e; }
+    .score-pill { text-align: right; }
+    .score-pill b { font-size: 36px; line-height: 1; font-family: 'Plus Jakarta Sans', sans-serif; }
+    .score-pill b span { font-size: 16px; color: var(--lime); }
+    .score-pill small { display: block; font-size: 11px; color: #b8b9b0; margin-top: 4px; }
+    .health-track {
+      height: 8px; background: #333530; border-radius: 99px; overflow: hidden; margin-bottom: 28px;
+    }
+    .health-track i { display: block; height: 100%; width: 87%; background: var(--lime); border-radius: 99px; }
+    .scan-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 28px; }
+    .scan-list { display: flex; flex-direction: column; gap: 12px; }
+    .scan-row { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .scan-row .icon {
+      width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .scan-row.good .icon { background: #2b421a; color: var(--lime); }
+    .scan-row.warn .icon { background: #473a25; color: #f5c76c; }
+    .scan-card-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #363732; padding: 18px 40px; background: #1c1d1a; font-size: 12px; color: #96988e; }
+    .scan-card-footer button { background: rgba(255,255,255,0.08); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+    .scan-card-footer button:hover { background: rgba(255,255,255,0.16); color: var(--lime); }
+
+    /* ---- SECTIONS ---- */
+    section { padding: 120px 0; }
+    .section-kicker { font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; color: #696a64; margin: 0 0 14px; }
+    .section-title { font-size: clamp(34px, 4.2vw, 58px); line-height: 1.05; letter-spacing: -0.05em; margin: 0 0 24px; }
+    .section-title em { font-style: normal; color: #888982; }
+    .section-lead { font-size: 17px; color: #64655f; line-height: 1.75; max-width: 560px; }
+
+    /* Problem / Editorial */
+    .editorial-section { padding-top: 40px; }
+    .progression { display: flex; align-items: center; gap: 16px; margin-top: 44px; font-size: 13px; color: #8e8f88; white-space: nowrap; overflow-x: auto; }
+    .progression i { font-style: normal; color: #b5b6af; }
+    .progression b { color: var(--ink); background: var(--lime); padding: 8px 14px; border-radius: 8px; font-weight: 700; }
+
+    /* Feature Split */
+    .feature-split { display: grid; grid-template-columns: 1fr 1.1fr; gap: 80px; align-items: center; padding-top: 120px; }
+    .step-list { list-style: none; padding: 0; margin: 32px 0; border-top: 1px solid var(--line); }
+    .step-list li { display: flex; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #e3e3dd; font-weight: 600; font-size: 14.5px; }
+    .step-list li b { font-family: 'DM Mono', monospace; font-size: 11px; color: #8c8d86; }
+    .text-link { font-size: 14px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; color: #3b730e; }
+    .text-link span { transition: transform 0.2s ease; }
+    .text-link:hover span { transform: translateX(4px); }
+
+    .browser-card {
+      background: #fff; border: 1px solid #dcdcd6; border-radius: 18px;
+      box-shadow: 0 24px 55px rgba(25,25,23,0.09); overflow: hidden;
+    }
+    .browser-bar { height: 42px; background: #f1f1ed; border-bottom: 1px solid #dddeda; display: flex; align-items: center; padding: 0 16px; gap: 8px; }
+    .browser-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: #c3c4bd; }
+    .browser-bar .url { font-family: 'DM Mono', monospace; font-size: 10px; color: #898a84; margin-left: auto; background: #fff; padding: 4px 12px; border-radius: 6px; border: 1px solid #e3e3dd; }
+    .browser-body { padding: 30px; }
+    .browser-body h3 { font-size: 28px; line-height: 1.15; letter-spacing: -0.04em; margin-bottom: 26px; }
+    .browser-body h3 u { text-decoration-color: var(--lime); text-decoration-thickness: 5px; text-underline-offset: 3px; }
+    .finding { display: flex; align-items: center; gap: 14px; padding: 15px 0; border-top: 1px solid #ecece8; }
+    .finding > span { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+    .finding.important > span { color: #e53935; background: #ffebee; }
+    .finding.recommend > span { color: #d87d00; background: #fff8e1; }
+    .finding.healthy > span { color: #43a047; background: #e8f5e9; }
+    .finding b { font-size: 13px; display: block; }
+    .finding p { margin: 3px 0 0; font-size: 12px; color: #73746d; }
+    .finding em { margin-left: auto; font-size: 11px; font-style: normal; color: #777870; font-weight: 600; }
+
+    /* ---- DASHBOARD PREVIEW ---- */
+    .dashboard-section { background: #eaeae4; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 120px 0; }
+    .dash-stage {
+      background: var(--card-dark); border: 1px solid var(--card-dark-border); border-radius: 20px; overflow: hidden;
+      box-shadow: 0 30px 80px rgba(18,18,15,0.18); min-height: 600px; display: grid; grid-template-columns: 220px 1fr;
+    }
+    .dash-sidebar { background: #171817; border-right: 1px solid #2d2f2b; padding: 24px 16px; color: #9e9f98; }
+    .dash-sidebar .brand { color: #fff; margin-bottom: 30px; }
+    .dash-sidebar .group { font-family: 'DM Mono', monospace; font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase; color: #71736b; margin: 24px 10px 10px; }
+    .dash-sidebar a {
+      display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-radius: 9px;
+      font-size: 12px; font-weight: 600; margin: 4px 0; color: #9e9f98; cursor: pointer; transition: all 0.15s ease;
+    }
+    .dash-sidebar a:hover { color: #fff; background: #292b26; }
+    .dash-sidebar a.active { background: #363832; color: #fff; }
+    .dash-sidebar a .count { background: var(--lime); color: #1a240d; padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: 800; }
+
+    .dash-main { background: #f6f6f2; padding: 32px; overflow: hidden; }
+    .dash-main.hidden { display: none; }
+    .dash-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 28px; }
+    .dash-header p { font-family: 'DM Mono', monospace; font-size: 11px; color: #777870; margin: 0 0 6px; letter-spacing: 0.5px; }
+    .dash-header h3 { font-size: 24px; letter-spacing: -0.7px; }
+    .dash-header h3 .status { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 11px; color: #3b730e; background: #e4f5d8; padding: 4px 10px; border-radius: 99px; vertical-align: 3px; margin-left: 8px; }
+    .dash-header button { background: #fff; border: 1px solid #dcddd6; border-radius: 8px; padding: 8px 12px; font-size: 11px; font-weight: 700; }
+
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+    .metric { background: #fff; border: 1px solid #e1e1dc; border-radius: 12px; padding: 18px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+    .metric p { margin: 0 0 8px; color: #73746d; font-size: 11.5px; font-weight: 600; }
+    .metric b { font-size: 24px; letter-spacing: -0.6px; display: block; }
+    .metric span { font-size: 11px; font-weight: 700; color: #3b730e; display: block; margin-top: 6px; }
+    .metric span.down { color: #b45309; }
+
+    .chart-card { background: #fff; border: 1px solid #e1e1dc; border-radius: 14px; padding: 22px; }
+    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .chart-header b { font-size: 14px; }
+
+    /* ---- INTEGRATION ---- */
+    .integration-section { padding: 120px 0; }
+    .integration-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
+    .integration-map {
+      background: #f0f0eb; border: 1px solid #e0e0da; border-radius: 22px; padding: 40px; text-align: center;
+      box-shadow: 0 12px 35px rgba(0,0,0,0.04);
+    }
+    .node { background: #fff; border: 1px solid #deded8; border-radius: 14px; padding: 18px; margin: 0 auto; width: 240px; box-shadow: 0 8px 22px rgba(10,10,8,0.05); }
+    .node b { display: block; font-size: 14px; margin-top: 6px; }
+    .node small { font-size: 10px; color: #85867e; }
+    .downline { display: block; color: #a1a29a; font-size: 24px; margin: 12px 0; }
+    .integration-map > .kicker { color: #8d8e87; margin: 28px 0 14px; font-size: 10px; }
+    .google-nodes { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .google-nodes span { background: #fff; border: 1px solid #deded8; border-radius: 8px; padding: 8px 14px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }
+
+    /* ---- RECOMMENDATION ---- */
+    .rec-section { padding-bottom: 120px; }
+    .rec-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 70px; align-items: center; }
+    .rec-card {
+      background: var(--card-dark); color: #f4f5ef; border-radius: 20px; padding: 36px;
+      border: 1px solid var(--card-dark-border); box-shadow: 0 28px 65px rgba(20,20,18,0.16);
+    }
+    .rec-top { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--lime); margin-bottom: 22px; }
+    .rec-top small { color: #93958c; }
+    .rec-card h3 { font-size: 24px; line-height: 1.4; letter-spacing: -0.5px; margin-bottom: 28px; }
+    .rec-card mark { background: none; color: #fff; text-decoration: underline; text-decoration-color: var(--lime); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+    .potential { border-left: 2px solid var(--lime); padding-left: 18px; }
+    .potential b { font-size: 12px; color: var(--lime); }
+    .potential p { font-size: 13px; color: #aeafa8; margin: 8px 0; }
+    .potential .snippet { font-family: 'DM Mono', monospace; font-size: 11px; background: #2b2d28; border-radius: 8px; padding: 10px 14px; display: inline-block; color: #e5e6df; border: 1px solid #3e4039; }
+    .rec-footer { display: flex; align-items: center; gap: 18px; margin-top: 28px; }
+
+    /* ---- MAGIC FIXES ---- */
+    .magic-section { background: var(--card-dark); color: #f8f8f3; padding: 120px 0; border-top: 1px solid var(--card-dark-border); }
+    .magic-section .section-kicker { color: #9b9c94; }
+    .magic-section .section-title em { color: var(--lime); }
+    .magic-section .section-lead { color: #bbbcb5; }
+    .magic-flow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 13px; color: #b5b6ae; margin-top: 44px; padding: 24px 0; border-top: 1px solid #3d3e38; border-bottom: 1px solid #3d3e38; }
+    .magic-flow b { padding: 9px 14px; background: #32342d; border-radius: 9px; color: var(--lime); border: 1px solid #44463d; }
+    .tool-row { margin-top: 18px; display: flex; align-items: center; gap: 10px; color: #999a92; font-size: 12px; flex-wrap: wrap; }
+    .tool-row b { font-family: 'DM Mono', monospace; font-size: 11px; border: 1px solid #454641; border-radius: 7px; padding: 7px 12px; color: #d0d1c9; background: #272824; display: inline-flex; align-items: center; gap: 6px; }
+
+    /* ---- QUOTES ---- */
+    .quotes-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin: 52px 0 70px; }
+    .quote-card {
+      background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 22px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.03);
+    }
+    .quote-card p { border-top: 2px solid var(--ink); padding-top: 16px; font-size: 15px; font-weight: 700; line-height: 1.4; color: #252622; margin: 0; }
+
+    /* ---- PRICING ---- */
+    .pricing-section { background: #0e0f0e; color: #f7f7f3; padding: 120px 0; }
+    .pricing-section .section-title { text-align: center; }
+    .pricing-section .section-lead { text-align: center; margin: 0 auto 60px; color: #a5a69f; }
+    .pricing-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+    .pricing-card {
+      background: #141513; border: 1px solid #262824; border-radius: 18px; padding: 30px 24px;
+      display: flex; flex-direction: column; position: relative; transition: transform 0.25s ease, border-color 0.25s ease;
+    }
+    .pricing-card:hover { transform: translateY(-4px); border-color: #383a35; }
+    .pricing-card.featured { border: 2px solid var(--lime); box-shadow: 0 0 30px rgba(164,239,81,0.08); }
+    .popular-badge {
+      position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+      background: var(--lime); color: #0e0f0e; padding: 4px 14px; border-radius: 20px;
+      font-size: 10px; font-weight: 900; letter-spacing: 0.8px; text-transform: uppercase;
+    }
+    .pricing-card h3 { font-size: 19px; margin-bottom: 8px; }
+    .pricing-card .price { font-size: 38px; font-weight: 900; margin: 12px 0 22px; }
+    .pricing-card ul { list-style: none; padding: 20px 0 0; margin: auto 0 0; border-top: 1px solid #232521; display: flex; flex-direction: column; gap: 11px; font-size: 13px; color: #a5a69f; }
+    .pricing-card ul li::before { content: '✓'; color: var(--lime); margin-right: 8px; font-weight: 800; }
+
+    /* FAQ */
+    .faq-section { background: #0e0f0e; color: #f7f7f3; padding-bottom: 140px; }
+    .faq-list { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .faq-item { background: #141513; border: 1px solid #232521; border-radius: 12px; overflow: hidden; }
+    .faq-q { width: 100%; padding: 20px 24px; background: transparent; border: none; color: #f7f7f3; font-size: 15px; font-weight: 700; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+    .faq-q .icon { color: var(--lime); font-size: 18px; transition: transform 0.25s ease; }
+    .faq-item.open .faq-q .icon { transform: rotate(45deg); }
+    .faq-a { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+    .faq-item.open .faq-a { max-height: 220px; }
+    .faq-a p { padding: 0 24px 20px; margin: 0; color: #a5a69f; font-size: 14px; line-height: 1.65; }
+
+    /* ---- CTA ---- */
+    .final-cta { background: var(--lime); padding: 120px 24px; text-align: center; color: #121a08; }
+    .final-cta h2 { font-size: clamp(36px, 5vw, 68px); margin-bottom: 16px; }
+    .final-cta p { font-size: 17px; color: #3b4d1b; margin-bottom: 30px; }
+    .final-cta .url-bar { max-width: 640px; margin: 0 auto; background: rgba(255,255,255,0.85); }
+    .final-cta .reassurance { justify-content: center; color: #40521d; }
+
+    /* ---- FOOTER ---- */
+    footer { padding: 80px 0 50px; display: grid; grid-template-columns: 2.2fr repeat(4, 1fr); gap: 34px; border-top: 1px solid var(--line); }
+    footer .brand { color: var(--ink); }
+    footer .tagline { font-size: 12.5px; line-height: 1.7; color: #777870; margin-top: 16px; max-width: 280px; }
+    footer .copyright { display: block; margin-top: 40px; color: #969790; font-size: 11px; }
+    footer .col { display: flex; flex-direction: column; gap: 12px; }
+    footer .col b { font-size: 12.5px; margin-bottom: 2px; }
+    footer .col a { font-size: 12.5px; color: #64655f; transition: color 0.15s ease; }
+    footer .col a:hover { color: var(--ink); }
+
+    /* ---- LEGAL PAGES ---- */
+    .legal-page { padding: 130px 0 100px; min-height: 100vh; }
+    .legal-page .section-title { font-size: 42px; margin-bottom: 12px; }
+    .legal-page .legal-date { color: #777870; font-size: 13px; margin-bottom: 40px; }
+    .legal-page h3 { font-size: 20px; margin: 36px 0 14px; }
+    .legal-page p { color: #494b45; line-height: 1.8; margin: 0 0 16px; }
+    .legal-page ul { color: #494b45; line-height: 1.8; margin: 0 0 20px; padding-left: 22px; }
+    .legal-page li { margin-bottom: 8px; }
+
+    /* ---- 404 PAGE ---- */
+    .error-page { min-height: 100vh; display: grid; place-items: center; text-align: center; padding: 120px 24px; }
+    .error-code { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 120px; font-weight: 800; color: var(--lime); line-height: 1; letter-spacing: -4px; }
+
+    /* ---- PAGE STATES ---- */
+    .page { display: none; }
+    .page.active { display: block; animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /* ---- UTILITIES ---- */
+    .center { text-align: center; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .gap-3 { gap: 12px; }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .hero-3d { height: 380px; }
+      .feature-split, .integration-grid, .rec-grid { grid-template-columns: 1fr; gap: 50px; }
+      .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+      .quotes-grid { grid-template-columns: repeat(2, 1fr); }
+      .dash-stage { grid-template-columns: 1fr; }
+      .dash-sidebar { display: none; }
+      footer { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+      header { padding: 0 4vw; }
+      nav.desktop { display: none; }
+      .mobile-menu-btn { display: block; }
+      .nav-actions .btn-ghost { display: none; }
+      .hero { padding-top: 100px; }
+      .hero h1 { font-size: 42px; }
+      .scan-grid, .metrics { grid-template-columns: 1fr; }
+      .pricing-grid, .quotes-grid { grid-template-columns: 1fr; }
+      .scan-top { flex-direction: column; align-items: flex-start; gap: 24px; }
+      footer { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <header id="site-header">
+    <a href="#home" class="brand" onclick="showPage('home')">
+      <span class="brand-mark"><i></i><i></i><i></i></span>
+      GrowthSent
+    </a>
+    <nav class="desktop">
+      <a href="#product" onclick="scrollToSection('product')">Product</a>
+      <a href="#dashboard" onclick="showPage('dashboard'); return false;">Dashboard</a>
+      <a href="#pricing" onclick="showPage('pricing')">Pricing</a>
+      <a href="#developers">Developers</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="btn btn-ghost" onclick="showPage('dashboard')">Log in</button>
+      <button class="btn btn-primary" onclick="showPage('dashboard')">Get started <span>↗</span></button>
+      <button class="mobile-menu-btn" aria-label="Menu" onclick="document.getElementById('mobileNav').classList.toggle('open')">☰</button>
+    </div>
+  </header>
+
+  <!-- Mobile nav (simple) -->
+  <div id="mobileNav" style="position:fixed;top:72px;left:0;right:0;background:#fff;border-bottom:1px solid var(--line);padding:20px;z-index:99;display:none;flex-direction:column;gap:14px;font-weight:600;">
+    <a href="#product" onclick="document.getElementById('mobileNav').classList.remove('open');">Product</a>
+    <a href="#dashboard" onclick="showPage('dashboard'); document.getElementById('mobileNav').classList.remove('open'); return false;">Dashboard</a>
+    <a href="#pricing" onclick="showPage('pricing'); document.getElementById('mobileNav').classList.remove('open');">Pricing</a>
+    <a href="#developers" onclick="document.getElementById('mobileNav').classList.remove('open');">Developers</a>
+  </div>
+  <style>#mobileNav.open{display:flex;}</style>
+
+  <!-- HOME PAGE -->
+  <main id="page-home" class="page active">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-content reveal">
+          <div class="kicker"><span class="kicker-dot"></span>A calmer way to grow</div>
+          <h1>SEO shouldn't<br />be this <em>hard.</em></h1>
+          <p>Paste your website. See what is holding it back. GrowthSent gives you a simple, powerful view of your website's health, discoverability, and growth.</p>
+          <div class="url-bar spring-hover">
+            <span class="lock">⌁</span>
+            <input type="text" placeholder="https://yourwebsite.com" aria-label="Website URL" id="heroUrl" />
+            <button class="btn btn-primary" style="border-radius:10px;" onclick="simulateScan()">Check my website →</button>
+          </div>
+          <div class="reassurance">
+            <span>✓ No login</span>
+            <span>✓ No setup</span>
+            <span>✓ No credit card</span>
+          </div>
+        </div>
+        <div class="hero-3d reveal stagger-2">
+          <canvas id="three-canvas"></canvas>
+          <div class="hero-3d-overlay"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCAN PREVIEW -->
+    <section class="scan-section" id="product">
+      <div class="scan-card reveal">
+        <div class="scan-header">
+          <strong>LIVE WEBSITE SCAN</strong>
+          <span class="live-dot"></span>
+          <span id="scanStatus">Run a live website scan</span>
+        </div>
+        <div class="scan-body">
+          <div class="scan-top">
+            <div class="scan-domain">
+              <div class="domain-dot">y</div>
+              <div><strong id="scanDomain">yourwebsite.com</strong><small id="scanTime">Last scanned just now</small></div>
+            </div>
+            <div class="score-pill">
+              <b id="scanScore">—<span></span></b>
+              <small id="scanScoreLabel">waiting for a scan</small>
+            </div>
+          </div>
+          <div class="health-track"><i id="healthBar" style="width:0%"></i></div>
+          <div class="scan-grid">
+            <div class="scan-list">
+              <div class="scan-row good"><span class="icon">✓</span>Sitemap checked</div>
+              <div class="scan-row good"><span class="icon">✓</span>HTTPS verified</div>
+              <div class="scan-row good"><span class="icon">✓</span><span id="crawlCount">Live crawl results appear here</span></div>
+            </div>
+            <div class="scan-list">
+              <div class="scan-row warn"><span class="icon">!</span><span id="critIssue">No scan data yet</span></div>
+              <div class="scan-row warn"><span class="icon">!</span><span id="highIssue">No scan data yet</span></div>
+              <div class="scan-row warn"><span class="icon">!</span><span id="medIssue">No scan data yet</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="scan-card-footer">
+          <span>GrowthSent scans public website data, so there is nothing to connect.</span>
+          <button onclick="showPage('dashboard')">View full report <span>→</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- EDITORIAL -->
+    <section class="editorial-section">
+      <div class="wrap narrow reveal">
+        <p class="section-kicker">THE PROBLEM</p>
+        <h2 class="section-title">You built the website.<br /><em>You shouldn't have to become an SEO expert.</em></h2>
+        <p class="section-lead">Building and deploying is easier than ever. But getting discovered — and understanding whether your website is working — still asks too much of the people making the web.</p>
+        <div class="progression">
+          <span>Build</span><i>→</i><span>Deploy</span><i>→</i><b>Paste your URL</b><i>→</i><span>Understand</span><i>→</i><span>Grow</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURE SPLIT -->
+    <section class="feature-split wrap" id="how">
+      <div class="reveal">
+        <p class="section-kicker">START WITH A URL</p>
+        <h2 class="section-title">Just enough<br />to know what is next.</h2>
+        <p class="section-lead">Three quiet steps between a launched site and a clear plan.</p>
+        <ul class="step-list">
+          <li><b>01</b> Paste your website</li>
+          <li><b>02</b> GrowthSent scans it</li>
+          <li><b>03</b> Get instant insights</li>
+        </ul>
+        <a href="#product" class="text-link">See what needs fixing <span>→</span></a>
+      </div>
+      <div class="browser-card reveal stagger-2">
+        <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">growthsent.com/report</span></div>
+        <div class="browser-body">
+          <div class="section-kicker">YOUR FIRST REPORT</div>
+          <h3>Your first audit reports<br /><u>only what it measures.</u></h3>
+          <div class="finding important"><span>↗</span><div><b>Important</b><p>Run a scan to identify indexing issues</p></div><em>View</em></div>
+          <div class="finding recommend"><span>↗</span><div><b>Recommended</b><p>Run a scan to get recommendations</p></div><em>View</em></div>
+          <div class="finding healthy"><span>—</span><div><b>Bounded coverage</b><p>Up to 25 public pages per audit</p></div><em>—</em></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DASHBOARD PREVIEW -->
+    <section class="dashboard-section" id="dashboard">
+      <div class="wrap">
+        <div class="center reveal" style="max-width:640px;margin:0 auto 60px;">
+          <p class="section-kicker">ONE QUIET CONSOLE</p>
+          <h2 class="section-title">Your website's<br />command centre.</h2>
+          <p class="section-lead">SEO health, analytics, search visibility, and growth opportunities — simply arranged in one place.</p>
+        </div>
+        <div class="dash-stage reveal stagger-2">
+          <aside class="dash-sidebar">
+            <a href="#" class="brand" onclick="return false;"><span class="brand-mark"><i></i><i></i><i></i></span>GrowthSent</a>
+            <div class="group">Overview</div>
+            <a class="active" onclick="switchDashTab(this,'overview')">Overview</a>
+            <a onclick="switchDashTab(this,'seo')">SEO Audit</a>
+            <a onclick="switchDashTab(this,'pages')">Pages</a>
+            <a onclick="switchDashTab(this,'keywords')">Keywords</a>
+            <a onclick="switchDashTab(this,'issues')">Issues <span class="count">7</span></a>
+            <div class="group">Analytics</div>
+            <a onclick="switchDashTab(this,'analytics')">Analytics</a>
+            <a onclick="switchDashTab(this,'gsc')">Search Console</a>
+            <div class="group">Your Sites</div>
+            <a class="active" onclick="return false;"><span>● example.com</span><small style="color:#4f8c18">Healthy</small></a>
+          </aside>
+          <div class="dash-main" id="dash-overview">
+            <div class="dash-header">
+              <div><p>OVERVIEW</p><h3>example.com <span class="status">● Healthy</span></h3></div>
+              <button>Last 30 days ⌄</button>
+            </div>
+            <div class="metrics">
+              <div class="metric"><p>Visitors</p><b>3,421</b><span>↗ 18.2% this month</span></div>
+              <div class="metric"><p>Search impressions</p><b>12,400</b><span>↗ 24.8% this month</span></div>
+              <div class="metric"><p>Pages discovered</p><b>124</b><span>updated today</span></div>
+              <div class="metric"><p>Search-ready</p><b>116 <small style="color:#888;font-weight:500">/ 124</small></b><span>93.5% healthy</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:14px;">
+              <div class="chart-card">
+                <div class="chart-header"><b>Organic visitors</b><span class="mono" style="color:#85867f;font-size:11px;">May 2025</span></div>
+                <svg viewBox="0 0 600 150" preserveAspectRatio="none" style="width:100%;height:150px;">
+                  <defs><linearGradient id="grad" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a4ef51" stop-opacity=".28"/><stop offset="1" stop-color="#a4ef51" stop-opacity="0"/></linearGradient></defs>
+                  <path d="M0 140 C30 132 50 138 80 124 S130 108 160 118 S210 96 240 108 S290 92 320 72 S370 86 410 58 S460 68 500 42 S550 50 600 22 L600 150 L0 150Z" fill="url(#grad)"/>
+                  <path d="M0 140 C30 132 50 138 80 124 S130 108 160 118 S210 96 240 108 S290 92 320 72 S370 86 410 58 S460 68 500 42 S550 50 600 22" fill="none" stroke="#83d62d" stroke-width="3"/>
+                </svg>
+              </div>
+              <div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;gap:14px;">
+                <div class="chart-header"><b>Needs attention</b><span class="mono" style="color:#85867f;font-size:11px;">7 issues</span></div>
+                <p style="font-size:13px;margin:0;display:flex;align-items:center;gap:10px;"><span style="width:7px;height:7px;border-radius:50%;background:#e53935;"></span>Indexing issues <span style="margin-left:auto;font-weight:800;background:#f0f0ea;padding:2px 8px;border-radius:99px;font-size:10px;">3</span></p>
+                <p style="font-size:13px;margin:0;display:flex;align-items:center;gap:10px;"><span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;"></span>Missing descriptions <span style="margin-left:auto;font-weight:800;background:#f0f0ea;padding:2px 8px;border-radius:99px;font-size:10px;">8</span></p>
+                <p style="font-size:13px;margin:0;display:flex;align-items:center;gap:10px;"><span style="width:7px;height:7px;border-radius:50%;background:#ef4444;"></span>Broken links <span style="margin-left:auto;font-weight:800;background:#f0f0ea;padding:2px 8px;border-radius:99px;font-size:10px;">2</span></p>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-seo">
+            <div class="dash-header"><div><p>SEO AUDIT & HEALTH</p><h3>Technical SEO <span class="status">● 93.5% Score</span></h3></div><button>Run fresh scan ↻</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Crawlability</p><b>121 <small style="color:#888;font-weight:500">/ 124</small></b><span>97.5% crawled</span></div>
+              <div class="metric"><p>Sitemap Status</p><b>Valid</b><span>sitemap.xml active</span></div>
+              <div class="metric"><p>Meta Tags Valid</p><b>113 <small style="color:#888;font-weight:500">/ 124</small></b><span>11 missing descriptions</span></div>
+              <div class="metric"><p>HTTPS Security</p><b>100%</b><span>SSL Valid</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>SEO Health Check</b><span class="mono" style="color:#85867f;font-size:11px;">124 pages analyzed</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Canonical URLs</span><span style="font-size:11px;color:#64655f;">All pages specify canonical tags</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Pass</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Robots.txt</span><span style="font-size:11px;color:#64655f;">Found at /robots.txt</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Pass</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Open Graph</span><span style="font-size:11px;color:#64655f;">8 social cards missing og:image</span><span style="background:#fff3d6;color:#925d00;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Warning</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Heading Hierarchy</span><span style="font-size:11px;color:#64655f;">3 pages have multiple H1 tags</span><span style="background:#ffe5e5;color:#b81c1c;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Fix</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-pages">
+            <div class="dash-header"><div><p>DISCOVERED PAGES</p><h3>Site Index <span class="status">● 124 URLs Crawled</span></h3></div><button>Export CSV ⤓</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Total Pages</p><b>124</b><span>100% indexed</span></div>
+              <div class="metric"><p>HTTP 200 OK</p><b>121</b><span>97.5% healthy</span></div>
+              <div class="metric"><p>Redirects</p><b>2</b><span>301 Permanent</span></div>
+              <div class="metric"><p>Errors</p><b>1</b><span class="down">404 Not Found</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>Scanned Pages Index</b><span class="mono" style="color:#85867f;font-size:11px;">124 URLs</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/ (Homepage)</span><span style="font-size:11px;color:#64655f;">200 OK · 180ms</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">200 OK</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/pricing</span><span style="font-size:11px;color:#64655f;">200 OK · 140ms</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">200 OK</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/docs/api</span><span style="font-size:11px;color:#64655f;">200 OK · Missing title</span><span style="background:#fff3d6;color:#925d00;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Missing Title</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/team-old</span><span style="font-size:11px;color:#64655f;">404 Not Found · 90ms</span><span style="background:#ffe5e5;color:#b81c1c;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">404 Error</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-keywords">
+            <div class="dash-header"><div><p>SEARCH KEYWORDS</p><h3>Google Search Performance <span class="status">● Connected</span></h3></div><button>Sync Search Console ↻</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Tracked Keywords</p><b>342</b><span>↗ 24 new</span></div>
+              <div class="metric"><p>Top 10 Rankings</p><b>28</b><span>↗ 5 this week</span></div>
+              <div class="metric"><p>Avg Position</p><b>14.2</b><span>↗ +2.1 ranks</span></div>
+              <div class="metric"><p>Organic Clicks</p><b>1,240</b><span>10.0% CTR</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>Top Search Queries</b><span class="mono" style="color:#85867f;font-size:11px;">By Clicks</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">"ai coding tools seo"</span><span style="font-size:11px;color:#64655f;">Pos #2 · 410 clicks · 14.2% CTR</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Top 3</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">"solo founder analytics"</span><span style="font-size:11px;color:#64655f;">Pos #4 · 280 clicks · 8.9% CTR</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Top 5</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">"simple website health check"</span><span style="font-size:11px;color:#64655f;">Pos #7 · 190 clicks · 6.1% CTR</span><span style="background:#e4f5d8;color:#2e620a;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Top 10</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">"lightweight cursor seo tool"</span><span style="font-size:11px;color:#64655f;">Pos #12 · 95 clicks · 3.4% CTR</span><span style="background:#fff3d6;color:#925d00;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;">Page 2</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-issues">
+            <div class="dash-header"><div><p>ACTIONABLE ISSUES</p><h3>Fix List <span class="status">● 7 Items</span></h3></div><button>✦ AI Fix All</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Critical Blockers</p><b>3</b><span>High impact</span></div>
+              <div class="metric"><p>Warnings</p><b>2</b><span>Medium impact</span></div>
+              <div class="metric"><p>Optimizations</p><b>2</b><span>Low impact</span></div>
+              <div class="metric"><p>AI Magic Fixes</p><b>5 Available</b><span>1-click fixes</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>Active Issues (7)</b><span class="mono" style="color:#85867f;font-size:11px;">Priority Order</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">noindex on /blog/launch</span><span style="font-size:11px;color:#64655f;">Blocks Google from indexing launch post</span><button style="background:var(--ink);color:var(--lime);border:none;padding:5px 10px;border-radius:6px;font-weight:700;font-size:10px;white-space:nowrap;">✦ AI Fix</button></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Missing title /docs/api</span><span style="font-size:11px;color:#64655f;">Search engines cannot label page</span><button style="background:var(--ink);color:var(--lime);border:none;padding:5px 10px;border-radius:6px;font-weight:700;font-size:10px;white-space:nowrap;">✦ AI Fix</button></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Broken link /about → /team-old</span><span style="font-size:11px;color:#64655f;">Internal link yields 404</span><button style="background:var(--ink);color:var(--lime);border:none;padding:5px 10px;border-radius:6px;font-weight:700;font-size:10px;white-space:nowrap;">✦ AI Fix</button></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">Missing meta description /pricing</span><span style="font-size:11px;color:#64655f;">Decreases snippet CTR</span><button style="background:var(--ink);color:var(--lime);border:none;padding:5px 10px;border-radius:6px;font-weight:700;font-size:10px;white-space:nowrap;">✦ AI Fix</button></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-analytics">
+            <div class="dash-header"><div><p>WEBSITE ANALYTICS</p><h3>Traffic & Behavior <span class="status">● Live</span></h3></div><button>Real-time view 🟢</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Total Pageviews</p><b>18,420</b><span>↗ 14.5% this week</span></div>
+              <div class="metric"><p>Unique Visitors</p><b>3,421</b><span>↗ 18.2% this month</span></div>
+              <div class="metric"><p>Avg Session</p><b>2m 14s</b><span>↗ 8s longer</span></div>
+              <div class="metric"><p>Bounce Rate</p><b>34.2%</b><span class="down">↘ -2.4% improved</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>Top Performing Pages</b><span class="mono" style="color:#85867f;font-size:11px;">Last 30 Days</span></div>
+              <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/ (Homepage)</span><span style="font-size:11px;color:#64655f;">11,200 views · 2m 45s avg</span><b>60.8%</b></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/pricing</span><span style="font-size:11px;color:#64655f;">4,200 views · 1m 50s avg</span><b>22.8%</b></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;background:#f9f9f6;border:1px solid #ebebe5;"><span style="font-weight:700;font-size:12px;">/docs/quickstart</span><span style="font-size:11px;color:#64655f;">1,840 views · 3m 10s avg</span><b>10.0%</b></div>
+              </div>
+            </div>
+          </div>
+          <div class="dash-main hidden" id="dash-gsc">
+            <div class="dash-header"><div><p>GOOGLE SEARCH CONSOLE</p><h3>Search Performance <span class="status">● Connected</span></h3></div><button>Disconnect</button></div>
+            <div class="metrics">
+              <div class="metric"><p>Total Clicks</p><b>4,820</b><span>↗ 12.3%</span></div>
+              <div class="metric"><p>Total Impressions</p><b>142,000</b><span>↗ 8.7%</span></div>
+              <div class="metric"><p>Average CTR</p><b>3.4%</b><span>↗ +0.4pp</span></div>
+              <div class="metric"><p>Average Position</p><b>12.6</b><span>↗ +1.2</span></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-header"><b>Clicks & Impressions</b><span class="mono" style="color:#85867f;font-size:11px;">Last 90 days</span></div>
+              <svg viewBox="0 0 600 140" preserveAspectRatio="none" style="width:100%;height:140px;margin-top:14px;">
+                <path d="M0 120 C40 115 80 110 120 108 S200 95 240 90 S320 75 360 68 S440 55 520 45 S560 35 600 28" fill="none" stroke="#4285f4" stroke-width="2.5"/>
+                <path d="M0 110 C40 105 80 100 120 96 S200 88 240 82 S320 74 360 66 S440 58 520 48 S560 42 600 36" fill="none" stroke="#34a853" stroke-width="2.5"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTEGRATION -->
+    <section class="integration-section">
+      <div class="wrap integration-grid">
+        <div class="reveal">
+          <p class="section-kicker">GOOGLE IS OPTIONAL</p>
+          <h2 class="section-title">You don't need Google Search Console to get started.</h2>
+          <p class="section-lead">GrowthSent starts with bounded technical audits. Connect the tools you already use when you want deeper search and visitor insight.</p>
+        </div>
+        <div class="integration-map reveal stagger-2">
+          <div class="node"><span style="font-size:22px;">⌁</span><b>Your website</b><small>Public website data</small></div>
+          <i class="downline">↓</i>
+          <div class="node"><span class="brand-mark" style="justify-content:center;margin:0 auto 6px;"><i></i><i></i><i></i></span><b>GrowthSent</b><small>Your growth console</small></div>
+          <p class="kicker">OPTIONAL ENRICHMENT</p>
+          <div class="google-nodes">
+            <span><b style="color:#4285F4;">G</b> Search Console</span>
+            <span><b style="color:#EA4335;">A</b> Analytics</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECOMMENDATION -->
+    <section class="rec-section">
+      <div class="wrap rec-grid">
+        <div class="rec-card reveal">
+          <div class="rec-top"><span>✦ OPPORTUNITY FOUND</span><small>For /pricing</small></div>
+          <h3>Your pricing page received <mark>4,200 search impressions</mark> but only 0.4% of visitors clicked.</h3>
+          <div class="potential">
+            <b>Potential improvement</b>
+            <p>Improve your search title and description.</p>
+            <span class="snippet">Simple Website Analytics & SEO for Solo Founders</span>
+          </div>
+          <div class="rec-footer">
+            <button class="btn btn-lime" style="border-radius:8px;">✦ Apply suggestion</button>
+            <a href="#" style="font-size:12px;color:#aeafa8;font-weight:600;">View details →</a>
+          </div>
+        </div>
+        <div class="reveal stagger-2">
+          <p class="section-kicker">KNOW WHAT TO DO NEXT</p>
+          <h2 class="section-title">Data is useful.<br /><em>Direction is better.</em></h2>
+          <p class="section-lead">GrowthSent explains what your data means, then points to the change most worth making.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAGIC FIXES -->
+    <section class="magic-section">
+      <div class="wrap narrow reveal">
+        <p class="section-kicker">MAGIC FIXES</p>
+        <h2 class="section-title">See the problem.<br />Fix the problem.<br /><em>Move on.</em></h2>
+        <p class="section-lead">Let the signal travel from a website issue to your coding environment — without turning your growth work into a second job.</p>
+        <div class="magic-flow">
+          <span>GrowthSent finds it</span><span>→</span><span>Explains it</span><span>→</span><b>+ You fix it</b><span>→</span><span>Deploy</span><span>→</span><span>Checks again</span>
+        </div>
+        <div class="tool-row"><span>Fix with</span><b>Claude Code</b><b>Cursor</b><b>Codex</b></div>
+      </div>
+    </section>
+
+    <!-- QUOTES -->
+    <section class="wrap">
+      <div class="reveal">
+        <p class="section-kicker">BUILT FOR PEOPLE WHO JUST SHIPPED</p>
+        <div class="quotes-grid">
+          <div class="quote-card spring-hover"><p>"I just launched<br />my SaaS."</p></div>
+          <div class="quote-card spring-hover"><p>"I built my site<br />with AI."</p></div>
+          <div class="quote-card spring-hover"><p>"I have no idea if<br />Google can find me."</p></div>
+          <div class="quote-card spring-hover"><p>"I don't want to<br />learn SEO."</p></div>
+        </div>
+        <h2 class="section-title center">That's exactly why<br /><em>GrowthSent exists.</em></h2>
+      </div>
+    </section>
+  </main>
+
+  <!-- PRICING PAGE -->
+  <main id="page-pricing" class="page">
+    <section class="pricing-section" style="padding-top:140px;">
+      <div class="wrap">
+        <div class="reveal center">
+          <p class="section-kicker" style="color:#a4ef51;border:none;background:transparent;padding:0;">PRICING</p>
+          <h2 class="section-title">Simple pricing</h2>
+          <p class="section-lead" style="max-width:560px;margin:0 auto 60px;">One platform to optimize, monitor and grow your website. Free forever for early-stage products.</p>
+        </div>
+        <div class="pricing-grid reveal stagger-2">
+          <div class="pricing-card spring-hover">
+            <h3>Hobby</h3>
+            <div class="price">Free</div>
+            <button class="btn" style="width:100%;background:#232521;color:#fff;border:1px solid #383a35;">Get Started</button>
+            <ul>
+              <li>1 Project</li><li>1 Team Member</li><li>Crawl up to 100 pages</li><li>1 GSC & GA4 property</li>
+              <li>Technical SEO Audit</li><li>CSV Export</li><li>API Access</li><li>MCP Access</li>
+            </ul>
+          </div>
+          <div class="pricing-card featured spring-hover">
+            <div class="popular-badge">Most Popular</div>
+            <h3>Growth</h3>
+            <div class="price">$19<span style="font-size:14px;color:#888982;font-weight:500;">/month</span></div>
+            <button class="btn btn-lime" style="width:100%;">Upgrade</button>
+            <ul style="color:#d4d4ce;">
+              <li>Unlimited Projects</li><li>Crawl up to 10,000 pages</li><li>Unlimited GSC & GA4</li>
+              <li>Full Core Web Vitals</li><li>Unlimited Backlinks</li><li>20 Competitors</li>
+              <li>Priority Queue</li><li>Email Support</li>
+            </ul>
+          </div>
+          <div class="pricing-card spring-hover">
+            <h3>Team</h3>
+            <div class="price">$79<span style="font-size:14px;color:#888982;font-weight:500;">/month</span></div>
+            <button class="btn" style="width:100%;background:#232521;color:#fff;border:1px solid #383a35;">Upgrade</button>
+            <ul>
+              <li>Unlimited Team Members</li><li>Crawl up to 100,000 pages</li><li>White-label Reports</li>
+              <li>Roles & Permissions</li><li>Highest Compute Credits</li><li>Priority Support</li>
+            </ul>
+          </div>
+          <div class="pricing-card spring-hover">
+            <h3>Enterprise</h3>
+            <div class="price">Custom</div>
+            <button class="btn" style="width:100%;background:#232521;color:#fff;border:1px solid #383a35;">Contact Sales</button>
+            <ul>
+              <li>Custom Limits</li><li>Dedicated Infrastructure</li><li>Dedicated SLA</li>
+              <li>Dedicated Support</li><li>Custom Compute</li><li>Everything Included</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="faq-section">
+      <div class="wrap narrow">
+        <h2 class="section-title center reveal">Frequently Asked Questions</h2>
+        <div class="faq-list reveal stagger-2">
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">Can I use GrowthSent for free?<span class="icon">+</span></button>
+            <div class="faq-a"><p>Yes! The Hobby plan is 100% free forever for early-stage products, solo builders, and personal projects. No credit card required.</p></div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">Can I upgrade anytime?<span class="icon">+</span></button>
+            <div class="faq-a"><p>Absolutely. You can upgrade, downgrade, or switch plans at any time directly from your account console.</p></div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">What happens if I exceed my limits?<span class="icon">+</span></button>
+            <div class="faq-a"><p>We never hard-block your service mid-month. We will notify you so you can seamlessly upgrade or adjust your crawl scope.</p></div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-q" onclick="toggleFaq(this)">Do all plans include API and MCP access?<span class="icon">+</span></button>
+            <div class="faq-a"><p>Yes! Every plan — including the free Hobby tier — includes full REST API access and Model Context Protocol integration.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- DASHBOARD PAGE -->
+  <main id="page-dashboard" class="page">
+    <div style="height:72px;background:#0e0f0e;"></div>
+    <div style="min-height:100vh;background:#0e0f0e;color:#f7f7f3;display:grid;place-items:center;padding:60px 24px;text-align:center;">
+      <div class="reveal">
+        <div class="kicker" style="color:#a4ef51;background:rgba(164,239,81,0.1);border-color:rgba(164,239,81,0.2);margin-bottom:20px;">DASHBOARD PREVIEW</div>
+        <h1 style="font-size:48px;margin-bottom:16px;">Your console preview</h1>
+        <p style="color:#a5a69f;max-width:520px;margin:0 auto 34px;line-height:1.7;">This is a mock of the authenticated dashboard. In the real app it connects to live audit data, Google Search Console, and Google Analytics.</p>
+        <button class="btn btn-lime" onclick="showPage('home'); setTimeout(function(){document.getElementById('dashboard').scrollIntoView({behavior:'smooth'});},100);" style="margin-right:12px;">View Interactive Dashboard</button>
+        <button class="btn" style="background:#232521;color:#fff;border:1px solid #383a35;" onclick="showPage('pricing')">See Pricing</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- PRIVACY PAGE -->
+  <main id="page-privacy" class="page">
+    <section class="legal-page wrap narrow">
+      <p class="section-kicker">LEGAL</p>
+      <h1 class="section-title">Privacy Policy</h1>
+      <p class="legal-date">Last updated: 2026</p>
+      <p>This Privacy Policy describes how GrowthSent collects, uses, and protects your personal information when you use our website and services.</p>
+      <h3>Information We Collect</h3>
+      <p>We collect information you provide directly to us, such as your email address and website URLs you choose to audit. We also collect data about how you interact with our platform.</p>
+      <h3>How We Use Information</h3>
+      <ul>
+        <li>To provide and maintain our SEO audit and analytics services</li>
+        <li>To communicate with you about your account and updates</li>
+        <li>To improve our product and develop new features</li>
+      </ul>
+      <h3>Data Sharing</h3>
+      <p>We do not sell your personal data. We may share information with service providers who help us operate our platform, subject to confidentiality obligations.</p>
+    </section>
+  </main>
+
+  <!-- TERMS PAGE -->
+  <main id="page-terms" class="page">
+    <section class="legal-page wrap narrow">
+      <p class="section-kicker">LEGAL</p>
+      <h1 class="section-title">Terms of Service</h1>
+      <p class="legal-date">Last updated: 2026</p>
+      <p>By accessing or using GrowthSent, you agree to be bound by these Terms of Service. If you do not agree, please do not use our services.</p>
+      <h3>Use of Services</h3>
+      <p>You may use GrowthSent only for lawful purposes and in accordance with these Terms. You agree not to use the platform to crawl websites you do not have permission to analyze.</p>
+      <h3>Account Responsibilities</h3>
+      <ul>
+        <li>You are responsible for maintaining the confidentiality of your account</li>
+        <li>You agree to provide accurate and complete information</li>
+        <li>You are responsible for all activities under your account</li>
+      </ul>
+      <h3>Limitation of Liability</h3>
+      <p>GrowthSent is provided "as is" without warranties of any kind. We are not liable for any indirect, incidental, or consequential damages arising from your use of the services.</p>
+    </section>
+  </main>
+
+  <!-- 404 PAGE -->
+  <main id="page-404" class="page">
+    <div class="error-page">
+      <div class="reveal">
+        <div class="error-code">404</div>
+        <h1 style="font-size:36px;margin:12px 0;">Page not found</h1>
+        <p style="color:#777870;margin-bottom:28px;">The page you are looking for does not exist or has been moved.</p>
+        <button class="btn btn-primary" onclick="showPage('home')">Back to home →</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- FINAL CTA -->
+  <section class="final-cta" id="cta">
+    <div class="wrap narrow reveal">
+      <p class="section-kicker" style="color:#40521d;background:transparent;border:none;padding:0;">START WITH A SINGLE URL</p>
+      <h2>Your website is live.<br />Now make sure people can find it.</h2>
+      <p>Paste your URL and get your first GrowthSent report for free.</p>
+      <div class="url-bar spring-hover">
+        <span class="lock">⌁</span>
+        <input type="text" placeholder="https://yourwebsite.com" aria-label="Website URL" />
+        <button class="btn btn-primary" style="border-radius:10px;" onclick="showPage('dashboard')">Check my website →</button>
+      </div>
+      <div class="reassurance" style="justify-content:center;">No login required.</div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="wrap">
+    <div>
+      <a href="#home" class="brand" onclick="showPage('home')">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        GrowthSent
+      </a>
+      <p class="tagline">The calm command centre for the website you just shipped.</p>
+      <small class="copyright">© 2026 GrowthSent · Built with care for solo founders and small teams.</small>
+    </div>
+    <div class="col">
+      <b>Product</b>
+      <a href="#product" onclick="scrollToSection('product')">Technical audits</a>
+      <a href="#dashboard" onclick="showPage('dashboard'); return false;">Dashboard</a>
+      <a href="#pricing" onclick="showPage('pricing')">Pricing</a>
+    </div>
+    <div class="col">
+      <b>Resources</b>
+      <a href="#how" onclick="scrollToSection('how')">How it works</a>
+      <a href="#" onclick="showPage('404'); return false;">Status</a>
+      <a href="#" onclick="showPage('404'); return false;">Changelog</a>
+    </div>
+    <div class="col">
+      <b>Company</b>
+      <a href="#" onclick="showPage('404'); return false;">About</a>
+      <a href="#" onclick="showPage('privacy')">Privacy Policy</a>
+      <a href="#" onclick="showPage('terms')">Terms of Service</a>
+    </div>
+    <div class="col">
+      <b>Connect</b>
+      <a href="https://x.com/kunal_raha95453" target="_blank" rel="noreferrer">Twitter / X</a>
+      <a href="https://github.com/kunalraha-ai" target="_blank" rel="noreferrer">GitHub</a>
+      <a href="https://www.linkedin.com/in/kunal-raha-ai" target="_blank" rel="noreferrer">LinkedIn</a>
+    </div>
+  </footer>
+
+  <script>
+    // ---- Page routing (mock single-page state) ----
+    function showPage(name) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      const target = document.getElementById('page-' + name);
+      if (target) {
+        target.classList.add('active');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('mobileNav').classList.remove('open');
+      }
+    }
+
+    function scrollToSection(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        showPage('home');
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth' }), 80);
+      }
+    }
+
+    // ---- Header scroll state ----
+    const header = document.getElementById('site-header');
+    window.addEventListener('scroll', () => {
+      if (window.scrollY > 20) header.classList.add('scrolled');
+      else header.classList.remove('scrolled');
+    });
+
+    // ---- Scroll reveal (Framer Motion-style) ----
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+    // ---- Dashboard tab switching ----
+    function switchDashTab(link, tab) {
+      document.querySelectorAll('.dash-sidebar a').forEach(a => {
+        if (!a.querySelector('small')) a.classList.remove('active');
+      });
+      link.classList.add('active');
+      document.querySelectorAll('.dash-main').forEach(m => m.classList.add('hidden'));
+      const target = document.getElementById('dash-' + tab);
+      if (target) {
+        target.classList.remove('hidden');
+        target.style.animation = 'fadeIn 0.35s cubic-bezier(0.16,1,0.3,1)';
+      }
+    }
+
+    // ---- FAQ accordion ----
+    function toggleFaq(btn) {
+      const item = btn.closest('.faq-item');
+      const isOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item').forEach(i => i.classList.remove('open'));
+      if (!isOpen) item.classList.add('open');
+    }
+
+    // ---- Simulate scan ----
+    function simulateScan() {
+      const url = document.getElementById('heroUrl').value.trim() || 'growthsent.com';
+      const hostname = url.replace(/^https?:\/\//, '').split('/')[0] || 'yourwebsite.com';
+      const score = Math.floor(Math.random() * 15) + 78;
+      const crawled = Math.floor(Math.random() * 40) + 80;
+      const crit = Math.floor(Math.random() * 3) + 1;
+      const high = Math.floor(Math.random() * 4) + 1;
+      const med = Math.floor(Math.random() * 5) + 2;
+
+      document.getElementById('scanDomain').textContent = hostname;
+      document.getElementById('scanStatus').textContent = `Scanned ${crawled} pages`;
+      document.getElementById('scanScore').innerHTML = `${score}<span>%</span>`;
+      document.getElementById('scanScoreLabel').textContent = 'ready for search';
+      document.getElementById('healthBar').style.width = score + '%';
+      document.querySelector('.domain-dot').textContent = hostname[0].toUpperCase();
+      document.getElementById('crawlCount').textContent = `${crawled} pages crawlable`;
+      document.getElementById('critIssue').textContent = `${crit} critical indexing issues`;
+      document.getElementById('highIssue').textContent = `${high} high priority warnings`;
+      document.getElementById('medIssue').textContent = `${med} medium priority fixes`;
+
+      const card = document.querySelector('.scan-card');
+      card.style.transform = 'scale(1.01)';
+      setTimeout(() => card.style.transform = '', 200);
+    }
+
+    // ---- Three.js 3D Network ----
+    (function init3D() {
+      const canvas = document.getElementById('three-canvas');
+      if (!canvas || typeof THREE === 'undefined') return;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+      camera.position.z = 18;
+
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      const group = new THREE.Group();
+      scene.add(group);
+
+      // Central sphere
+      const geometry = new THREE.IcosahedronGeometry(3.2, 1);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xa4ef51,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.35,
+      });
+      const sphere = new THREE.Mesh(geometry, material);
+      group.add(sphere);
+
+      // Orbiting nodes
+      const nodeCount = 28;
+      const nodes = [];
+      const nodeGeo = new THREE.SphereGeometry(0.12, 8, 8);
+      const nodeMat = new THREE.MeshBasicMaterial({ color: 0x171817 });
+      const orbitGeo = new THREE.BufferGeometry();
+      const positions = [];
+
+      for (let i = 0; i < nodeCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos((Math.random() * 2) - 1);
+        const r = 5.5 + Math.random() * 2.5;
+        const x = r * Math.sin(phi) * Math.cos(theta);
+        const y = r * Math.sin(phi) * Math.sin(theta);
+        const z = r * Math.cos(phi);
+        const node = new THREE.Mesh(nodeGeo, nodeMat);
+        node.position.set(x, y, z);
+        group.add(node);
+        nodes.push({ mesh: node, base: new THREE.Vector3(x, y, z), speed: 0.2 + Math.random() * 0.6, phase: Math.random() * Math.PI * 2 });
+        positions.push(0, 0, 0, x, y, z);
+      }
+      orbitGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      const orbitMat = new THREE.LineBasicMaterial({ color: 0x171817, transparent: true, opacity: 0.12 });
+      const lines = new THREE.LineSegments(orbitGeo, orbitMat);
+      group.add(lines);
+
+      // Ambient floating particles
+      const particleGeo = new THREE.BufferGeometry();
+      const particlePos = [];
+      for (let i = 0; i < 80; i++) {
+        particlePos.push((Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22, (Math.random() - 0.5) * 22);
+      }
+      particleGeo.setAttribute('position', new THREE.Float32BufferAttribute(particlePos, 3));
+      const particleMat = new THREE.PointsMaterial({ color: 0xa4ef51, size: 0.08, transparent: true, opacity: 0.55 });
+      const particles = new THREE.Points(particleGeo, particleMat);
+      scene.add(particles);
+
+      let raf;
+      let last = performance.now();
+      function animate(now) {
+        const delta = (now - last) / 1000;
+        last = now;
+        sphere.rotation.y += delta * 0.25;
+        sphere.rotation.x += delta * 0.08;
+        group.rotation.y += delta * 0.12;
+
+        nodes.forEach((n, idx) => {
+          const t = now * 0.001 * n.speed + n.phase;
+          const offset = new THREE.Vector3(
+            Math.sin(t) * 0.8,
+            Math.cos(t) * 0.8,
+            Math.sin(t * 0.7) * 0.6
+          );
+          n.mesh.position.copy(n.base).add(offset);
+          const idx4 = idx * 6;
+          const posAttr = lines.geometry.attributes.position;
+          posAttr.array[idx4 + 3] = n.mesh.position.x;
+          posAttr.array[idx4 + 4] = n.mesh.position.y;
+          posAttr.array[idx4 + 5] = n.mesh.position.z;
+        });
+        lines.geometry.attributes.position.needsUpdate = true;
+        particles.rotation.y += delta * 0.05;
+
+        renderer.render(scene, camera);
+        raf = requestAnimationFrame(animate);
+      }
+      raf = requestAnimationFrame(animate);
+
+      // Respect reduced motion / page visibility
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) cancelAnimationFrame(raf);
+        else raf = requestAnimationFrame(animate);
+      });
+
+      window.addEventListener('resize', () => {
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+    })();
+
+    // ---- Deep-link routing on load ----
+    const hash = window.location.hash.replace('#', '');
+    if (['pricing','dashboard','privacy','terms','404'].includes(hash)) {
+      showPage(hash);
+    }
+  </script>
+</body>
+</html>

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 from collections.abc import Mapping
 from pathlib import Path
@@ -168,9 +169,11 @@ def compact_bucket(*, gcs_bucket: str, run_id: str, input_prefix: str, output_pr
             raise CompactionError(f"partial intermediate bucket: missing tables {','.join(missing)}")
         connection = duckdb.connect(str(temporary_root / "compact.duckdb"))
         try:
-            connection.execute("SET memory_limit='26GB'")
-            connection.execute("SET threads=4")
-            connection.execute("SET max_temp_directory_size='300GB'")
+            memory_limit = os.environ.get("GROWTHSENT_DUCKDB_MEMORY_LIMIT", "26GB")
+            duckdb_threads = max(1, int(os.environ.get("GROWTHSENT_DUCKDB_THREADS", "4")))
+            connection.execute(f"SET memory_limit='{memory_limit}'")
+            connection.execute(f"SET threads={duckdb_threads}")
+            connection.execute("SET max_temp_directory_size='800GB'")
             for table, paths in downloaded.items():
                 connection.execute(f"CREATE VIEW source_{table} AS SELECT * FROM {_read_parquet_sql(paths)}")
             queries = {

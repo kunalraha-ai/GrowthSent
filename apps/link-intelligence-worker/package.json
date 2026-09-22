@@ -1,0 +1,22 @@
+{
+  "name": "link-intelligence-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build && wrangler dev",
+    "deploy": "vite build && wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ducklings/workers": "^1.5.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.9",
+    "@cloudflare/workers-types": "^4.20250315.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0",
+    "wrangler": "^4.131.2"
+  }
+}

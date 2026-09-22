@@ -24,10 +24,20 @@ build
 *.sln
 *.sw?
 *.zip
-/cloudflare-workers-types-*.tgz
+*.tgz
 my-clerk-app
 
 .vercel
+.opencode/
+session-*.md
+session-latest/
+.smoke*.mjs
+/ssm-*.json
+
+# Downloaded CLI binaries
+/tools/duckdb/
+/tools/rclone/
+/tools/rclone-win/
 
 # Local captures, reports, and tool state
 /Screenshot*.png
@@ -52,8 +62,6 @@ my-clerk-app
 /sample*.jsonl
 /sample.warc.wat.gz
 /wat.paths.gz
-/ssm-*.json
-/scratch/
 *.log
 
 # Superseded local GCP/R2 release; the reviewed -v2 archive is tracked.

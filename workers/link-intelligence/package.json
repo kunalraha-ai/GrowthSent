@@ -1,0 +1,25 @@
+{
+  "name": "growthsent-link-intelligence-worker",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "typegen": "wrangler types",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@foxglove/wasm-zstd": "^1.0.1",
+    "hyparquet": "^1.31.0",
+    "tldts": "^6.1.82",
+    "zstddec": "^0.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240917.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.114.1"
+  }
+}

@@ -62,8 +62,7 @@ The expected result has `"status":"verified"`,
 
 `batch/materialize-canary-job.template.json` deliberately processes only 100
 catalog entries. The production materialization template has 100 disjoint
-1,000-source tasks and a conservative parallelism of 25 (100 vCPU), below the
-current 200-vCPU project quota. Every task writes target-domain partitions with
+1,000-source tasks and a parallelism of 25 (100 vCPU). Every task writes target-domain partitions with
 a stable bucket: the first three hex characters of `SHA-256(domain)`, shifted
 right by two, giving 1,024 buckets.
 
@@ -84,6 +83,10 @@ resources after every terminal job and remove any unexpected orphaned disks.
 Batch mounts that disk at `/mnt/disks/scratch`; do not substitute a root-level
 path such as `/work`, because the Container-Optimized OS host filesystem is
 read-only outside its supported mount locations.
+
+The full 25-way job needs 100 available vCPUs, 25 instance slots, and 9,375 GB
+of `SSD_TOTAL_GB` quota for its transient `pd-balanced` disks. The reviewed
+launcher checks the current quota rather than relying on a documented limit.
 
 After a successful probe, validate its immutable task manifest and print the
 measured high-water data without changing GCS, R2, or Batch:
@@ -109,6 +112,23 @@ To exercise every remote preflight after publishing a build without allocating
 a Batch VM, pass `--dry-run` to `submit-materialize-cost-probe-wsl.sh` with the
 reviewed `GROWTHSENT_MATERIALIZE_RELEASE_SHA256`. The image build itself also
 proves that the pinned DuckDB release accepts the bounded partition writer.
+
+### Reviewed full-materialization launch
+
+Only run this after the 1,000-source cost probe has passed its read-only
+verification. The launcher builds a fresh immutable release, proves the full
+100,000-source catalog, checks the enabled scoped R2 credential, blocks an
+overlapping GrowthSent Batch job, requires the 25-way CPU/instance/disk quota,
+and validates the exact 100-task configuration before it allocates a VM. It
+generates a fresh GCS output prefix and prints the job ID and prefix as JSON.
+
+```bash
+bash deployment/common-crawl-gcp-link-index-v1/scripts/launch-materialize-production-wsl.sh --approved-materialize-production
+```
+
+To perform every remote preflight without creating a Batch job, pass
+`--dry-run` to `submit-materialize-production-wsl.sh` with a reviewed
+`GROWTHSENT_MATERIALIZE_RELEASE_SHA256`.
 
 The materializer keeps all 1,024 target-bucket files open while each table is
 written and requires no more than one local Parquet output per target bucket

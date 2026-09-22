@@ -59,7 +59,7 @@
           "disks": [
             {
               "newDisk": {
-                "sizeGb": 375,
+                "sizeGb": 1000,
                 "type": "pd-balanced"
               },
               "deviceName": "scratch"

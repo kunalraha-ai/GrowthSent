@@ -1,0 +1,26 @@
+name = "growthsent-domain-json"
+main = "src/index.ts"
+compatibility_date = "2026-09-18"
+
+[[containers]]
+class_name = "DomainJsonContainer"
+image = "./Dockerfile"
+instance_type = "standard-4"
+max_instances = 50
+
+[[durable_objects.bindings]]
+class_name = "DomainJsonContainer"
+name = "DOMAIN_JSON_CONTAINER"
+
+[[queues.producers]]
+binding = "DOMAIN_JSON_QUEUE"
+queue = "growthsent-domain-json-jobs"
+
+[[queues.consumers]]
+queue = "growthsent-domain-json-jobs"
+max_batch_size = 1
+max_concurrency = 100
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["DomainJsonContainer"]

@@ -1,0 +1,9 @@
+name = "growthsent-link-intelligence-api"
+main = "dist/index.js"
+account_id = "4a30e8ac877d9f65ee9a0ecc5df16146"
+compatibility_date = "2026-09-16"
+compatibility_flags = ["nodejs_compat"]
+
+[[r2_buckets]]
+binding = "GROWTHSENT_BUCKET"
+bucket_name = "growthsent-data-lake"
