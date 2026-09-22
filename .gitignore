@@ -25,7 +25,6 @@ build
 *.sw?
 *.zip
 *.tgz
-my-clerk-app
 
 .vercel
 .opencode/
@@ -33,6 +32,8 @@ session-*.md
 session-latest/
 .smoke*.mjs
 /ssm-*.json
+my-clerk-app/.git_backup/
+my-clerk-app/.clerk/
 
 # Downloaded CLI binaries
 /tools/duckdb/
